@@ -7,11 +7,7 @@ export function AuthButton() {
 
   if (status === 'loading') {
     return (
-      <button
-        type="button"
-        className="cta"
-        disabled
-      >
+      <button type='button' className='cta' disabled>
         Checking session…
       </button>
     );
@@ -19,13 +15,9 @@ export function AuthButton() {
 
   if (session) {
     return (
-      <div className="auth-state">
-        <p>Signed in as {session.user?.email ?? 'Google user'}</p>
-        <button
-          type="button"
-          className="cta"
-          onClick={() => signOut()}
-        >
+      <div className='auth-state'>
+        <p>Signed in as {'Google user'}</p>
+        <button type='button' className='cta' onClick={() => signOut()}>
           Sign out
         </button>
       </div>
@@ -33,11 +25,7 @@ export function AuthButton() {
   }
 
   return (
-    <button
-      type="button"
-      className="cta"
-      onClick={() => signIn('google')}
-    >
+    <button type='button' className='cta' onClick={() => signIn('google')}>
       Continue with Google
     </button>
   );
