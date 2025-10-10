@@ -1,8 +1,7 @@
-import './globals.css';
-
+import '../styles/globals.css';
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
-import { Providers } from './providers';
+import { Providers } from '../components/providers';
 
 export const metadata: Metadata = {
   title: 'Gauntlet AI',

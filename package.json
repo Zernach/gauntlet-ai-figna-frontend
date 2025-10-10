@@ -12,7 +12,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start",
+    "start": "yarn dev",
     "lint": "next lint",
     "deploy": "netlify deploy --prod --site=79e0e8e0-bcf1-401e-b78f-30bc2c26c873 --dir=build"
   },
