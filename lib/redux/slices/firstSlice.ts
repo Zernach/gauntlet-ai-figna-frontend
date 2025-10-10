@@ -63,64 +63,84 @@ const firstSlice = createSlice({
   extraReducers: (builder) => {
     builder
       .addCase(createAnalyticEventsThunk.pending, (state) => {
-        setPending(state.requests.createAnalyticEvents);
+        setPending({ state: state.requests.createAnalyticEvents });
       })
       .addCase(createAnalyticEventsThunk.fulfilled, (state, action) => {
-        setFulfilled(state.requests.createAnalyticEvents, action.payload);
+        setFulfilled({
+          state: state.requests.createAnalyticEvents,
+          payload: action.payload,
+        });
       })
       .addCase(createAnalyticEventsThunk.rejected, (state, action) => {
-        setRejected(
-          state.requests.createAnalyticEvents,
-          (action.payload as string | undefined) ?? action.error.message,
-        );
+        setRejected({
+          state: state.requests.createAnalyticEvents,
+          errorMessage:
+            (action.payload as string | undefined) ?? action.error.message,
+        });
       })
       .addCase(createReferrersThunk.pending, (state) => {
-        setPending(state.requests.createReferrers);
+        setPending({ state: state.requests.createReferrers });
       })
       .addCase(createReferrersThunk.fulfilled, (state, action) => {
-        setFulfilled(state.requests.createReferrers, action.payload);
+        setFulfilled({
+          state: state.requests.createReferrers,
+          payload: action.payload,
+        });
       })
       .addCase(createReferrersThunk.rejected, (state, action) => {
-        setRejected(
-          state.requests.createReferrers,
-          (action.payload as string | undefined) ?? action.error.message,
-        );
+        setRejected({
+          state: state.requests.createReferrers,
+          errorMessage:
+            (action.payload as string | undefined) ?? action.error.message,
+        });
       })
       .addCase(createErrorThunk.pending, (state) => {
-        setPending(state.requests.createError);
+        setPending({ state: state.requests.createError });
       })
       .addCase(createErrorThunk.fulfilled, (state, action) => {
-        setFulfilled(state.requests.createError, action.payload);
+        setFulfilled({
+          state: state.requests.createError,
+          payload: action.payload,
+        });
       })
       .addCase(createErrorThunk.rejected, (state, action) => {
-        setRejected(
-          state.requests.createError,
-          (action.payload as string | undefined) ?? action.error.message,
-        );
+        setRejected({
+          state: state.requests.createError,
+          errorMessage:
+            (action.payload as string | undefined) ?? action.error.message,
+        });
       })
       .addCase(createUserThunk.pending, (state) => {
-        setPending(state.requests.createUser);
+        setPending({ state: state.requests.createUser });
       })
       .addCase(createUserThunk.fulfilled, (state, action) => {
-        setFulfilled(state.requests.createUser, action.payload);
+        setFulfilled({
+          state: state.requests.createUser,
+          payload: action.payload,
+        });
       })
       .addCase(createUserThunk.rejected, (state, action) => {
-        setRejected(
-          state.requests.createUser,
-          (action.payload as string | undefined) ?? action.error.message,
-        );
+        setRejected({
+          state: state.requests.createUser,
+          errorMessage:
+            (action.payload as string | undefined) ?? action.error.message,
+        });
       })
       .addCase(readCloudVersionsThunk.pending, (state) => {
-        setPending(state.requests.readCloudVersions);
+        setPending({ state: state.requests.readCloudVersions });
       })
       .addCase(readCloudVersionsThunk.fulfilled, (state, action) => {
-        setFulfilled(state.requests.readCloudVersions, action.payload);
+        setFulfilled({
+          state: state.requests.readCloudVersions,
+          payload: action.payload,
+        });
       })
       .addCase(readCloudVersionsThunk.rejected, (state, action) => {
-        setRejected(
-          state.requests.readCloudVersions,
-          (action.payload as string | undefined) ?? action.error.message,
-        );
+        setRejected({
+          state: state.requests.readCloudVersions,
+          errorMessage:
+            (action.payload as string | undefined) ?? action.error.message,
+        });
       });
   },
 });

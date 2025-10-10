@@ -6,24 +6,34 @@ export const createAsyncInitialState = <T>(): AsyncRequestState<T> => ({
   error: null,
 });
 
-export const setPending = (requestState: AsyncRequestState<unknown>) => {
-  requestState.isLoading = true;
-  requestState.error = null;
+export const setPending = ({
+  state,
+}: {
+  state: AsyncRequestState<unknown>;
+}) => {
+  state.isLoading = true;
+  state.error = null;
 };
 
-export const setFulfilled = <T>(
-  requestState: AsyncRequestState<T>,
-  payload: T,
-) => {
-  requestState.data = payload;
-  requestState.isLoading = false;
-  requestState.error = null;
+export const setFulfilled = <T>({
+  state,
+  payload,
+}: {
+  state: AsyncRequestState<T>;
+  payload: T;
+}) => {
+  state.data = payload;
+  state.isLoading = false;
+  state.error = null;
 };
 
-export const setRejected = (
-  requestState: AsyncRequestState<unknown>,
-  errorMessage?: string,
-) => {
-  requestState.isLoading = false;
-  requestState.error = errorMessage ?? 'Unknown error';
+export const setRejected = ({
+  state,
+  errorMessage,
+}: {
+  state: AsyncRequestState<unknown>;
+  errorMessage?: string;
+}) => {
+  state.isLoading = false;
+  state.error = errorMessage ?? 'Unknown error';
 };
