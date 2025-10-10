@@ -20,10 +20,15 @@
   "license": "MIT",
   "description": "Minimal Next.js app with Google OAuth ready for configuration",
   "dependencies": {
+    "@reduxjs/toolkit": "^2.9.0",
     "next": "^14.2.5",
     "next-auth": "^4.24.11",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "react-native": "0.73.9",
+    "react-native-web": "0.19.10",
+    "react-redux": "^9.2.0",
+    "redux-persist": "^6.0.0"
   },
   "devDependencies": {
     "@types/node": "^24.7.1",
