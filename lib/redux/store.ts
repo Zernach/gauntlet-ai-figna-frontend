@@ -1,4 +1,9 @@
-import { combineReducers, configureStore } from '@reduxjs/toolkit';
+import {
+  AnyAction,
+  combineReducers,
+  configureStore,
+  createAction,
+} from '@reduxjs/toolkit';
 import type {
   PersistConfig,
   PersistedState,
@@ -22,12 +27,25 @@ import {
 import type { FirstSliceState } from './slices/firstSlice';
 import { secondSliceReducer } from './slices/secondSlice';
 
-const rootReducer = combineReducers({
+export const resetReduxState = createAction('root/resetReduxState');
+
+const combinedReducer = combineReducers({
   [REDUX_SLICES.FIRST_SLICE]: firstSliceReducer,
   [REDUX_SLICES.SECOND_SLICE]: secondSliceReducer,
 });
 
-type RootReducerState = ReturnType<typeof rootReducer>;
+type RootReducerState = ReturnType<typeof combinedReducer>;
+
+const rootReducer = (
+  state: RootReducerState | undefined,
+  action: AnyAction,
+) => {
+  if (resetReduxState.match(action)) {
+    return combinedReducer(undefined, action);
+  }
+
+  return combinedReducer(state, action);
+};
 
 const ensureFirstSliceRequests = (
   state: FirstSliceState | undefined,

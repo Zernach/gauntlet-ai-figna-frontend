@@ -1,10 +1,10 @@
 'use client';
-
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { signIn, signOut, useSession } from 'next-auth/react';
 import { useAppDispatch } from '@/lib/redux/hooks';
 import { createUserThunk, readUserThunk } from '@/lib/redux/thunks';
 import { generateRandomUuid } from '@/scripts/generateRandomUuid';
+import { persistor, resetReduxState } from '@/lib/redux/store';
 
 export function AuthButton() {
   const dispatch = useAppDispatch();
@@ -48,9 +48,26 @@ export function AuthButton() {
         isProcessingRef.current = false;
       }
     };
-
     void ensureUserExists();
   }, [dispatch, email, googleUuid, name, status]);
+
+  const resetReduxStore = useCallback(() => {
+    dispatch(resetReduxState());
+    persistor.flush().catch((error) => {
+      console.error('Failed to flush persisted state after reset', error);
+    });
+  }, [dispatch]);
+
+  useEffect(() => {
+    if (status === 'unauthenticated') {
+      resetReduxStore();
+    }
+  }, [resetReduxStore, status]);
+
+  const handleSignOut = useCallback(() => {
+    resetReduxStore();
+    void signOut();
+  }, [resetReduxStore]);
 
   if (status === 'loading') {
     return (
@@ -64,7 +81,7 @@ export function AuthButton() {
     return (
       <div className='auth-state'>
         <p>Signed in as {'Google user'}</p>
-        <button type='button' className='cta' onClick={() => signOut()}>
+        <button type='button' className='cta' onClick={handleSignOut}>
           Sign out
         </button>
       </div>
@@ -72,7 +89,13 @@ export function AuthButton() {
   }
 
   return (
-    <button type='button' className='cta' onClick={() => signIn('google')}>
+    <button
+      type='button'
+      className='cta'
+      onClick={() => {
+        void signIn('google');
+      }}
+    >
       Continue with Google
     </button>
   );
