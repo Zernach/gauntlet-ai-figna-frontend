@@ -92,10 +92,7 @@ export type UpdateGauntletAuthenticationResponse = ErrorResponse & {
  * ReadUser
  */
 export type ReadGauntletUserParams = {
-  userId?: GauntletUserType['userId'];
   email?: GauntletUserType['email'];
-  appleUuid?: GauntletUserType['appleUuid'];
-  googleUuid?: GauntletUserType['googleUuid'];
 };
 
 export type ReadGauntletUserResponse = ErrorResponse & {

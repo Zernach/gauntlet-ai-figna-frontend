@@ -4,6 +4,11 @@ import type { CSSProperties, ReactNode } from 'react';
 import { Providers } from '../components/providers';
 import { COLORS, GRADIENTS } from '../constants/colors';
 import { TYPOGRAPHY } from '../constants/typography';
+import { setAuthHeadersProvider } from '@/scripts/requestCloud/requestCloud';
+import { setAuthHeaders } from '@/scripts/setAuthHeaders';
+
+// Inject dynamic auth headers for all API requests
+setAuthHeadersProvider(setAuthHeaders);
 
 export const metadata: Metadata = {
   title: 'Gauntlet AI',

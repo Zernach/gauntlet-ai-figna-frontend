@@ -1,4 +1,4 @@
-import { CONFIG } from '@/constants/config';
+import { CONFIG } from '../../constants/config';
 
 type HeaderProvider = () => HeadersInit | Promise<HeadersInit>;
 

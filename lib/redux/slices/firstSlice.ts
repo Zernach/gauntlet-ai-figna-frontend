@@ -1,4 +1,4 @@
-import { createSlice, PayloadAction } from '@reduxjs/toolkit';
+import { createSlice } from '@reduxjs/toolkit';
 import { AsyncRequestState, REDUX_SLICES } from '@/types/types';
 import {
   CreateGauntletAnalyticEventsResponse,
@@ -7,6 +7,7 @@ import {
   CreateGauntletUserResponse,
   DeleteGauntletUserResponse,
   GauntletCloudEndpointResponse,
+  GauntletUserType,
   ReadGauntletAuthenticationResponse,
   ReadGauntletUserResponse,
   UpdateGauntletAuthenticationResponse,
@@ -29,7 +30,7 @@ import {
   setRejected,
 } from '../helpers';
 
-export type FirstAppRequestsState = {
+type FirstSliceRequestsState = {
   createAnalyticEvents: AsyncRequestState<CreateGauntletAnalyticEventsResponse>;
   createReferrers: AsyncRequestState<CreateGauntletReferrersResponse>;
   createError: AsyncRequestState<CreateGauntletErrorResponse>;
@@ -42,40 +43,37 @@ export type FirstAppRequestsState = {
 };
 
 export type FirstSliceState = {
-  count: number;
-  requests: FirstAppRequestsState;
+  user: GauntletUserType | null;
+  requests: FirstSliceRequestsState;
 };
 
+const createInitialRequestsState = (): FirstSliceRequestsState => ({
+  createAnalyticEvents:
+    createAsyncInitialState<CreateGauntletAnalyticEventsResponse>(),
+  createReferrers: createAsyncInitialState<CreateGauntletReferrersResponse>(),
+  createError: createAsyncInitialState<CreateGauntletErrorResponse>(),
+  createUser: createAsyncInitialState<CreateGauntletUserResponse>(),
+  readCloudVersions: createAsyncInitialState<GauntletCloudEndpointResponse>(),
+  readAuthentication:
+    createAsyncInitialState<ReadGauntletAuthenticationResponse>(),
+  updateAuthentication:
+    createAsyncInitialState<UpdateGauntletAuthenticationResponse>(),
+  readUser: createAsyncInitialState<ReadGauntletUserResponse>(),
+  deleteUser: createAsyncInitialState<DeleteGauntletUserResponse>(),
+});
+
 const initialState: FirstSliceState = {
-  count: 0,
-  requests: {
-    createAnalyticEvents:
-      createAsyncInitialState<CreateGauntletAnalyticEventsResponse>(),
-    createReferrers: createAsyncInitialState<CreateGauntletReferrersResponse>(),
-    createError: createAsyncInitialState<CreateGauntletErrorResponse>(),
-    createUser: createAsyncInitialState<CreateGauntletUserResponse>(),
-    readCloudVersions: createAsyncInitialState<GauntletCloudEndpointResponse>(),
-    readAuthentication:
-      createAsyncInitialState<ReadGauntletAuthenticationResponse>(),
-    updateAuthentication:
-      createAsyncInitialState<UpdateGauntletAuthenticationResponse>(),
-    readUser: createAsyncInitialState<ReadGauntletUserResponse>(),
-    deleteUser: createAsyncInitialState<DeleteGauntletUserResponse>(),
-  },
+  user: null,
+  requests: createInitialRequestsState(),
 };
 
 const firstSlice = createSlice({
   name: REDUX_SLICES.FIRST_SLICE,
   initialState,
   reducers: {
-    increment(state) {
-      state.count += 1;
-    },
-    incrementByAmount(state, action: PayloadAction<number>) {
-      state.count += action.payload;
-    },
     reset(state) {
-      state.count = initialState.count;
+      state.user = null;
+      state.requests = createInitialRequestsState();
     },
   },
   extraReducers: (builder) => {
@@ -92,8 +90,7 @@ const firstSlice = createSlice({
       .addCase(createAnalyticEventsThunk.rejected, (state, action) => {
         setRejected({
           state: state.requests.createAnalyticEvents,
-          errorMessage:
-            (action.payload as string | undefined) ?? action.error.message,
+          errorMessage: action.payload ?? action.error.message,
         });
       })
       .addCase(createReferrersThunk.pending, (state) => {
@@ -108,8 +105,7 @@ const firstSlice = createSlice({
       .addCase(createReferrersThunk.rejected, (state, action) => {
         setRejected({
           state: state.requests.createReferrers,
-          errorMessage:
-            (action.payload as string | undefined) ?? action.error.message,
+          errorMessage: action.payload ?? action.error.message,
         });
       })
       .addCase(createErrorThunk.pending, (state) => {
@@ -124,8 +120,7 @@ const firstSlice = createSlice({
       .addCase(createErrorThunk.rejected, (state, action) => {
         setRejected({
           state: state.requests.createError,
-          errorMessage:
-            (action.payload as string | undefined) ?? action.error.message,
+          errorMessage: action.payload ?? action.error.message,
         });
       })
       .addCase(createUserThunk.pending, (state) => {
@@ -136,12 +131,12 @@ const firstSlice = createSlice({
           state: state.requests.createUser,
           payload: action.payload,
         });
+        state.user = action.payload.user;
       })
       .addCase(createUserThunk.rejected, (state, action) => {
         setRejected({
           state: state.requests.createUser,
-          errorMessage:
-            (action.payload as string | undefined) ?? action.error.message,
+          errorMessage: action.payload ?? action.error.message,
         });
       })
       .addCase(readCloudVersionsThunk.pending, (state) => {
@@ -156,8 +151,7 @@ const firstSlice = createSlice({
       .addCase(readCloudVersionsThunk.rejected, (state, action) => {
         setRejected({
           state: state.requests.readCloudVersions,
-          errorMessage:
-            (action.payload as string | undefined) ?? action.error.message,
+          errorMessage: action.payload ?? action.error.message,
         });
       })
       .addCase(readAuthenticationThunk.pending, (state) => {
@@ -172,8 +166,7 @@ const firstSlice = createSlice({
       .addCase(readAuthenticationThunk.rejected, (state, action) => {
         setRejected({
           state: state.requests.readAuthentication,
-          errorMessage:
-            (action.payload as string | undefined) ?? action.error.message,
+          errorMessage: action.payload ?? action.error.message,
         });
       })
       .addCase(updateAuthenticationThunk.pending, (state) => {
@@ -188,8 +181,7 @@ const firstSlice = createSlice({
       .addCase(updateAuthenticationThunk.rejected, (state, action) => {
         setRejected({
           state: state.requests.updateAuthentication,
-          errorMessage:
-            (action.payload as string | undefined) ?? action.error.message,
+          errorMessage: action.payload ?? action.error.message,
         });
       })
       .addCase(readUserThunk.pending, (state) => {
@@ -200,12 +192,12 @@ const firstSlice = createSlice({
           state: state.requests.readUser,
           payload: action.payload,
         });
+        state.user = action.payload.user;
       })
       .addCase(readUserThunk.rejected, (state, action) => {
         setRejected({
           state: state.requests.readUser,
-          errorMessage:
-            (action.payload as string | undefined) ?? action.error.message,
+          errorMessage: action.payload ?? action.error.message,
         });
       })
       .addCase(deleteUserThunk.pending, (state) => {
@@ -216,16 +208,18 @@ const firstSlice = createSlice({
           state: state.requests.deleteUser,
           payload: action.payload,
         });
+        if (action.payload.isDeleted) {
+          state.user = null;
+        }
       })
       .addCase(deleteUserThunk.rejected, (state, action) => {
         setRejected({
           state: state.requests.deleteUser,
-          errorMessage:
-            (action.payload as string | undefined) ?? action.error.message,
+          errorMessage: action.payload ?? action.error.message,
         });
       });
   },
 });
 
-export const { increment, incrementByAmount, reset } = firstSlice.actions;
+export const { reset } = firstSlice.actions;
 export const firstSliceReducer = firstSlice.reducer;

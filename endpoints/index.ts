@@ -17,7 +17,7 @@ import {
   UpdateGauntletAuthenticationParams,
   UpdateGauntletAuthenticationResponse,
 } from '@/@landscapesupply/types/gauntletai';
-import { requestCloud } from '@/scripts/requestCloud';
+import { requestCloud } from '@/scripts/requestCloud/requestCloud';
 
 export const createAnalyticEvents = (
   params: CreateGauntletAnalyticEventsParams,
@@ -55,9 +55,7 @@ export const readCloudVersions = () =>
     method: 'GET',
   });
 
-export const readAuthentication = (
-  params: ReadGauntletAuthenticationParams,
-) =>
+export const readAuthentication = (params: ReadGauntletAuthenticationParams) =>
   requestCloud<ReadGauntletAuthenticationResponse>({
     endpoint: '/read-authentication',
     method: 'POST',
