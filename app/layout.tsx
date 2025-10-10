@@ -5,8 +5,8 @@ import type { ReactNode } from 'react';
 import { Providers } from './providers';
 
 export const metadata: Metadata = {
-  title: 'Gauntlet OAuth Starter',
-  description: 'Minimal Next.js app with Google OAuth ready to configure',
+  title: 'Gauntlet AI',
+  description: 'Archlife Industries AI Projects',
 };
 
 export default function RootLayout({
