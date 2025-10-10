@@ -1,5 +1,5 @@
 import '../styles/globals.css';
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import type { CSSProperties, ReactNode } from 'react';
 import { Providers } from '../components/providers';
 import { COLORS, GRADIENTS } from '../constants/colors';
@@ -8,6 +8,9 @@ import { TYPOGRAPHY } from '../constants/typography';
 export const metadata: Metadata = {
   title: 'Gauntlet AI',
   description: 'Archlife Industries AI Projects',
+};
+
+export const viewport: Viewport = {
   themeColor: COLORS.black,
   colorScheme: 'dark',
 };
