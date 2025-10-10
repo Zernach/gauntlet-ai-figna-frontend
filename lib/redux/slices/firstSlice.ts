@@ -5,14 +5,22 @@ import {
   CreateGauntletErrorResponse,
   CreateGauntletReferrersResponse,
   CreateGauntletUserResponse,
+  DeleteGauntletUserResponse,
   GauntletCloudEndpointResponse,
+  ReadGauntletAuthenticationResponse,
+  ReadGauntletUserResponse,
+  UpdateGauntletAuthenticationResponse,
 } from '@/@landscapesupply/types/gauntletai';
 import {
   createAnalyticEventsThunk,
   createErrorThunk,
   createReferrersThunk,
   createUserThunk,
+  deleteUserThunk,
+  readAuthenticationThunk,
   readCloudVersionsThunk,
+  readUserThunk,
+  updateAuthenticationThunk,
 } from '@/lib/redux/thunks';
 import {
   createAsyncInitialState,
@@ -27,6 +35,10 @@ export type FirstAppRequestsState = {
   createError: AsyncRequestState<CreateGauntletErrorResponse>;
   createUser: AsyncRequestState<CreateGauntletUserResponse>;
   readCloudVersions: AsyncRequestState<GauntletCloudEndpointResponse>;
+  readAuthentication: AsyncRequestState<ReadGauntletAuthenticationResponse>;
+  updateAuthentication: AsyncRequestState<UpdateGauntletAuthenticationResponse>;
+  readUser: AsyncRequestState<ReadGauntletUserResponse>;
+  deleteUser: AsyncRequestState<DeleteGauntletUserResponse>;
 };
 
 export type FirstSliceState = {
@@ -43,6 +55,12 @@ const initialState: FirstSliceState = {
     createError: createAsyncInitialState<CreateGauntletErrorResponse>(),
     createUser: createAsyncInitialState<CreateGauntletUserResponse>(),
     readCloudVersions: createAsyncInitialState<GauntletCloudEndpointResponse>(),
+    readAuthentication:
+      createAsyncInitialState<ReadGauntletAuthenticationResponse>(),
+    updateAuthentication:
+      createAsyncInitialState<UpdateGauntletAuthenticationResponse>(),
+    readUser: createAsyncInitialState<ReadGauntletUserResponse>(),
+    deleteUser: createAsyncInitialState<DeleteGauntletUserResponse>(),
   },
 };
 
@@ -138,6 +156,70 @@ const firstSlice = createSlice({
       .addCase(readCloudVersionsThunk.rejected, (state, action) => {
         setRejected({
           state: state.requests.readCloudVersions,
+          errorMessage:
+            (action.payload as string | undefined) ?? action.error.message,
+        });
+      })
+      .addCase(readAuthenticationThunk.pending, (state) => {
+        setPending({ state: state.requests.readAuthentication });
+      })
+      .addCase(readAuthenticationThunk.fulfilled, (state, action) => {
+        setFulfilled({
+          state: state.requests.readAuthentication,
+          payload: action.payload,
+        });
+      })
+      .addCase(readAuthenticationThunk.rejected, (state, action) => {
+        setRejected({
+          state: state.requests.readAuthentication,
+          errorMessage:
+            (action.payload as string | undefined) ?? action.error.message,
+        });
+      })
+      .addCase(updateAuthenticationThunk.pending, (state) => {
+        setPending({ state: state.requests.updateAuthentication });
+      })
+      .addCase(updateAuthenticationThunk.fulfilled, (state, action) => {
+        setFulfilled({
+          state: state.requests.updateAuthentication,
+          payload: action.payload,
+        });
+      })
+      .addCase(updateAuthenticationThunk.rejected, (state, action) => {
+        setRejected({
+          state: state.requests.updateAuthentication,
+          errorMessage:
+            (action.payload as string | undefined) ?? action.error.message,
+        });
+      })
+      .addCase(readUserThunk.pending, (state) => {
+        setPending({ state: state.requests.readUser });
+      })
+      .addCase(readUserThunk.fulfilled, (state, action) => {
+        setFulfilled({
+          state: state.requests.readUser,
+          payload: action.payload,
+        });
+      })
+      .addCase(readUserThunk.rejected, (state, action) => {
+        setRejected({
+          state: state.requests.readUser,
+          errorMessage:
+            (action.payload as string | undefined) ?? action.error.message,
+        });
+      })
+      .addCase(deleteUserThunk.pending, (state) => {
+        setPending({ state: state.requests.deleteUser });
+      })
+      .addCase(deleteUserThunk.fulfilled, (state, action) => {
+        setFulfilled({
+          state: state.requests.deleteUser,
+          payload: action.payload,
+        });
+      })
+      .addCase(deleteUserThunk.rejected, (state, action) => {
+        setRejected({
+          state: state.requests.deleteUser,
           errorMessage:
             (action.payload as string | undefined) ?? action.error.message,
         });

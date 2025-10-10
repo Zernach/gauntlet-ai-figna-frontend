@@ -5,7 +5,11 @@ import {
   createError,
   createReferrers,
   createUser,
+  deleteUser,
+  readAuthentication,
   readCloudVersions,
+  readUser,
+  updateAuthentication,
 } from '@/endpoints';
 import {
   CreateGauntletAnalyticEventsParams,
@@ -16,7 +20,15 @@ import {
   CreateGauntletReferrersResponse,
   CreateGauntletUserParams,
   CreateGauntletUserResponse,
+  DeleteGauntletUserParams,
+  DeleteGauntletUserResponse,
   GauntletCloudEndpointResponse,
+  ReadGauntletAuthenticationParams,
+  ReadGauntletAuthenticationResponse,
+  ReadGauntletUserParams,
+  ReadGauntletUserResponse,
+  UpdateGauntletAuthenticationParams,
+  UpdateGauntletAuthenticationResponse,
 } from '@/@landscapesupply/types/gauntletai';
 
 const getErrorMessage = (error: unknown) => {
@@ -84,6 +96,54 @@ export const readCloudVersionsThunk = createAsyncThunk<
 >('firstApp/readCloudVersions', async (_, thunkAPI) => {
   try {
     return await readCloudVersions();
+  } catch (error) {
+    return thunkAPI.rejectWithValue(getErrorMessage(error));
+  }
+});
+
+export const readAuthenticationThunk = createAsyncThunk<
+  ReadGauntletAuthenticationResponse,
+  ReadGauntletAuthenticationParams,
+  { rejectValue: string }
+>('firstApp/readAuthentication', async (params, thunkAPI) => {
+  try {
+    return await readAuthentication(params);
+  } catch (error) {
+    return thunkAPI.rejectWithValue(getErrorMessage(error));
+  }
+});
+
+export const updateAuthenticationThunk = createAsyncThunk<
+  UpdateGauntletAuthenticationResponse,
+  UpdateGauntletAuthenticationParams,
+  { rejectValue: string }
+>('firstApp/updateAuthentication', async (params, thunkAPI) => {
+  try {
+    return await updateAuthentication(params);
+  } catch (error) {
+    return thunkAPI.rejectWithValue(getErrorMessage(error));
+  }
+});
+
+export const readUserThunk = createAsyncThunk<
+  ReadGauntletUserResponse,
+  ReadGauntletUserParams,
+  { rejectValue: string }
+>('firstApp/readUser', async (params, thunkAPI) => {
+  try {
+    return await readUser(params);
+  } catch (error) {
+    return thunkAPI.rejectWithValue(getErrorMessage(error));
+  }
+});
+
+export const deleteUserThunk = createAsyncThunk<
+  DeleteGauntletUserResponse,
+  DeleteGauntletUserParams,
+  { rejectValue: string }
+>('firstApp/deleteUser', async (params, thunkAPI) => {
+  try {
+    return await deleteUser(params);
   } catch (error) {
     return thunkAPI.rejectWithValue(getErrorMessage(error));
   }

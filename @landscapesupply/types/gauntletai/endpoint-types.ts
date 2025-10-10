@@ -62,6 +62,59 @@ export type CreateGauntletUserResponse = ErrorResponse & {
 };
 
 /*
+ * ReadAuthentication
+ */
+export type ReadGauntletAuthenticationParams = {
+  sessionToken: string;
+};
+
+export type ReadGauntletAuthenticationResponse = ErrorResponse & {
+  isValid: boolean;
+  user?: GauntletUserType;
+  reason?: string;
+};
+
+/*
+ * UpdateAuthentication
+ */
+export type UpdateGauntletAuthenticationParams = {
+  refreshToken: string | null;
+};
+
+export type UpdateGauntletAuthenticationResponse = ErrorResponse & {
+  ok: boolean;
+  accessToken?: string;
+  refreshToken?: string;
+  error?: string;
+};
+
+/*
+ * ReadUser
+ */
+export type ReadGauntletUserParams = {
+  userId?: GauntletUserType['userId'];
+  email?: GauntletUserType['email'];
+  appleUuid?: GauntletUserType['appleUuid'];
+  googleUuid?: GauntletUserType['googleUuid'];
+};
+
+export type ReadGauntletUserResponse = ErrorResponse & {
+  user: GauntletUserType | null;
+};
+
+/*
+ * DeleteUser
+ */
+export type DeleteGauntletUserParams = {
+  identityToken: string | null;
+  nonce: string;
+};
+
+export type DeleteGauntletUserResponse = ErrorResponse & {
+  isDeleted: boolean;
+};
+
+/*
  * CloudEndpoint
  */
 export type GauntletCloudEndpointResponse = ErrorResponse & {

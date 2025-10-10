@@ -7,7 +7,15 @@ import {
   CreateGauntletReferrersResponse,
   CreateGauntletUserParams,
   CreateGauntletUserResponse,
+  DeleteGauntletUserParams,
+  DeleteGauntletUserResponse,
   GauntletCloudEndpointResponse,
+  ReadGauntletAuthenticationParams,
+  ReadGauntletAuthenticationResponse,
+  ReadGauntletUserParams,
+  ReadGauntletUserResponse,
+  UpdateGauntletAuthenticationParams,
+  UpdateGauntletAuthenticationResponse,
 } from '@/@landscapesupply/types/gauntletai';
 import { requestCloud } from '@/scripts/requestCloud';
 
@@ -45,4 +53,36 @@ export const readCloudVersions = () =>
   requestCloud<GauntletCloudEndpointResponse>({
     endpoint: '/cloud',
     method: 'GET',
+  });
+
+export const readAuthentication = (
+  params: ReadGauntletAuthenticationParams,
+) =>
+  requestCloud<ReadGauntletAuthenticationResponse>({
+    endpoint: '/read-authentication',
+    method: 'POST',
+    params,
+  });
+
+export const updateAuthentication = (
+  params: UpdateGauntletAuthenticationParams,
+) =>
+  requestCloud<UpdateGauntletAuthenticationResponse>({
+    endpoint: '/update-authentication',
+    method: 'POST',
+    params,
+  });
+
+export const readUser = (params: ReadGauntletUserParams) =>
+  requestCloud<ReadGauntletUserResponse>({
+    endpoint: '/read-user',
+    method: 'POST',
+    params,
+  });
+
+export const deleteUser = (params: DeleteGauntletUserParams) =>
+  requestCloud<DeleteGauntletUserResponse>({
+    endpoint: '/delete-user',
+    method: 'POST',
+    params,
   });
