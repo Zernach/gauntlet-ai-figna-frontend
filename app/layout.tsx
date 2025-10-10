@@ -1,0 +1,27 @@
+import './globals.css';
+
+import type { Metadata } from 'next';
+import type { ReactNode } from 'react';
+import { Providers } from './providers';
+
+export const metadata: Metadata = {
+  title: 'Gauntlet OAuth Starter',
+  description: 'Minimal Next.js app with Google OAuth ready to configure',
+};
+
+export default function RootLayout({
+  children,
+}: Readonly<{
+  children: ReactNode;
+}>) {
+  return (
+    <html lang='en'>
+      <head>
+        <link rel='icon' href='/favicon.ico' />
+      </head>
+      <body>
+        <Providers>{children}</Providers>
+      </body>
+    </html>
+  );
+}
