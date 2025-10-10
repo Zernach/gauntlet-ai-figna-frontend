@@ -47,7 +47,7 @@ export type FirstSliceState = {
   requests: FirstSliceRequestsState;
 };
 
-const createInitialRequestsState = (): FirstSliceRequestsState => ({
+export const createInitialRequestsState = (): FirstSliceRequestsState => ({
   createAnalyticEvents:
     createAsyncInitialState<CreateGauntletAnalyticEventsResponse>(),
   createReferrers: createAsyncInitialState<CreateGauntletReferrersResponse>(),

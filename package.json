@@ -22,6 +22,10 @@
   "description": "Minimal Next.js app with Google OAuth ready for configuration",
   "dependencies": {
     "@reduxjs/toolkit": "^2.9.0",
+    "dotenv": "^17.2.3",
+    "expo": "^54.0.13",
+    "expo-crypto": "^15.0.7",
+    "expo-modules-core": "^3.0.21",
     "next": "^14.2.5",
     "next-auth": "^4.24.11",
     "react": "^18.3.1",

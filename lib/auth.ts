@@ -1,13 +1,11 @@
+import { CONFIG, ENVIRONMENT } from '@/constants/config';
 import type { NextAuthOptions } from 'next-auth';
 import GoogleProvider from 'next-auth/providers/google';
 
-const googleClientId = process.env.GOOGLE_CLIENT_ID;
-const googleClientSecret = process.env.GOOGLE_CLIENT_SECRET;
-
-if (!googleClientId || !googleClientSecret) {
+if (!CONFIG.GOOGLE_CLIENT_ID || !CONFIG.GOOGLE_CLIENT_SECRET) {
   const hint =
     'Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in your environment. You can copy .env.example to .env.local.';
-  if (process.env.NODE_ENV === 'production') {
+  if (ENVIRONMENT === 'prod') {
     throw new Error(`Missing Google OAuth credentials. ${hint}`);
   } else {
     console.warn(`⚠️  ${hint}`);
@@ -17,25 +15,33 @@ if (!googleClientId || !googleClientSecret) {
 export const authOptions: NextAuthOptions = {
   providers: [
     GoogleProvider({
-      clientId: googleClientId ?? '',
-      clientSecret: googleClientSecret ?? ''
-    })
+      clientId: CONFIG.GOOGLE_CLIENT_ID ?? '',
+      clientSecret: CONFIG.GOOGLE_CLIENT_SECRET ?? '',
+    }),
   ],
   session: {
-    strategy: 'jwt'
+    strategy: 'jwt',
   },
   callbacks: {
     async jwt({ token, account }) {
       if (account) {
         token.accessToken = account.access_token;
+        if (account.provider === 'google' && account.providerAccountId) {
+          token.googleId = account.providerAccountId;
+        }
       }
       return token;
     },
     async session({ session, token }) {
-      if (session.user && token.accessToken) {
-        session.accessToken = token.accessToken as string;
+      if (session.user) {
+        if (token.accessToken) {
+          session.accessToken = token.accessToken as string;
+        }
+        if (typeof token.googleId === 'string') {
+          session.user.googleUuid = token.googleId;
+        }
       }
       return session;
-    }
-  }
+    },
+  },
 };

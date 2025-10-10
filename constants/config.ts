@@ -14,16 +14,22 @@ const getEnvironment = (): ENV_TYPE => {
 export const ENVIRONMENT = getEnvironment();
 export const IS_PRODUCTION = ENVIRONMENT === PROD;
 
-const API_PATH = '/api/wallpaper';
+const API_PATH = '/api/gauntlet';
 
 export const CONFIG = {
   [LOCAL]: {
     CLOUD_BASE_URL: `http://localhost:3000${API_PATH}`,
+    GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
+    GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET,
   },
   [DEV]: {
     CLOUD_BASE_URL: `https://api-dev.archlife.org${API_PATH}`,
+    GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
+    GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET,
   },
   [PROD]: {
     CLOUD_BASE_URL: `https://api.archlife.org${API_PATH}`,
+    GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
+    GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET,
   },
 }[ENVIRONMENT];

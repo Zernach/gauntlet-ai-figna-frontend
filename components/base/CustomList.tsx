@@ -1,9 +1,10 @@
+import { ENVIRONMENT } from '@/constants/config';
 import React from 'react';
 import {
   FlatList,
   FlatListProps,
   ScrollView,
-  ScrollViewProps
+  ScrollViewProps,
 } from 'react-native';
 
 type WithFlatListProps<ItemT> = {
@@ -20,9 +21,7 @@ export type CustomListProps<ItemT> =
   | WithFlatListProps<ItemT>
   | WithScrollViewProps;
 
-export function CustomList<ItemT = unknown>(
-  props: CustomListProps<ItemT>
-) {
+export function CustomList<ItemT = unknown>(props: CustomListProps<ItemT>) {
   if ('flatListProps' in props && props.flatListProps) {
     return <FlatList {...props.flatListProps} />;
   }
@@ -31,9 +30,9 @@ export function CustomList<ItemT = unknown>(
     return <ScrollView {...props.scrollViewProps} />;
   }
 
-  if (process.env.NODE_ENV !== 'production') {
+  if (ENVIRONMENT !== 'prod') {
     throw new Error(
-      'CustomList requires either flatListProps or scrollViewProps.'
+      'CustomList requires either flatListProps or scrollViewProps.',
     );
   }
 
@@ -41,4 +40,3 @@ export function CustomList<ItemT = unknown>(
 }
 
 CustomList.displayName = 'CustomList';
-
