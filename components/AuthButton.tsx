@@ -1,55 +1,48 @@
-'use client';
-import { useCallback, useEffect, useRef } from 'react';
-import { signIn, signOut, useSession } from 'next-auth/react';
-import { useAppDispatch } from '@/lib/redux/hooks';
-import { createUserThunk, readUserThunk } from '@/lib/redux/thunks';
+import { useCallback } from 'react';
+import { View, StyleSheet } from 'react-native';
+// TODO: Replace with expo-auth-session for OAuth
+// import * as AuthSession from 'expo-auth-session';
+// import * as WebBrowser from 'expo-web-browser';
+import { useAppDispatch, useAppSelector } from '@/lib/redux/hooks';
+import { createUserThunk } from '@/lib/redux/thunks';
 import { generateRandomUuid } from '@/scripts/generateRandomUuid';
 import { persistor, resetReduxState } from '@/lib/redux/store';
+import { CustomButton, CustomText } from '@/components/base';
+import { COLORS } from '@/constants/colors';
+import { REDUX_SLICES } from '@/types/types';
+
+// WebBrowser.maybeCompleteAuthSession();
+
+const styles = StyleSheet.create({
+  authState: {
+    gap: 12,
+    alignItems: 'center',
+  },
+  ctaButton: {
+    borderRadius: 999,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    minHeight: 48,
+  },
+  ctaButtonGradient: {
+    backgroundColor: COLORS.accentPrimary,
+  },
+  ctaButtonText: {
+    color: COLORS.background,
+    fontWeight: '600' as const,
+  },
+  signedInText: {
+    color: COLORS.foreground,
+  },
+});
 
 export function AuthButton() {
   const dispatch = useAppDispatch();
-  const { data: session, status } = useSession();
-  const processedEmailRef = useRef<string | null>(null);
-  const isProcessingRef = useRef(false);
-  const email = session?.user?.email ?? null;
-  const googleUuid = session?.user?.googleUuid ?? null;
-  const name = session?.user?.name ?? undefined;
 
-  useEffect(() => {
-    if (status !== 'authenticated' || !email) {
-      processedEmailRef.current = null;
-      isProcessingRef.current = false;
-      return;
-    }
-    if (processedEmailRef.current === email || isProcessingRef.current) {
-      return;
-    }
-    isProcessingRef.current = true;
-    const ensureUserExists = async () => {
-      try {
-        const readResponse = await dispatch(readUserThunk({ email })).unwrap();
-        if (!readResponse.user) {
-          await dispatch(
-            createUserThunk({
-              user: {
-                userId: generateRandomUuid(),
-                email,
-                googleUuid: googleUuid ?? undefined,
-                name,
-              },
-            }),
-          ).unwrap();
-        }
-        processedEmailRef.current = email;
-      } catch (error) {
-        console.error('Failed to synchronize Google user', error);
-        processedEmailRef.current = null;
-      } finally {
-        isProcessingRef.current = false;
-      }
-    };
-    void ensureUserExists();
-  }, [dispatch, email, googleUuid, name, status]);
+  // For now, we'll use a placeholder user system
+  const currentUser = useAppSelector(
+    (state) => state[REDUX_SLICES.FIRST_SLICE].user,
+  );
 
   const resetReduxStore = useCallback(() => {
     dispatch(resetReduxState());
@@ -58,45 +51,43 @@ export function AuthButton() {
     });
   }, [dispatch]);
 
-  useEffect(() => {
-    if (status === 'unauthenticated') {
-      resetReduxStore();
-    }
-  }, [resetReduxStore, status]);
+  const handleSignIn = useCallback(() => {
+    // TODO: Implement Google OAuth with expo-auth-session
+    // For now, create a demo user
+    const demoUser = {
+      userId: generateRandomUuid(),
+      email: 'demo@example.com',
+      name: 'Demo User',
+    };
+    dispatch(createUserThunk({ user: demoUser }));
+  }, [dispatch]);
 
   const handleSignOut = useCallback(() => {
     resetReduxStore();
-    void signOut();
   }, [resetReduxStore]);
 
-  if (status === 'loading') {
+  if (currentUser) {
     return (
-      <button type='button' className='cta' disabled>
-        Checking session…
-      </button>
-    );
-  }
-
-  if (session) {
-    return (
-      <div className='auth-state'>
-        <p>Signed in as {'Google user'}</p>
-        <button type='button' className='cta' onClick={handleSignOut}>
-          Sign out
-        </button>
-      </div>
+      <View style={styles.authState}>
+        <CustomText style={styles.signedInText}>
+          Signed in as {currentUser.name || 'User'}
+        </CustomText>
+        <CustomButton
+          label='Sign out'
+          onPress={handleSignOut}
+          style={[styles.ctaButton, styles.ctaButtonGradient]}
+          textStyle={styles.ctaButtonText}
+        />
+      </View>
     );
   }
 
   return (
-    <button
-      type='button'
-      className='cta'
-      onClick={() => {
-        void signIn('google');
-      }}
-    >
-      Continue with Google
-    </button>
+    <CustomButton
+      label='Continue with Google (Demo)'
+      onPress={handleSignIn}
+      style={[styles.ctaButton, styles.ctaButtonGradient]}
+      textStyle={styles.ctaButtonText}
+    />
   );
 }
