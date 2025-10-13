@@ -20,6 +20,12 @@ export const COLORS = {
   ctaShadow: 'rgba(56, 189, 248, 0.25)',
   footerMuted: 'rgba(148, 163, 184, 0.75)',
   codeBackground: 'rgba(15, 23, 42, 0.7)',
+  // Canvas-specific colors
+  primary: '#3b82f6',
+  success: '#10b981',
+  warning: '#f59e0b',
+  error: '#ef4444',
+  border: '#e5e7eb',
 } as const;
 
 export const GRADIENTS = {

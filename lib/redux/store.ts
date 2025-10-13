@@ -20,18 +20,19 @@ import {
 } from 'redux-persist';
 import storage from 'redux-persist/lib/storage';
 import { REDUX_SLICES } from '@/types/types';
-import {
-  createInitialRequestsState,
-  firstSliceReducer,
-} from './slices/firstSlice';
-import type { FirstSliceState } from './slices/firstSlice';
-import { secondSliceReducer } from './slices/secondSlice';
+import { canvasSliceReducer } from './slices/canvasSlice';
+import { userSliceReducer } from './slices/userSlice';
+import { presenceSliceReducer } from './slices/presenceSlice';
+import { websocketSliceReducer } from './slices/websocketSlice';
+import { websocketMiddleware } from './middleware/websocketMiddleware';
 
 export const resetReduxState = createAction('root/resetReduxState');
 
 const combinedReducer = combineReducers({
-  [REDUX_SLICES.FIRST_SLICE]: firstSliceReducer,
-  [REDUX_SLICES.SECOND_SLICE]: secondSliceReducer,
+  [REDUX_SLICES.CANVAS]: canvasSliceReducer,
+  [REDUX_SLICES.USER]: userSliceReducer,
+  [REDUX_SLICES.PRESENCE]: presenceSliceReducer,
+  [REDUX_SLICES.WEBSOCKET]: websocketSliceReducer,
 });
 
 type RootReducerState = ReturnType<typeof combinedReducer>;
@@ -47,32 +48,6 @@ const rootReducer = (
   return combinedReducer(state, action);
 };
 
-const ensureFirstSliceRequests = (
-  state: FirstSliceState | undefined,
-): FirstSliceState | undefined => {
-  if (!state) {
-    return state;
-  }
-
-  const defaultRequests = createInitialRequestsState();
-  const existingRequests =
-    state.requests && typeof state.requests === 'object'
-      ? state.requests
-      : undefined;
-
-  return {
-    ...state,
-    requests: {
-      ...defaultRequests,
-      ...(existingRequests ?? {}),
-    },
-  };
-};
-
-type PersistedRootState = Record<string, unknown> & {
-  _persist?: unknown;
-};
-
 const applyMigrations: PersistConfig<
   RootReducerState
 >['migrate'] = async (persistedState) => {
@@ -80,23 +55,8 @@ const applyMigrations: PersistConfig<
     return persistedState;
   }
 
-  const nextState: PersistedRootState = {
-    ...(persistedState as PersistedRootState),
-  };
-
-  const firstSliceState = (
-    REDUX_SLICES.FIRST_SLICE in nextState
-      ? nextState[REDUX_SLICES.FIRST_SLICE]
-      : undefined
-  ) as FirstSliceState | undefined;
-
-  if (firstSliceState !== undefined) {
-    nextState[REDUX_SLICES.FIRST_SLICE] = ensureFirstSliceRequests(
-      firstSliceState,
-    );
-  }
-
-  return nextState as unknown as PersistedState;
+  // No migrations needed for now
+  return persistedState;
 };
 
 const persistConfig: PersistConfig<RootReducerState> = {
@@ -114,7 +74,7 @@ export const store = configureStore({
       serializableCheck: {
         ignoredActions: [FLUSH, REHYDRATE, PAUSE, PERSIST, PURGE, REGISTER],
       },
-    }),
+    }).concat(websocketMiddleware),
 });
 
 export const persistor = persistStore(store);

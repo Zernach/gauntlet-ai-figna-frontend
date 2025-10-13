@@ -399,7 +399,7 @@ export type GetCanvasObjectResponse = ErrorResponse & {
 
 /*
  * WebSocket: Create a new shape/object on canvas
- * Send via WebSocket with type: 'OBJECT_CREATED'
+ * Send via WebSocket with type: 'SHAPE_CREATE'
  */
 export type CreateCanvasObjectParams = {
   canvasId: string;
@@ -412,7 +412,7 @@ export type CreateCanvasObjectResponse = ErrorResponse & {
 
 /*
  * WebSocket: Update an existing shape
- * Send via WebSocket with type: 'OBJECT_UPDATED'
+ * Send via WebSocket with type: 'SHAPE_UPDATE'
  */
 export type UpdateCanvasObjectParams = {
   canvasId: string;
@@ -426,7 +426,7 @@ export type UpdateCanvasObjectResponse = ErrorResponse & {
 
 /*
  * WebSocket: Delete a shape
- * Send via WebSocket with type: 'OBJECT_DELETED'
+ * Send via WebSocket with type: 'SHAPE_DELETE'
  */
 export type DeleteCanvasObjectParams = {
   canvasId: string;
@@ -439,7 +439,7 @@ export type DeleteCanvasObjectResponse = ErrorResponse & {
 
 /*
  * WebSocket: Batch create/update/delete operations
- * Send via WebSocket with type: 'OBJECTS_BATCH'
+ * Send via WebSocket with type: 'SHAPES_BATCH_UPDATE'
  */
 export type BatchCanvasOperationsParams = {
   canvasId: string;
@@ -709,16 +709,23 @@ export type WSConnectionMessage = {
 
 /**
  * Real-time canvas operation messages
+ * ALIGNED with frontend types/websocket.ts
  */
 export type WSCanvasOperationMessage = {
-  type: 'OBJECT_CREATED' | 'OBJECT_UPDATED' | 'OBJECT_DELETED' | 'OBJECTS_BATCH';
+  type: 'SHAPE_CREATE' | 'SHAPE_UPDATE' | 'SHAPE_DELETE' | 'SHAPES_BATCH_UPDATE';
   userId: string;
   canvasId: string;
+  messageId: string;
   data: {
-    objectId?: string;
-    object?: GauntletCanvasObject;
+    shapeId?: string;
+    shape?: GauntletCanvasObject;
     updates?: Partial<GauntletCanvasObject>;
-    objects?: GauntletCanvasObject[];
+    operations?: Array<{
+      type: 'create' | 'update' | 'delete';
+      shapeId: string;
+      shape?: GauntletCanvasObject;
+      updates?: Partial<GauntletCanvasObject>;
+    }>;
   };
   timestamp: number;
 };

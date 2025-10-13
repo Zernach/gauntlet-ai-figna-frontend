@@ -4,12 +4,13 @@ import { View, StyleSheet } from 'react-native';
 // import * as AuthSession from 'expo-auth-session';
 // import * as WebBrowser from 'expo-web-browser';
 import { useAppDispatch, useAppSelector } from '@/lib/redux/hooks';
-import { createUserThunk } from '@/lib/redux/thunks';
+import { setUser, clearUser } from '@/lib/redux/slices/userSlice';
 import { generateRandomUuid } from '@/scripts/generateRandomUuid';
 import { persistor, resetReduxState } from '@/lib/redux/store';
 import { CustomButton, CustomText } from '@/components/base';
 import { COLORS } from '@/constants/colors';
 import { REDUX_SLICES } from '@/types/types';
+import type { User } from '@/types/user';
 
 // WebBrowser.maybeCompleteAuthSession();
 
@@ -38,14 +39,13 @@ const styles = StyleSheet.create({
 
 export function AuthButton() {
   const dispatch = useAppDispatch();
-
-  // For now, we'll use a placeholder user system
   const currentUser = useAppSelector(
-    (state) => state[REDUX_SLICES.FIRST_SLICE].user,
+    (state) => state[REDUX_SLICES.USER]?.currentUser,
   );
 
   const resetReduxStore = useCallback(() => {
     dispatch(resetReduxState());
+    dispatch(clearUser());
     persistor.flush().catch((error) => {
       console.error('Failed to flush persisted state after reset', error);
     });
@@ -54,12 +54,20 @@ export function AuthButton() {
   const handleSignIn = useCallback(() => {
     // TODO: Implement Google OAuth with expo-auth-session
     // For now, create a demo user
-    const demoUser = {
-      userId: generateRandomUuid(),
-      email: 'demo@example.com',
-      name: 'Demo User',
+    const userId = generateRandomUuid();
+    const email = 'demo@example.com';
+    const name = 'Demo User';
+
+    const userData: User = {
+      id: userId,
+      name,
+      email,
+      color: `#${Math.floor(Math.random() * 16777215).toString(16).padStart(6, '0')}`,
+      isOnline: true,
+      lastSeen: Date.now(),
+      createdAt: Date.now(),
     };
-    dispatch(createUserThunk({ user: demoUser }));
+    dispatch(setUser(userData));
   }, [dispatch]);
 
   const handleSignOut = useCallback(() => {
@@ -70,7 +78,7 @@ export function AuthButton() {
     return (
       <View style={styles.authState}>
         <CustomText style={styles.signedInText}>
-          Signed in as {currentUser.name || 'User'}
+          Signed in as {currentUser.name}
         </CustomText>
         <CustomButton
           label='Sign out'
