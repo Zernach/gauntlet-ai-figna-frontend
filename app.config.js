@@ -4,10 +4,10 @@ module.exports = {
     slug: "gauntlet-ai",
     version: "1.0.0",
     orientation: "portrait",
-    icon: "./public/gauntlet-ai.webp",
+    icon: "./public/gauntlet-ai.png",
     userInterfaceStyle: "dark",
     splash: {
-      image: "./public/gauntlet-ai.webp",
+      image: "./public/gauntlet-ai.png",
       resizeMode: "contain",
       backgroundColor: "#000000"
     },
@@ -20,7 +20,7 @@ module.exports = {
     },
     android: {
       adaptiveIcon: {
-        foregroundImage: "./public/gauntlet-ai.webp",
+        foregroundImage: "./public/gauntlet-ai.png",
         backgroundColor: "#000000"
       },
       package: "com.archlife.gauntletai"
@@ -31,7 +31,8 @@ module.exports = {
     },
     plugins: [
       "expo-router",
-      "expo-build-properties"
+      "expo-build-properties",
+      "expo-dev-client"
     ],
     scheme: "gauntlet-ai",
     experiments: {

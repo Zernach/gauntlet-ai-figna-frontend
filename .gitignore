@@ -6,7 +6,12 @@ node_modules/
 # Next.js
 .next/
 out/
-
+dist/
+ios
+android
+.expo
+devices.json
+.expo/
 # Env files
 .env.local
 .env.development.local

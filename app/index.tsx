@@ -69,6 +69,9 @@ export default function HomePage() {
                 <CustomText style={styles.subtitle}>
                     Project Starter by Archlife Industries
                 </CustomText>
+                <CustomText style={styles.subtitle}>
+                    Powered by React Native
+                </CustomText>
                 <AuthButton />
                 <View style={styles.userJson}>
                     <CustomText variant='caption'>{currentUserJson}</CustomText>
