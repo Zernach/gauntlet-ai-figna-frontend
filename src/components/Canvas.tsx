@@ -3,9 +3,9 @@ import { Stage, Layer, Rect, Circle, Text as KonvaText } from 'react-konva'
 import Konva from 'konva'
 import { supabase } from '../lib/supabase'
 
-// Canvas constants
-const CANVAS_WIDTH = 5000
-const CANVAS_HEIGHT = 5000
+// Canvas constants - Extremely expansive canvas
+const CANVAS_WIDTH = 50000
+const CANVAS_HEIGHT = 50000
 const VIEWPORT_WIDTH = window.innerWidth
 const VIEWPORT_HEIGHT = window.innerHeight
 const DEFAULT_SHAPE_SIZE = 100
@@ -61,6 +61,9 @@ export default function Canvas() {
   const [isPanning, setIsPanning] = useState(false)
   const wsRef = useRef<WebSocket | null>(null)
   const cursorThrottleRef = useRef<number>(0)
+  const dragThrottleRef = useRef<number>(0)
+  const dragPositionRef = useRef<{ shapeId: string; x: number; y: number } | null>(null)
+  const isDraggingShapeRef = useRef<boolean>(false)
 
   // Initialize canvas and WebSocket
   useEffect(() => {
@@ -82,37 +85,19 @@ export default function Canvas() {
         // Get API URL
         const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api'
 
-        // Try to get existing canvas or create new one
+        // Get the global canvas (will be created automatically if it doesn't exist)
         const response = await fetch(`${API_URL}/canvas`, {
           headers: {
             'Authorization': `Bearer ${session.access_token}`,
           },
         })
 
-        if (!response.ok) throw new Error('Failed to fetch canvases')
+        if (!response.ok) throw new Error('Failed to fetch global canvas')
 
         const result = await response.json()
-        let canvas
+        const canvas = result.data
 
-        if (result.data && result.data.length > 0) {
-          canvas = result.data[0]
-        } else {
-          // Create a new canvas
-          const createResponse = await fetch(`${API_URL}/canvas`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${session.access_token}`,
-            },
-            body: JSON.stringify({ name: 'Global Canvas', isPublic: true }),
-          })
-
-          if (!createResponse.ok) throw new Error('Failed to create canvas')
-
-          const createResult = await createResponse.json()
-          canvas = createResult.data
-        }
-
+        console.log('✅ Connected to global canvas:', canvas.name)
         setCanvasId(canvas.id)
         connectWebSocket(canvas.id, session.access_token)
       } catch (error) {
@@ -170,7 +155,14 @@ export default function Canvas() {
       case 'SHAPE_CREATE':
         // New shape created
         if (message.payload.shape) {
-          setShapes(prev => [...prev, message.payload.shape])
+          setShapes(prev => {
+            // Check if shape already exists to prevent duplicates
+            const exists = prev.some(s => s.id === message.payload.shape.id)
+            if (exists) {
+              return prev
+            }
+            return [...prev, message.payload.shape]
+          })
         }
         break
 
@@ -306,10 +298,30 @@ export default function Canvas() {
     setSelectedId(id)
   }, [shapes, currentUserId])
 
-  // Handle shape drag
-  const handleShapeDrag = useCallback((id: string, x: number, y: number) => {
+  // Handle shape drag start
+  const handleShapeDragStart = useCallback((id: string) => {
     if (!wsRef.current) return
 
+    // Set dragging flag to prevent stage click deselection
+    isDraggingShapeRef.current = true
+
+    // Select the shape being dragged
+    setSelectedId(id)
+
+    // Send lock message immediately
+    wsRef.current.send(JSON.stringify({
+      type: 'SHAPE_UPDATE',
+      payload: {
+        shapeId: id,
+        updates: {
+          isLocked: true,
+        },
+      },
+    }))
+  }, [])
+
+  // Handle shape drag - optimistic update with throttled WebSocket sync
+  const handleShapeDrag = useCallback((id: string, x: number, y: number) => {
     const shape = shapes.find(s => s.id === id)
     if (!shape) return
 
@@ -329,34 +341,71 @@ export default function Canvas() {
       constrainedY = Math.max(0, Math.min(y, CANVAS_HEIGHT - height))
     }
 
-    // Lock shape and update position
-    wsRef.current.send(JSON.stringify({
-      type: 'SHAPE_UPDATE',
-      payload: {
-        shapeId: id,
-        updates: {
-          x: constrainedX,
-          y: constrainedY,
-          isLocked: true,
+    // Optimistic local update - update immediately for smooth dragging
+    setShapes(prev => prev.map(s =>
+      s.id === id ? { ...s, x: constrainedX, y: constrainedY } : s
+    ))
+
+    // Store the drag position
+    dragPositionRef.current = { shapeId: id, x: constrainedX, y: constrainedY }
+
+    // Throttle WebSocket updates to reduce network traffic (every 50ms)
+    const now = Date.now()
+    if (wsRef.current && now - dragThrottleRef.current > 50) {
+      dragThrottleRef.current = now
+
+      wsRef.current.send(JSON.stringify({
+        type: 'SHAPE_UPDATE',
+        payload: {
+          shapeId: id,
+          updates: {
+            x: constrainedX,
+            y: constrainedY,
+          },
         },
-      },
-    }))
+      }))
+    }
   }, [shapes])
 
-  // Handle shape drag end (unlock)
+  // Handle shape drag end (unlock and send final position)
   const handleShapeDragEnd = useCallback((id: string) => {
     if (!wsRef.current) return
 
-    // Unlock shape
-    wsRef.current.send(JSON.stringify({
-      type: 'SHAPE_UPDATE',
-      payload: {
-        shapeId: id,
-        updates: {
-          isLocked: false,
+    // Clear dragging flag after a brief delay to prevent immediate stage click
+    setTimeout(() => {
+      isDraggingShapeRef.current = false
+    }, 10)
+
+    // Send final position and unlock shape
+    const finalPos = dragPositionRef.current
+    if (finalPos && finalPos.shapeId === id) {
+      wsRef.current.send(JSON.stringify({
+        type: 'SHAPE_UPDATE',
+        payload: {
+          shapeId: id,
+          updates: {
+            x: finalPos.x,
+            y: finalPos.y,
+            isLocked: false,
+          },
         },
-      },
-    }))
+      }))
+    } else {
+      // Just unlock if no position stored
+      wsRef.current.send(JSON.stringify({
+        type: 'SHAPE_UPDATE',
+        payload: {
+          shapeId: id,
+          updates: {
+            isLocked: false,
+          },
+        },
+      }))
+    }
+
+    // Clear drag position
+    dragPositionRef.current = null
+    dragThrottleRef.current = 0
   }, [])
 
   // Handle shape deletion
@@ -412,6 +461,11 @@ export default function Canvas() {
 
   // Handle stage click (deselect)
   const handleStageClick = useCallback((e: any) => {
+    // Don't deselect if we just finished dragging a shape
+    if (isDraggingShapeRef.current) {
+      return
+    }
+
     // If clicking on empty stage, deselect
     if (e.target === e.target.getStage()) {
       setSelectedId(null)
@@ -764,6 +818,7 @@ export default function Canvas() {
                   strokeWidth={strokeWidth}
                   onClick={() => !isPanning && handleShapeClick(shape.id)}
                   draggable={isDraggable}
+                  onDragStart={() => handleShapeDragStart(shape.id)}
                   onDragMove={(e) => {
                     handleShapeDrag(shape.id, e.target.x(), e.target.y())
                   }}
@@ -785,6 +840,7 @@ export default function Canvas() {
                 strokeWidth={strokeWidth}
                 onClick={() => !isPanning && handleShapeClick(shape.id)}
                 draggable={isDraggable}
+                onDragStart={() => handleShapeDragStart(shape.id)}
                 onDragMove={(e) => {
                   handleShapeDrag(shape.id, e.target.x(), e.target.y())
                 }}
