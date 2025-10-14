@@ -67,7 +67,6 @@ export default function Canvas() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const [currentUserEmail, setCurrentUserEmail] = useState<string>('')
   const [currentUserColor, setCurrentUserColor] = useState<string>('#3b82f6')
-  const [isPanning, setIsPanning] = useState(false)
   const [currentTime, setCurrentTime] = useState(Date.now()) // For countdown timers
   const wsRef = useRef<WebSocket | null>(null)
   const cursorThrottleRef = useRef<number>(0)
@@ -76,8 +75,99 @@ export default function Canvas() {
   const isDraggingShapeRef = useRef<boolean>(false)
   const shapesRef = useRef<Shape[]>([])
   const currentUserIdRef = useRef<string | null>(null)
+  const selectedIdRef = useRef<string | null>(null)
   const isDragMoveRef = useRef<boolean>(false)
   const isShapeDragActiveRef = useRef<boolean>(false) // Track if we're actively dragging a shape
+
+  // Zoom animation refs
+  const zoomAnimRafRef = useRef<number | null>(null)
+  const zoomAnimStartRef = useRef<number>(0)
+  const zoomFromScaleRef = useRef<number>(1)
+  const zoomToScaleRef = useRef<number>(1)
+  const zoomFromPosRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 })
+  const zoomToPosRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 })
+
+  // Easing function for smooth zoom
+  const easeInOutCubic = useCallback((t: number) => (
+    t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2
+  ), [])
+
+  const clampStagePosition = useCallback((scale: number, desired: { x: number; y: number }) => {
+    const scaledWidth = CANVAS_WIDTH * scale
+    const scaledHeight = CANVAS_HEIGHT * scale
+
+    // If content smaller than viewport, center it on that axis
+    let x: number
+    if (scaledWidth <= VIEWPORT_WIDTH) {
+      x = (VIEWPORT_WIDTH - scaledWidth) / 2
+    } else {
+      const minX = VIEWPORT_WIDTH - scaledWidth
+      const maxX = 0
+      x = Math.max(minX, Math.min(desired.x, maxX))
+    }
+
+    let y: number
+    if (scaledHeight <= VIEWPORT_HEIGHT) {
+      y = (VIEWPORT_HEIGHT - scaledHeight) / 2
+    } else {
+      const minY = VIEWPORT_HEIGHT - scaledHeight
+      const maxY = 0
+      y = Math.max(minY, Math.min(desired.y, maxY))
+    }
+
+    return { x, y }
+  }, [])
+
+  const computeAnchoredPosition = useCallback((oldScale: number, newScale: number, currentPos: { x: number; y: number }, anchorScreen: { x: number; y: number }) => {
+    // Convert anchor screen point to canvas coordinates using old scale/pos
+    const canvasPointX = (anchorScreen.x - currentPos.x) / oldScale
+    const canvasPointY = (anchorScreen.y - currentPos.y) / oldScale
+    // Compute new stage position so that the same canvas point stays under anchorScreen
+    const desiredX = anchorScreen.x - canvasPointX * newScale
+    const desiredY = anchorScreen.y - canvasPointY * newScale
+    return clampStagePosition(newScale, { x: desiredX, y: desiredY })
+  }, [clampStagePosition])
+
+  const cancelZoomAnimation = useCallback(() => {
+    if (zoomAnimRafRef.current != null) {
+      cancelAnimationFrame(zoomAnimRafRef.current)
+      zoomAnimRafRef.current = null
+    }
+  }, [])
+
+  const animateZoomTo = useCallback((targetScale: number, anchor: { x: number; y: number }, durationMs: number = 200) => {
+    cancelZoomAnimation()
+    const startScale = stageScale
+    const startPos = stagePos
+    const targetPos = computeAnchoredPosition(startScale, targetScale, startPos, anchor)
+
+    zoomAnimStartRef.current = performance.now()
+    zoomFromScaleRef.current = startScale
+    zoomToScaleRef.current = targetScale
+    zoomFromPosRef.current = startPos
+    zoomToPosRef.current = targetPos
+
+    const step = () => {
+      const now = performance.now()
+      const t = Math.min(1, (now - zoomAnimStartRef.current) / durationMs)
+      const k = easeInOutCubic(t)
+
+      const s = zoomFromScaleRef.current + (zoomToScaleRef.current - zoomFromScaleRef.current) * k
+      const x = zoomFromPosRef.current.x + (zoomToPosRef.current.x - zoomFromPosRef.current.x) * k
+      const y = zoomFromPosRef.current.y + (zoomToPosRef.current.y - zoomFromPosRef.current.y) * k
+
+      setStageScale(s)
+      setStagePos({ x, y })
+
+      if (t < 1) {
+        zoomAnimRafRef.current = requestAnimationFrame(step)
+      } else {
+        zoomAnimRafRef.current = null
+      }
+    }
+
+    zoomAnimRafRef.current = requestAnimationFrame(step)
+  }, [cancelZoomAnimation, computeAnchoredPosition, easeInOutCubic, stagePos, stageScale])
 
   // Keep refs in sync with state
   useEffect(() => {
@@ -87,6 +177,10 @@ export default function Canvas() {
   useEffect(() => {
     currentUserIdRef.current = currentUserId
   }, [currentUserId])
+
+  useEffect(() => {
+    selectedIdRef.current = selectedId
+  }, [selectedId])
 
   // Update current time every 100ms for countdown timers
   useEffect(() => {
@@ -317,6 +411,13 @@ export default function Canvas() {
             }
             return s
           }))
+
+          // If an auto-unlock happened for the currently selected shape, clear selection locally
+          const wasSelected = selectedIdRef.current && selectedIdRef.current === shape.id
+          const becameUnlocked = (!shape.locked_at && !shape.locked_by)
+          if (wasSelected && becameUnlocked) {
+            setSelectedId(null)
+          }
         }
         break
 
@@ -623,6 +724,10 @@ export default function Canvas() {
     // Clear drag position
     dragPositionRef.current = null
     dragThrottleRef.current = 0
+
+    // After dropping, unlock and deselect the shape
+    unlockShape(id)
+    setSelectedId(null)
   }, [])
 
   // Handle shape deletion
@@ -653,7 +758,7 @@ export default function Canvas() {
     setSelectedId(null)
   }, [])
 
-  // Handle keyboard shortcuts
+  // Handle keyboard shortcuts (Delete/Backspace/Escape only)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Delete' || e.key === 'Backspace') {
@@ -669,29 +774,15 @@ export default function Canvas() {
           unlockShape(selectedId)
         }
         setSelectedId(null)
-      } else if (e.key === ' ' && !isPanning) {
-        e.preventDefault()
-        setIsPanning(true)
-        document.body.style.cursor = 'grab'
-      }
-    }
-
-    const handleKeyUp = (e: KeyboardEvent) => {
-      if (e.key === ' ' && isPanning) {
-        e.preventDefault()
-        setIsPanning(false)
-        document.body.style.cursor = 'default'
       }
     }
 
     window.addEventListener('keydown', handleKeyDown)
-    window.addEventListener('keyup', handleKeyUp)
     return () => {
       window.removeEventListener('keydown', handleKeyDown)
-      window.removeEventListener('keyup', handleKeyUp)
       document.body.style.cursor = 'default'
     }
-  }, [handleDeleteShape, isPanning, selectedId, unlockShape])
+  }, [handleDeleteShape, selectedId, unlockShape])
 
   // Handle stage click (deselect)
   const handleStageClick = useCallback((e: any) => {
@@ -735,7 +826,7 @@ export default function Canvas() {
     }
   }, [])
 
-  // Handle zoom
+  // Handle zoom (wheel) - center-anchored and animated
   const handleWheel = useCallback((e: any) => {
     e.evt.preventDefault()
 
@@ -743,49 +834,32 @@ export default function Canvas() {
     if (!stage) return
 
     const oldScale = stage.scaleX()
-    const pointer = stage.getPointerPosition()
-
-    if (!pointer) return
-
-    const mousePointTo = {
-      x: (pointer.x - stage.x()) / oldScale,
-      y: (pointer.y - stage.y()) / oldScale,
-    }
-
     const direction = e.evt.deltaY > 0 ? -1 : 1
     const scaleBy = 1.05
     let newScale = direction > 0 ? oldScale * scaleBy : oldScale / scaleBy
-
-    // Constrain zoom level
     newScale = Math.max(0.1, Math.min(3, newScale))
 
-    const newPos = {
-      x: pointer.x - mousePointTo.x * newScale,
-      y: pointer.y - mousePointTo.y * newScale,
-    }
-
-    setStageScale(newScale)
-    setStagePos(newPos)
-  }, [])
+    const anchor = { x: VIEWPORT_WIDTH / 2, y: VIEWPORT_HEIGHT / 2 }
+    animateZoomTo(newScale, anchor, 150)
+  }, [animateZoomTo])
 
   // Handle zoom controls
   const handleZoomIn = useCallback(() => {
     const newScale = Math.min(stageScale * 1.2, 3)
-    setStageScale(newScale)
-  }, [stageScale])
+    const anchor = { x: VIEWPORT_WIDTH / 2, y: VIEWPORT_HEIGHT / 2 }
+    animateZoomTo(newScale, anchor, 200)
+  }, [animateZoomTo, stageScale])
 
   const handleZoomOut = useCallback(() => {
     const newScale = Math.max(stageScale / 1.2, 0.1)
-    setStageScale(newScale)
-  }, [stageScale])
+    const anchor = { x: VIEWPORT_WIDTH / 2, y: VIEWPORT_HEIGHT / 2 }
+    animateZoomTo(newScale, anchor, 200)
+  }, [animateZoomTo, stageScale])
 
   const handleResetView = useCallback(() => {
-    setStageScale(1)
-    setStagePos({
-      x: VIEWPORT_WIDTH / 2 - CANVAS_WIDTH / 2,
-      y: VIEWPORT_HEIGHT / 2 - CANVAS_HEIGHT / 2
-    })
-  }, [])
+    const anchor = { x: VIEWPORT_WIDTH / 2, y: VIEWPORT_HEIGHT / 2 }
+    animateZoomTo(1, anchor, 250)
+  }, [animateZoomTo])
 
   // Memoize shape rendering props to avoid recalculating on every render
   const shapeRenderProps = useMemo(() => {
@@ -794,6 +868,7 @@ export default function Canvas() {
       const remainingSeconds = getRemainingLockSeconds(shape.locked_at)
       // Treat as locked whenever locked_by exists; unlock will be delivered by server.
       const isLocked = !!shape.locked_by
+      const isLockedByOther = isLocked && shape.locked_by !== currentUserId
 
       // Locked state takes precedence: show locker's color when locked by someone (including self)
       const strokeColor = isLocked && shape.locked_by
@@ -803,17 +878,19 @@ export default function Canvas() {
           : '#505050'
       // Increase stroke width for locked shapes to make them more visible (4px instead of 2px)
       const strokeWidth = isSelected ? 4 : isLocked ? 4 : 1
-      const isDraggable = !isPanning && (!isLocked || shape.locked_by === currentUserId)
+      const isDraggable = (!isLocked || shape.locked_by === currentUserId)
+      const isPressable = !isLockedByOther
 
       return {
         shape,
         strokeColor,
         strokeWidth,
+        isPressable,
         isDraggable,
         remainingSeconds,
       }
     })
-  }, [shapes, selectedId, currentTime, isPanning, currentUserId, currentUserColor, getRemainingLockSeconds, getUserColor])
+  }, [shapes, selectedId, currentTime, currentUserId, currentUserColor, getRemainingLockSeconds, getUserColor])
 
   // Show authentication prompt if not connected
   if (!currentUserId || !canvasId || !wsRef.current) {
@@ -861,125 +938,109 @@ export default function Canvas() {
 
   return (
     <div style={{ width: '100%', height: '100%', position: 'relative', overflow: 'hidden', backgroundColor: '#0a0a0a' }}>
-      {/* Canvas Controls */}
-      <div style={{
-        position: 'absolute',
-        top: '20px',
-        left: '20px',
-        zIndex: 10,
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '8px',
-        backgroundColor: '#1a1a1a',
-        padding: '12px',
-        borderRadius: '8px',
-        boxShadow: '0 2px 8px rgba(0,0,0,0.5)',
-        border: '1px solid #404040',
-      }}>
-        <button
-          onClick={handleAddShape}
-          style={{
-            padding: '8px 16px',
-            backgroundColor: '#72fa41',
-            color: '#000000',
-            border: 'none',
-            borderRadius: '6px',
-            cursor: 'pointer',
-            fontSize: '14px',
-            fontWeight: '600',
-          }}
-        >
-          Add Rectangle
-        </button>
-        <button
-          onClick={handleAddCircle}
-          style={{
-            padding: '8px 16px',
-            backgroundColor: '#24ccff',
-            color: '#000000',
-            border: 'none',
-            borderRadius: '6px',
-            cursor: 'pointer',
-            fontSize: '14px',
-            fontWeight: '600',
-          }}
-        >
-          Add Circle
-        </button>
-        <button
-          onClick={handleZoomIn}
-          style={{
-            padding: '8px 16px',
-            backgroundColor: '#2a2a2a',
-            color: '#ffffff',
-            border: '1px solid #404040',
-            borderRadius: '6px',
-            cursor: 'pointer',
-            fontSize: '14px',
-          }}
-        >
-          Zoom In
-        </button>
-        <button
-          onClick={handleZoomOut}
-          style={{
-            padding: '8px 16px',
-            backgroundColor: '#2a2a2a',
-            color: '#ffffff',
-            border: '1px solid #404040',
-            borderRadius: '6px',
-            cursor: 'pointer',
-            fontSize: '14px',
-          }}
-        >
-          Zoom Out
-        </button>
-        <button
-          onClick={handleResetView}
-          style={{
-            padding: '8px 16px',
-            backgroundColor: '#2a2a2a',
-            color: '#ffffff',
-            border: '1px solid #404040',
-            borderRadius: '6px',
-            cursor: 'pointer',
-            fontSize: '14px',
-          }}
-        >
-          Reset View
-        </button>
+      {/* Controls + Zoom container (top-left column) */}
+      <div style={{ position: 'absolute', top: '20px', left: '20px', zIndex: 10, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        {/* Canvas Controls */}
         <div style={{
-          padding: '8px',
-          backgroundColor: '#2a2a2a',
-          borderRadius: '6px',
-          fontSize: '12px',
-          color: '#b0b0b0',
-          textAlign: 'center',
+          backgroundColor: '#1a1a1a',
+          padding: '12px',
+          borderRadius: '8px',
+          boxShadow: '0 2px 8px rgba(0,0,0,0.5)',
+          border: '1px solid #404040',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '8px',
         }}>
-          Hold <strong style={{ color: '#ffffff' }}>Space</strong> to pan
+          <button
+            onClick={handleAddShape}
+            style={{
+              padding: '8px 16px',
+              backgroundColor: '#72fa41',
+              color: '#000000',
+              border: 'none',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontSize: '14px',
+              fontWeight: '600',
+            }}
+          >
+            Add Rectangle
+          </button>
+          <button
+            onClick={handleAddCircle}
+            style={{
+              padding: '8px 16px',
+              backgroundColor: '#24ccff',
+              color: '#000000',
+              border: 'none',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontSize: '14px',
+              fontWeight: '600',
+            }}
+          >
+            Add Circle
+          </button>
+          <button
+            onClick={handleZoomIn}
+            style={{
+              padding: '8px 16px',
+              backgroundColor: '#2a2a2a',
+              color: '#ffffff',
+              border: '1px solid #404040',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontSize: '14px',
+            }}
+          >
+            Zoom In
+          </button>
+          <button
+            onClick={handleZoomOut}
+            style={{
+              padding: '8px 16px',
+              backgroundColor: '#2a2a2a',
+              color: '#ffffff',
+              border: '1px solid #404040',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontSize: '14px',
+            }}
+          >
+            Zoom Out
+          </button>
+          <button
+            onClick={handleResetView}
+            style={{
+              padding: '8px 16px',
+              backgroundColor: '#2a2a2a',
+              color: '#ffffff',
+              border: '1px solid #404040',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontSize: '14px',
+            }}
+          >
+            Reset View
+          </button>
+        </div>
+
+        {/* Zoom Indicator (below controls) */}
+        <div style={{
+          backgroundColor: 'rgba(26,26,26,0.9)',
+          color: '#ffffff',
+          padding: '6px 10px',
+          borderRadius: '6px',
+          border: '1px solid #404040',
+          fontSize: '12px',
+          boxShadow: '0 2px 8px rgba(0,0,0,0.5)',
+          width: 'fit-content'
+        }}>
+          {Math.round(stageScale * 100)}%
         </div>
       </div>
 
-      {/* Pan Mode Indicator */}
-      {isPanning && (
-        <div style={{
-          position: 'absolute',
-          top: '50%',
-          left: '50%',
-          transform: 'translate(-50%, -50%)',
-          backgroundColor: 'rgba(36, 204, 255, 0.95)',
-          color: '#000000',
-          padding: '12px 24px',
-          borderRadius: '8px',
-          fontSize: '16px',
-          fontWeight: '600',
-          pointerEvents: 'none',
-          zIndex: 1000,
-          boxShadow: '0 4px 12px rgba(36, 204, 255, 0.5)',
-        }}>
-          🖐️ Pan Mode Active
-        </div>
-      )}
+      {/* Pan Mode Indicator removed */}
 
       {/* Presence List */}
       <div style={{
@@ -1027,6 +1088,8 @@ export default function Canvas() {
         </div>
       </div>
 
+      {/* Zoom Indicator moved below controls */}
+
       {/* Konva Stage */}
       <Stage
         ref={stageRef}
@@ -1036,13 +1099,13 @@ export default function Canvas() {
         scaleY={stageScale}
         x={stagePos.x}
         y={stagePos.y}
-        draggable={isPanning && !isShapeDragActiveRef.current}
+        draggable={!isShapeDragActiveRef.current}
         onWheel={handleWheel}
         onClick={handleStageClick}
         onMouseMove={handleMouseMove}
         onDragMove={(e) => {
-          // Only update position if we're actually panning and not dragging a shape
-          if (isPanning && !isShapeDragActiveRef.current) {
+          // Update position if we're dragging the stage and not a shape
+          if (!isShapeDragActiveRef.current) {
             const stage = e.target as Konva.Stage
             setStagePos({ x: stage.x(), y: stage.y() })
           }
@@ -1086,8 +1149,8 @@ export default function Canvas() {
               shape={props.shape}
               strokeColor={props.strokeColor}
               strokeWidth={props.strokeWidth}
+              isPressable={props.isPressable}
               isDraggable={props.isDraggable}
-              isPanning={isPanning}
               remainingSeconds={props.remainingSeconds}
               onShapeClick={handleShapeClick}
               onDragStart={handleShapeDragStart}

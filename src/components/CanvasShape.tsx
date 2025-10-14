@@ -18,8 +18,9 @@ interface CanvasShapeProps {
     }
     strokeColor: string
     strokeWidth: number
+    isPressable: boolean
     isDraggable: boolean
-    isPanning: boolean
+    // isPanning removed: panning is always available via background drag
     remainingSeconds: number | null
     onShapeClick: (id: string) => void
     onDragStart: (id: string) => void
@@ -31,8 +32,8 @@ const CanvasShape = ({
     shape,
     strokeColor,
     strokeWidth,
+    isPressable,
     isDraggable,
-    isPanning,
     remainingSeconds,
     onShapeClick,
     onDragStart,
@@ -51,8 +52,8 @@ const CanvasShape = ({
                     fill={shape.color}
                     stroke={strokeColor}
                     strokeWidth={strokeWidth}
-                    onTap={() => !isPanning && onShapeClick(shape.id)}
-                    onClick={() => !isPanning && onShapeClick(shape.id)}
+                    onTap={() => isPressable && onShapeClick(shape.id)}
+                    onClick={() => isPressable && onShapeClick(shape.id)}
                     draggable={isDraggable}
                     onDragStart={() => onDragStart(shape.id)}
                     onDragMove={(e) => {
@@ -92,8 +93,8 @@ const CanvasShape = ({
                 fill={shape.color}
                 stroke={strokeColor}
                 strokeWidth={strokeWidth}
-                onTap={() => !isPanning && onShapeClick(shape.id)}
-                onClick={() => !isPanning && onShapeClick(shape.id)}
+                onTap={() => isPressable && onShapeClick(shape.id)}
+                onClick={() => isPressable && onShapeClick(shape.id)}
                 draggable={isDraggable}
                 onDragStart={() => onDragStart(shape.id)}
                 onDragMove={(e) => {
