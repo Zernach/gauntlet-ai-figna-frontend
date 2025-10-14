@@ -13,7 +13,7 @@ This document verifies alignment between the current frontend implementation and
 The `DATABASE_SCHEMA.sql` is **mostly aligned** with frontend needs:
 
 **Matches:**
-- ✅ `canvas_users` table supports user authentication
+- ✅ `users` table supports user authentication
 - ✅ `canvases` table supports canvas metadata
 - ✅ `canvas_objects` table supports all shape types
 - ✅ `presence` table supports real-time cursors
@@ -77,7 +77,7 @@ export interface User {
 
 **Backend Documentation** (database-types.ts):
 ```typescript
-export type GauntletCanvasUserType = {
+export type GauntletUserType = {
   id: string;              // ✅ Matches
   username: string;        // ⚠️ Frontend doesn't use 'username'
   email: string;           // ✅ Matches
@@ -164,9 +164,9 @@ Create mapping functions for frontend<->backend type conversion:
 // utils/typeMappers.ts
 
 /**
- * Maps frontend User to backend GauntletCanvasUserType
+ * Maps frontend User to backend GauntletUserType
  */
-export function mapUserToBackend(user: User): Partial<GauntletCanvasUserType> {
+export function mapUserToBackend(user: User): Partial<GauntletUserType> {
   return {
     id: user.id,
     username: user.email.split('@')[0], // derive from email
@@ -181,9 +181,9 @@ export function mapUserToBackend(user: User): Partial<GauntletCanvasUserType> {
 }
 
 /**
- * Maps backend GauntletCanvasUserType to frontend User
+ * Maps backend GauntletUserType to frontend User
  */
-export function mapUserToFrontend(dbUser: GauntletCanvasUserType): User {
+export function mapUserToFrontend(dbUser: GauntletUserType): User {
   return {
     id: dbUser.id,
     name: dbUser.displayName || dbUser.username,

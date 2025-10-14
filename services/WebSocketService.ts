@@ -19,22 +19,37 @@ export class WebSocketService {
     private currentStatus: ConnectionStatus = 'disconnected';
     private userId: string = '';
     private canvasId: string = '';
+    private authToken: string = '';
 
     constructor(config: WebSocketConfig) {
         this.config = config;
     }
 
-    public connect(userId: string, canvasId: string): void {
+    public connect(userId: string, canvasId: string, authToken?: string): void {
         if (this.ws?.readyState === WebSocket.OPEN) {
             return;
         }
 
         this.userId = userId;
         this.canvasId = canvasId;
+        if (authToken) {
+            this.authToken = authToken;
+        }
         this.updateStatus('connecting');
 
         try {
-            const url = `${this.config.url}?userId=${userId}&canvasId=${canvasId}`;
+            // Build URL with query parameters
+            const params = new URLSearchParams({
+                userId,
+                canvasId,
+            });
+
+            // Add token if available
+            if (this.authToken) {
+                params.set('token', this.authToken);
+            }
+
+            const url = `${this.config.url}?${params.toString()}`;
             this.ws = new WebSocket(url);
 
             this.ws.onopen = this.handleOpen.bind(this);
@@ -103,6 +118,7 @@ export class WebSocketService {
 
     private handleOpen(): void {
         console.log('WebSocket connected');
+
         this.updateStatus('connected');
         this.reconnectAttempts = 0;
         this.startPingInterval();
@@ -110,7 +126,7 @@ export class WebSocketService {
         // Send join message
         this.send({
             type: 'USER_JOIN',
-            data: {
+            payload: {
                 userId: this.userId,
                 userName: 'User', // This should come from user state
                 userColor: '#3B82F6',
@@ -120,7 +136,19 @@ export class WebSocketService {
 
     private handleMessage(event: MessageEvent): void {
         try {
+            // Validate event data exists
+            if (!event?.data) {
+                console.warn('Received WebSocket event with no data');
+                return;
+            }
+
             const message: WSMessage = JSON.parse(event.data);
+
+            // Validate parsed message
+            if (!message || typeof message !== 'object' || !message.type) {
+                console.error('Invalid WebSocket message structure:', message);
+                return;
+            }
 
             // Handle pong messages for latency calculation
             if (message.type === 'PONG') {
@@ -130,7 +158,13 @@ export class WebSocketService {
             }
 
             // Notify all message handlers
-            this.messageHandlers.forEach((handler) => handler(message));
+            this.messageHandlers.forEach((handler) => {
+                try {
+                    handler(message);
+                } catch (handlerError) {
+                    console.error('Error in WebSocket message handler:', handlerError);
+                }
+            });
         } catch (error) {
             console.error('Error parsing WebSocket message:', error);
         }
@@ -166,7 +200,7 @@ export class WebSocketService {
             console.log(
                 `Reconnecting... (attempt ${this.reconnectAttempts}/${this.config.maxReconnectAttempts})`,
             );
-            this.connect(this.userId, this.canvasId);
+            this.connect(this.userId, this.canvasId, this.authToken);
         }, this.config.reconnectInterval * this.reconnectAttempts);
     }
 

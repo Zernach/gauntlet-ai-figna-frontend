@@ -17,7 +17,8 @@ export default function HomePage() {
     const currentUser = useAppSelector(
         (state) => state[REDUX_SLICES.USER]?.currentUser,
     );
-    const [canvasId] = useState(() => generateRandomUuid());
+    // Use the demo canvas ID that exists in the database
+    const [canvasId] = useState(() => '00000000-0000-0000-0000-000000000002');
 
     const isAuthenticated = useMemo(() => {
         return currentUser !== null;

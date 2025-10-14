@@ -1,8 +1,9 @@
 import { createSlice, PayloadAction } from '@reduxjs/toolkit';
-import type { User, UserState } from '@/types/user';
+import type { User, UserState, AuthTokens } from '@/types/user';
 
 const initialState: UserState = {
     currentUser: null,
+    authTokens: null,
     isAuthenticated: false,
     isLoading: false,
     error: null,
@@ -17,6 +18,15 @@ const userSlice = createSlice({
             state.isAuthenticated = true;
             state.error = null;
         },
+        setAuthTokens: (state, action: PayloadAction<AuthTokens>) => {
+            state.authTokens = action.payload;
+        },
+        setUserAndTokens: (state, action: PayloadAction<{ user: User; tokens: AuthTokens }>) => {
+            state.currentUser = action.payload.user;
+            state.authTokens = action.payload.tokens;
+            state.isAuthenticated = true;
+            state.error = null;
+        },
         updateUser: (state, action: PayloadAction<Partial<User>>) => {
             if (state.currentUser) {
                 Object.assign(state.currentUser, action.payload);
@@ -24,6 +34,7 @@ const userSlice = createSlice({
         },
         clearUser: (state) => {
             state.currentUser = null;
+            state.authTokens = null;
             state.isAuthenticated = false;
             state.error = null;
         },
@@ -40,6 +51,8 @@ const userSlice = createSlice({
 
 export const {
     setUser,
+    setAuthTokens,
+    setUserAndTokens,
     updateUser,
     clearUser,
     setLoading,

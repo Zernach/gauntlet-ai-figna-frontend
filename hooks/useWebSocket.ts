@@ -10,15 +10,18 @@ export const useWebSocket = (canvasId: string | null) => {
     const currentUser = useAppSelector((state) => state.user?.currentUser);
 
     const connect = useCallback(() => {
-        if (!currentUser || !canvasId) return;
+        if (!canvasId) return;
 
         // Initialize WebSocket service if not already done
         initWebSocketService(WEBSOCKET_CONFIG);
 
+        // Use demo user ID for development if no current user
+        const userId = currentUser?.id || '00000000-0000-0000-0000-000000000001';
+
         // Dispatch connect action
         dispatch({
             type: 'websocket/connect',
-            payload: { userId: currentUser.id, canvasId },
+            payload: { userId, canvasId },
         });
     }, [dispatch, currentUser, canvasId]);
 
@@ -27,14 +30,14 @@ export const useWebSocket = (canvasId: string | null) => {
     }, [dispatch]);
 
     useEffect(() => {
-        if (currentUser && canvasId) {
+        if (canvasId) {
             connect();
         }
 
         return () => {
             disconnect();
         };
-    }, [currentUser, canvasId, connect, disconnect]);
+    }, [canvasId, connect, disconnect]);
 
     return {
         status: websocketState.status,

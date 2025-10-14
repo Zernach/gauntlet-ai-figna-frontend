@@ -28,14 +28,14 @@ export interface BaseWSMessage {
 
 export interface ShapeCreateMessage extends BaseWSMessage {
     type: 'SHAPE_CREATE';
-    data: {
+    payload?: {
         shape: Shape;
     };
 }
 
 export interface ShapeUpdateMessage extends BaseWSMessage {
     type: 'SHAPE_UPDATE';
-    data: {
+    payload?: {
         shapeId: string;
         updates: Partial<Shape>;
     };
@@ -43,14 +43,14 @@ export interface ShapeUpdateMessage extends BaseWSMessage {
 
 export interface ShapeDeleteMessage extends BaseWSMessage {
     type: 'SHAPE_DELETE';
-    data: {
+    payload?: {
         shapeId: string;
     };
 }
 
 export interface ShapesBatchUpdateMessage extends BaseWSMessage {
     type: 'SHAPES_BATCH_UPDATE';
-    data: {
+    payload?: {
         operations: Array<{
             type: 'create' | 'update' | 'delete';
             shapeId: string;
@@ -62,12 +62,12 @@ export interface ShapesBatchUpdateMessage extends BaseWSMessage {
 
 export interface CursorMoveMessage extends BaseWSMessage {
     type: 'CURSOR_MOVE';
-    data: UserCursor;
+    payload?: UserCursor;
 }
 
 export interface UserJoinMessage extends BaseWSMessage {
     type: 'USER_JOIN';
-    data: {
+    payload?: {
         userId: string;
         userName: string;
         userColor: string;
@@ -76,19 +76,19 @@ export interface UserJoinMessage extends BaseWSMessage {
 
 export interface UserLeaveMessage extends BaseWSMessage {
     type: 'USER_LEAVE';
-    data: {
+    payload?: {
         userId: string;
     };
 }
 
 export interface PresenceUpdateMessage extends BaseWSMessage {
     type: 'PRESENCE_UPDATE';
-    data: UserPresence;
+    payload?: UserPresence;
 }
 
 export interface CanvasSyncMessage extends BaseWSMessage {
     type: 'CANVAS_SYNC';
-    data: {
+    payload?: {
         shapes: Record<string, Shape>;
         users: UserPresence[];
         version: number;
@@ -97,7 +97,7 @@ export interface CanvasSyncMessage extends BaseWSMessage {
 
 export interface AICommandMessage extends BaseWSMessage {
     type: 'AI_COMMAND';
-    data: {
+    payload?: {
         command: string;
         result?: any;
         error?: string;
@@ -114,8 +114,8 @@ export interface PongMessage extends BaseWSMessage {
 
 export interface ErrorMessage extends BaseWSMessage {
     type: 'ERROR';
-    data: {
-        code: string;
+    payload?: {
+        code?: string;
         message: string;
         details?: any;
     };

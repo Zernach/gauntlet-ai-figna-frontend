@@ -1,3 +1,5 @@
+require('dotenv').config();
+
 module.exports = {
   expo: {
     name: "Gauntlet AI",
@@ -40,8 +42,8 @@ module.exports = {
     },
     extra: {
       ENVIRONMENT: process.env.ENVIRONMENT || 'dev',
-      GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
-      GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET,
+      SUPABASE_URL: process.env.SUPABASE_URL || '',
+      SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY || '',
     }
   }
 };

@@ -10,7 +10,7 @@ export type GauntletAnalyticEventType = SHARED_FIELDS &
   DEVICE_FIELDS &
   ANALYTIC_EVENT_FIELDS & {
     analyticEventId: string;
-    userId?: GauntletUserType['userId'];
+    userId?: string;
     referrerId?: GauntletReferrerType['referrerId'];
     // RELATIONSHIPS
     analyticEventUser?: GauntletUserType;
@@ -19,7 +19,7 @@ export type GauntletAnalyticEventType = SHARED_FIELDS &
 
 export type GauntletAuthenticationType = SHARED_FIELDS & {
   authenticationId: string;
-  userId?: GauntletUserType['userId'];
+  userId?: string;
   identityToken?: string;
   authorizationCode?: string;
   cookie?: string;
@@ -36,7 +36,7 @@ export type GauntletAuthenticationType = SHARED_FIELDS & {
 export type GauntletErrorType = SHARED_FIELDS &
   ERROR_FIELDS & {
     errorId: string;
-    userId?: GauntletUserType['userId'];
+    userId?: string;
     // RELATIONSHIPS
     errorUser?: GauntletUserType;
   };
@@ -44,23 +44,18 @@ export type GauntletErrorType = SHARED_FIELDS &
 export type GauntletReferrerType = SHARED_FIELDS &
   REFERRER_FIELDS & {
     referrerId: string;
-    userId?: GauntletUserType['userId'];
+    userId?: string;
     // RELATIONSHIPS
     referrerUser?: GauntletUserType;
     referrerAnalyticEvents?: GauntletAnalyticEventType[];
   };
 
-export type GauntletUserType = SHARED_FIELDS & {
-  userId: string;
-  appleUuid?: string;
-  googleUuid?: string;
-  email?: string;
-  name?: string;
-  // RELATIONSHIPS
-  userAnalyticEvents?: GauntletAnalyticEventType[];
-  userErrors?: GauntletErrorType[];
-  userAuthentications?: GauntletAuthenticationType[];
-  userReferrers?: GauntletReferrerType[];
+/**
+ * @deprecated Use GauntletUserType instead - types have been consolidated
+ * Legacy type alias for backward compatibility
+ */
+export type GauntletLegacyUserType = GauntletUserType & {
+  userId: string; // Alias for id
 };
 
 // ==========================================
@@ -100,11 +95,12 @@ export enum GauntletCanvasCollaboratorRole {
 }
 
 /**
- * Users Table
- * Stores user account information for canvas collaboration
+ * Users Table - Consolidated user type for canvas collaboration
+ * Replaces both legacy GauntletUserType and GauntletCanvasUserType
  */
-export type GauntletCanvasUserType = SHARED_FIELDS & {
-  id: string; // uuid PK
+export type GauntletUserType = SHARED_FIELDS & {
+  // Primary fields
+  id: string; // uuid PK (replaces userId)
   username: string;
   email: string;
   displayName?: string;
@@ -113,12 +109,20 @@ export type GauntletCanvasUserType = SHARED_FIELDS & {
   lastSeenAt?: string; // timestamp
   isOnline?: boolean;
   preferences?: string; // JSON stringified user preferences
+  // Legacy OAuth fields (for backward compatibility)
+  appleUuid?: string;
+  googleUuid?: string;
+  name?: string; // Alias for displayName
   // RELATIONSHIPS
   ownedCanvases?: GauntletCanvasType[];
   createdObjects?: GauntletCanvasObject[];
   presenceRecords?: GauntletPresence[];
   aiCommands?: GauntletAICommand[];
   collaborations?: GauntletCanvasCollaborator[];
+  userAnalyticEvents?: GauntletAnalyticEventType[];
+  userErrors?: GauntletErrorType[];
+  userAuthentications?: GauntletAuthenticationType[];
+  userReferrers?: GauntletReferrerType[];
 };
 
 /**
@@ -129,7 +133,7 @@ export type GauntletCanvasType = SHARED_FIELDS & {
   id: string; // uuid PK
   name: string;
   description?: string;
-  ownerId: GauntletCanvasUserType['id']; // FK to users
+  ownerId: GauntletUserType['id']; // FK to users
   isPublic: boolean;
   isTemplate?: boolean;
   thumbnailUrl?: string;
@@ -145,12 +149,14 @@ export type GauntletCanvasType = SHARED_FIELDS & {
   tags?: string; // JSON array of tags
   lastAccessedAt?: string; // timestamp
   // RELATIONSHIPS
-  owner?: GauntletCanvasUserType;
+  owner?: GauntletUserType;
   objects?: GauntletCanvasObject[];
   presenceRecords?: GauntletPresence[];
   aiCommands?: GauntletAICommand[];
   versions?: GauntletCanvasVersion[];
   collaborators?: GauntletCanvasCollaborator[];
+  comments?: GauntletCanvasComment[];
+  activities?: GauntletCanvasActivity[];
 };
 
 /**
@@ -181,12 +187,13 @@ export type GauntletCanvasObject = SHARED_FIELDS & {
   isVisible?: boolean;
   groupId?: string; // for grouping objects
   metadata?: string; // JSON for additional properties
-  createdBy: GauntletCanvasUserType['id']; // FK to users
-  lastModifiedBy?: GauntletCanvasUserType['id'];
+  createdBy: GauntletUserType['id']; // FK to users
+  lastModifiedBy?: GauntletUserType['id'];
   // RELATIONSHIPS
   canvas?: GauntletCanvasType;
-  creator?: GauntletCanvasUserType;
-  modifier?: GauntletCanvasUserType;
+  creator?: GauntletUserType;
+  modifier?: GauntletUserType;
+  comments?: GauntletCanvasComment[];
 };
 
 /**
@@ -196,7 +203,7 @@ export type GauntletCanvasObject = SHARED_FIELDS & {
  */
 export type GauntletPresence = {
   id: string; // uuid PK
-  userId: GauntletCanvasUserType['id']; // FK to users
+  userId: GauntletUserType['id']; // FK to users
   canvasId: GauntletCanvasType['id']; // FK to canvases
   cursorX: number;
   cursorY: number;
@@ -209,7 +216,7 @@ export type GauntletPresence = {
   lastHeartbeat: string; // timestamp - TTL 30s
   connectionId?: string; // WebSocket connection identifier
   // RELATIONSHIPS
-  user?: GauntletCanvasUserType;
+  user?: GauntletUserType;
   canvas?: GauntletCanvasType;
 };
 
@@ -220,7 +227,7 @@ export type GauntletPresence = {
 export type GauntletAICommand = SHARED_FIELDS & {
   id: string; // uuid PK
   canvasId: GauntletCanvasType['id']; // FK to canvases
-  userId: GauntletCanvasUserType['id']; // FK to users
+  userId: GauntletUserType['id']; // FK to users
   commandText: string; // original natural language command
   parsedIntent?: string; // AI-interpreted intent
   status: GauntletAICommandStatus; // enum
@@ -234,7 +241,7 @@ export type GauntletAICommand = SHARED_FIELDS & {
   cancelledAt?: string;
   // RELATIONSHIPS
   canvas?: GauntletCanvasType;
-  user?: GauntletCanvasUserType;
+  user?: GauntletUserType;
 };
 
 /**
@@ -248,13 +255,13 @@ export type GauntletCanvasVersion = SHARED_FIELDS & {
   snapshotData: string; // JSON full canvas state
   objectCount?: number;
   changeDescription?: string;
-  createdBy: GauntletCanvasUserType['id']; // FK to users
+  createdBy: GauntletUserType['id']; // FK to users
   isAutoSave?: boolean;
   isNamedVersion?: boolean; // user explicitly saved this version
   versionName?: string;
   // RELATIONSHIPS
   canvas?: GauntletCanvasType;
-  creator?: GauntletCanvasUserType;
+  creator?: GauntletUserType;
 };
 
 /**
@@ -264,9 +271,9 @@ export type GauntletCanvasVersion = SHARED_FIELDS & {
 export type GauntletCanvasCollaborator = SHARED_FIELDS & {
   id: string; // uuid PK
   canvasId: GauntletCanvasType['id']; // FK to canvases
-  userId: GauntletCanvasUserType['id']; // FK to users
+  userId: GauntletUserType['id']; // FK to users
   role: GauntletCanvasCollaboratorRole; // enum
-  invitedBy?: GauntletCanvasUserType['id']; // FK to users
+  invitedBy?: GauntletUserType['id']; // FK to users
   invitedAt?: string; // timestamp
   acceptedAt?: string;
   lastAccessedAt?: string;
@@ -276,8 +283,8 @@ export type GauntletCanvasCollaborator = SHARED_FIELDS & {
   canExport?: boolean;
   // RELATIONSHIPS
   canvas?: GauntletCanvasType;
-  user?: GauntletCanvasUserType;
-  inviter?: GauntletCanvasUserType;
+  user?: GauntletUserType;
+  inviter?: GauntletUserType;
 };
 
 /**
@@ -287,20 +294,20 @@ export type GauntletCanvasCollaborator = SHARED_FIELDS & {
 export type GauntletCanvasComment = SHARED_FIELDS & {
   id: string; // uuid PK
   canvasId: GauntletCanvasType['id']; // FK to canvases
-  userId: GauntletCanvasUserType['id']; // FK to users
+  userId: GauntletUserType['id']; // FK to users
   objectId?: GauntletCanvasObject['id']; // FK to canvas_objects (optional)
   content: string;
   x?: number; // position if not tied to object
   y?: number;
   isResolved?: boolean;
-  resolvedBy?: GauntletCanvasUserType['id'];
+  resolvedBy?: GauntletUserType['id'];
   resolvedAt?: string;
   parentCommentId?: string; // for threaded comments
   // RELATIONSHIPS
   canvas?: GauntletCanvasType;
-  user?: GauntletCanvasUserType;
+  user?: GauntletUserType;
   canvasObject?: GauntletCanvasObject;
-  resolver?: GauntletCanvasUserType;
+  resolver?: GauntletUserType;
   parentComment?: GauntletCanvasComment;
   replies?: GauntletCanvasComment[];
 };
@@ -312,7 +319,7 @@ export type GauntletCanvasComment = SHARED_FIELDS & {
 export type GauntletCanvasActivity = SHARED_FIELDS & {
   id: string; // uuid PK
   canvasId: GauntletCanvasType['id']; // FK to canvases
-  userId: GauntletCanvasUserType['id']; // FK to users
+  userId: GauntletUserType['id']; // FK to users
   activityType: string; // e.g., 'object_created', 'object_deleted', 'canvas_shared'
   objectId?: string; // related object ID if applicable
   details?: string; // JSON with activity details
@@ -320,5 +327,5 @@ export type GauntletCanvasActivity = SHARED_FIELDS & {
   userAgent?: string;
   // RELATIONSHIPS
   canvas?: GauntletCanvasType;
-  user?: GauntletCanvasUserType;
+  user?: GauntletUserType;
 };

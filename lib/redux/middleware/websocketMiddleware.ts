@@ -31,6 +31,12 @@ export const websocketMiddleware: Middleware<
     let unsubscribeStatus: (() => void) | null = null;
 
     const handleMessage = (message: WSMessage): void => {
+        // Validate message structure
+        if (!message || typeof message !== 'object') {
+            console.error('Invalid WebSocket message received:', message);
+            return;
+        }
+
         const state = store.getState();
         const currentUserId = state.user?.currentUser?.id;
 
@@ -41,65 +47,86 @@ export const websocketMiddleware: Middleware<
 
         switch (message.type) {
             case 'SHAPE_CREATE':
-                store.dispatch(addShape(message.data.shape));
+                if (message.payload?.shape) {
+                    store.dispatch(addShape(message.payload.shape));
+                }
                 break;
 
             case 'SHAPE_UPDATE':
-                store.dispatch(
-                    updateShape({
-                        id: message.data.shapeId,
-                        updates: message.data.updates,
-                    }),
-                );
+                if (message.payload?.shapeId && message.payload?.updates) {
+                    store.dispatch(
+                        updateShape({
+                            id: message.payload.shapeId,
+                            updates: message.payload.updates,
+                        }),
+                    );
+                }
                 break;
 
             case 'SHAPE_DELETE':
-                store.dispatch(deleteShape(message.data.shapeId));
+                if (message.payload?.shapeId) {
+                    store.dispatch(deleteShape(message.payload.shapeId));
+                }
                 break;
 
             case 'SHAPES_BATCH_UPDATE':
-                store.dispatch(batchUpdateShapes(message.data.operations));
+                if (message.payload?.operations) {
+                    store.dispatch(batchUpdateShapes(message.payload.operations));
+                }
                 break;
 
             case 'CURSOR_MOVE':
-                store.dispatch(updateCursor(message.data));
+                if (message.payload) {
+                    store.dispatch(updateCursor(message.payload));
+                }
                 break;
 
             case 'USER_JOIN':
-                store.dispatch(
-                    userJoined({
-                        userId: message.data.userId,
-                        userName: message.data.userName,
-                        canvasId: message.canvasId,
-                    }),
-                );
+                if (message.payload?.userId && message.payload?.userName && message.canvasId) {
+                    store.dispatch(
+                        userJoined({
+                            userId: message.payload.userId,
+                            userName: message.payload.userName,
+                            canvasId: message.canvasId,
+                        }),
+                    );
+                }
                 break;
 
             case 'USER_LEAVE':
-                store.dispatch(userLeft(message.data.userId));
+                if (message.payload?.userId) {
+                    store.dispatch(userLeft(message.payload.userId));
+                }
                 break;
 
             case 'PRESENCE_UPDATE':
-                store.dispatch(updateUserPresence(message.data));
+                if (message.payload) {
+                    store.dispatch(updateUserPresence(message.payload));
+                }
                 break;
 
             case 'CANVAS_SYNC':
-                store.dispatch(syncCanvas({ shapes: message.data.shapes }));
-                store.dispatch(
-                    syncPresence({
-                        users: message.data.users,
-                    }),
-                );
+                if (message.payload?.shapes && message.payload?.users) {
+                    store.dispatch(syncCanvas({ shapes: message.payload.shapes }));
+                    store.dispatch(
+                        syncPresence({
+                            users: message.payload.users,
+                        }),
+                    );
+                }
                 break;
 
             case 'PONG':
-                const latency = Date.now() - message.timestamp;
-                store.dispatch(updatePing({ latency }));
+                if (message.timestamp) {
+                    const latency = Date.now() - message.timestamp;
+                    store.dispatch(updatePing({ latency }));
+                }
                 break;
 
             case 'ERROR':
-                console.error('WebSocket error:', message.data);
-                store.dispatch(setError(message.data.message));
+                console.error('WebSocket error:', message.payload);
+                const errorMessage = message.payload?.message || 'Unknown WebSocket error';
+                store.dispatch(setError(errorMessage));
                 break;
 
             default:
@@ -112,6 +139,10 @@ export const websocketMiddleware: Middleware<
         if (action.type === 'websocket/connect') {
             const wsService = getWebSocketService();
             const { userId, canvasId } = action.payload;
+            const state = store.getState();
+            const authToken = state.user?.authTokens?.token;
+
+            console.log('🔌 WebSocket connect - userId:', userId, 'canvasId:', canvasId, 'hasToken:', !!authToken);
 
             // Clean up previous subscriptions
             if (unsubscribeMessage) unsubscribeMessage();
@@ -128,8 +159,8 @@ export const websocketMiddleware: Middleware<
                 }
             });
 
-            // Connect
-            wsService.connect(userId, canvasId);
+            // Connect with authentication token
+            wsService.connect(userId, canvasId, authToken);
         }
 
         if (action.type === 'websocket/disconnect') {
@@ -159,12 +190,12 @@ export const websocketMiddleware: Middleware<
                 if (action.type === addShape.type) {
                     wsService.send({
                         type: 'SHAPE_CREATE',
-                        data: { shape: action.payload },
+                        payload: { shape: action.payload },
                     });
                 } else if (action.type === updateShape.type) {
                     wsService.send({
                         type: 'SHAPE_UPDATE',
-                        data: {
+                        payload: {
                             shapeId: action.payload.id,
                             updates: action.payload.updates,
                         },
@@ -172,7 +203,7 @@ export const websocketMiddleware: Middleware<
                 } else if (action.type === deleteShape.type) {
                     wsService.send({
                         type: 'SHAPE_DELETE',
-                        data: { shapeId: action.payload },
+                        payload: { shapeId: action.payload },
                     });
                 }
             } catch (error) {

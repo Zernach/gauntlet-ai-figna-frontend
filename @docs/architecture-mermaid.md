@@ -227,14 +227,14 @@ graph TD
 
 ```mermaid
 erDiagram
-    CANVAS_USERS ||--o{ CANVASES : owns
-    CANVAS_USERS ||--o{ CANVAS_OBJECTS : creates
-    CANVAS_USERS ||--o{ PRESENCE : has
-    CANVAS_USERS ||--o{ AI_COMMANDS : issues
-    CANVAS_USERS ||--o{ CANVAS_COLLABORATORS : participates
-    CANVAS_USERS ||--o{ CANVAS_COMMENTS : writes
-    CANVAS_USERS ||--o{ CANVAS_VERSIONS : creates
-    CANVAS_USERS ||--o{ CANVAS_ACTIVITY : performs
+    USERS ||--o{ CANVASES : owns
+    USERS ||--o{ CANVAS_OBJECTS : creates
+    USERS ||--o{ PRESENCE : has
+    USERS ||--o{ AI_COMMANDS : issues
+    USERS ||--o{ CANVAS_COLLABORATORS : participates
+    USERS ||--o{ CANVAS_COMMENTS : writes
+    USERS ||--o{ CANVAS_VERSIONS : creates
+    USERS ||--o{ CANVAS_ACTIVITY : performs
     
     CANVASES ||--o{ CANVAS_OBJECTS : contains
     CANVASES ||--o{ PRESENCE : tracks
@@ -246,7 +246,7 @@ erDiagram
     
     CANVAS_OBJECTS ||--o{ CANVAS_COMMENTS : has
 
-    CANVAS_USERS {
+    USERS {
         uuid id PK
         string username
         string email
@@ -413,7 +413,7 @@ erDiagram
 
 ### Core Tables
 
-#### `canvas_users` Table
+#### `users` Table
 Stores user account information for canvas collaboration.
 
 | Field | Type | Constraints | Description |
@@ -431,9 +431,9 @@ Stores user account information for canvas collaboration.
 | last_seen_at | TIMESTAMP | | Last activity timestamp |
 
 **Indexes:** 
-- `idx_canvas_users_email` on (email)
-- `idx_canvas_users_username` on (username)
-- `idx_canvas_users_is_online` on (is_online)
+- `idx_users_email` on (email)
+- `idx_users_username` on (username)
+- `idx_users_is_online` on (is_online)
 
 ---
 
@@ -443,7 +443,7 @@ Stores canvas metadata and settings.
 | Field | Type | Constraints | Description |
 |-------|------|-------------|-------------|
 | id | UUID | PK | Primary key |
-| owner_id | UUID | FK → canvas_users.id | Canvas owner |
+| owner_id | UUID | FK → users.id | Canvas owner |
 | name | VARCHAR(255) | NOT NULL | Canvas name |
 | description | TEXT | | Canvas description |
 | is_public | BOOLEAN | DEFAULT false | Public access control |
@@ -499,8 +499,8 @@ Stores individual shapes and elements on the canvas.
 | is_visible | BOOLEAN | DEFAULT true | Visibility flag |
 | group_id | UUID | | Grouping identifier |
 | metadata | JSONB | | Additional properties |
-| created_by | UUID | FK → canvas_users.id | Creator user |
-| last_modified_by | UUID | FK → canvas_users.id | Last modifier |
+| created_by | UUID | FK → users.id | Creator user |
+| last_modified_by | UUID | FK → users.id | Last modifier |
 | created_at | TIMESTAMP | NOT NULL | Creation time |
 | updated_at | TIMESTAMP | NOT NULL | Last update time |
 
@@ -518,7 +518,7 @@ Tracks real-time user presence and cursor positions. **Auto-delete after 30s of 
 | Field | Type | Constraints | Description |
 |-------|------|-------------|-------------|
 | id | UUID | PK | Primary key |
-| user_id | UUID | FK → canvas_users.id | User |
+| user_id | UUID | FK → users.id | User |
 | canvas_id | UUID | FK → canvases.id | Canvas |
 | cursor_x | FLOAT | NOT NULL | Cursor X position |
 | cursor_y | FLOAT | NOT NULL | Cursor Y position |
@@ -547,7 +547,7 @@ Stores AI command history and execution results.
 |-------|------|-------------|-------------|
 | id | UUID | PK | Primary key |
 | canvas_id | UUID | FK → canvases.id | Target canvas |
-| user_id | UUID | FK → canvas_users.id | Requesting user |
+| user_id | UUID | FK → users.id | Requesting user |
 | command_text | TEXT | NOT NULL | Original command |
 | parsed_intent | TEXT | | AI-interpreted intent |
 | status | ENUM | NOT NULL | 'pending', 'executing', 'completed', 'failed', 'cancelled' |
@@ -582,7 +582,7 @@ Stores canvas snapshots for history/recovery.
 | snapshot_data | JSONB | NOT NULL | Full canvas state |
 | object_count | INTEGER | | Number of objects |
 | change_description | TEXT | | Description of changes |
-| created_by | UUID | FK → canvas_users.id | Creator |
+| created_by | UUID | FK → users.id | Creator |
 | is_auto_save | BOOLEAN | DEFAULT true | Auto vs manual save |
 | is_named_version | BOOLEAN | DEFAULT false | User-named version |
 | version_name | VARCHAR(100) | | Version name |
@@ -601,9 +601,9 @@ Manages canvas sharing and permissions.
 |-------|------|-------------|-------------|
 | id | UUID | PK | Primary key |
 | canvas_id | UUID | FK → canvases.id | Shared canvas |
-| user_id | UUID | FK → canvas_users.id | Collaborator |
+| user_id | UUID | FK → users.id | Collaborator |
 | role | ENUM | NOT NULL | 'owner', 'editor', 'viewer' |
-| invited_by | UUID | FK → canvas_users.id | Inviter |
+| invited_by | UUID | FK → users.id | Inviter |
 | can_edit | BOOLEAN | DEFAULT false | Edit permission |
 | can_delete | BOOLEAN | DEFAULT false | Delete permission |
 | can_share | BOOLEAN | DEFAULT false | Share permission |
@@ -628,13 +628,13 @@ Allows users to comment on canvas areas or objects.
 |-------|------|-------------|-------------|
 | id | UUID | PK | Primary key |
 | canvas_id | UUID | FK → canvases.id | Parent canvas |
-| user_id | UUID | FK → canvas_users.id | Comment author |
+| user_id | UUID | FK → users.id | Comment author |
 | object_id | UUID | FK → canvas_objects.id | Related object |
 | content | TEXT | NOT NULL | Comment content |
 | x | FLOAT | | X position if not tied to object |
 | y | FLOAT | | Y position |
 | is_resolved | BOOLEAN | DEFAULT false | Resolution status |
-| resolved_by | UUID | FK → canvas_users.id | Resolver |
+| resolved_by | UUID | FK → users.id | Resolver |
 | resolved_at | TIMESTAMP | | Resolution time |
 | parent_comment_id | UUID | FK → canvas_comments.id | Parent for threads |
 | created_at | TIMESTAMP | NOT NULL | Creation time |
@@ -654,7 +654,7 @@ Tracks all canvas activities for audit trail.
 |-------|------|-------------|-------------|
 | id | UUID | PK | Primary key |
 | canvas_id | UUID | FK → canvases.id | Related canvas |
-| user_id | UUID | FK → canvas_users.id | Actor |
+| user_id | UUID | FK → users.id | Actor |
 | activity_type | VARCHAR(50) | NOT NULL | Activity type |
 | object_id | UUID | | Related object ID |
 | details | JSONB | | Activity details |

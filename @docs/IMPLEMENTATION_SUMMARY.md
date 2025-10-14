@@ -71,7 +71,7 @@ Complete TypeScript type system for the entire application.
 
 #### **database-types.ts**
 Defines all database table types and enums:
-- `GauntletCanvasUserType` - User accounts
+- `GauntletUserType` - User accounts
 - `GauntletCanvasType` - Canvas metadata
 - `GauntletCanvasObjectType` - Canvas shapes/objects
 - `GauntletPresenceType` - Real-time presence tracking
@@ -122,7 +122,7 @@ Complete API request/response types for all endpoints:
 ## 🗄️ Database Architecture
 
 ### Core Tables (5)
-1. **canvas_users** - User accounts and profiles
+1. **users** - User accounts and profiles
 2. **canvases** - Canvas metadata and settings
 3. **canvas_objects** - Individual shapes/elements
 4. **presence** ⚡ - Ephemeral real-time presence (TTL 30s)

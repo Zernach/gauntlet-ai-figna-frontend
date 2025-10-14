@@ -8,7 +8,7 @@ type ENV_TYPE = typeof PROD | typeof DEV | typeof LOCAL;
 
 const getEnvironment = (): ENV_TYPE => {
   const environment: ENV_TYPE = (Constants.expoConfig?.extra?.ENVIRONMENT as ENV_TYPE) || DEV;
-  return environment;
+  return LOCAL;
 };
 
 export const ENVIRONMENT = getEnvironment();
@@ -20,7 +20,7 @@ const extra = Constants.expoConfig?.extra || {};
 
 export const CONFIG = {
   [LOCAL]: {
-    CLOUD_BASE_URL: `http://localhost:3000${API_PATH}`,
+    CLOUD_BASE_URL: `http://localhost:3001${API_PATH}`,
     GOOGLE_CLIENT_ID: extra.GOOGLE_CLIENT_ID,
     GOOGLE_CLIENT_SECRET: extra.GOOGLE_CLIENT_SECRET,
   },

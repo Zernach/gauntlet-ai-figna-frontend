@@ -11,8 +11,15 @@ export interface User {
     createdAt: number;
 }
 
+export interface AuthTokens {
+    token: string;
+    refreshToken: string;
+    expiresAt: string;
+}
+
 export interface UserState {
     currentUser: User | null;
+    authTokens: AuthTokens | null;
     isAuthenticated: boolean;
     isLoading: boolean;
     error: string | null;

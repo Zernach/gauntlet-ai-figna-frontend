@@ -13,12 +13,12 @@ This document provides reference implementations for converting between frontend
 // Backend: utils/typeMappers.ts
 
 import type { User } from '@/types/user'; // Frontend type
-import type { GauntletCanvasUserType } from '@/@landscapesupply/types/gauntletai/database-types';
+import type { GauntletUserType } from '@/@landscapesupply/types/gauntletai/database-types';
 
 /**
- * Maps frontend User to backend GauntletCanvasUserType
+ * Maps frontend User to backend GauntletUserType
  */
-export function mapUserToBackend(user: User): Partial<GauntletCanvasUserType> {
+export function mapUserToBackend(user: User): Partial<GauntletUserType> {
   return {
     id: user.id,
     username: user.email.split('@')[0], // Derive username from email
@@ -40,9 +40,9 @@ export function mapUserToBackend(user: User): Partial<GauntletCanvasUserType> {
 
 ```typescript
 /**
- * Maps backend GauntletCanvasUserType to frontend User
+ * Maps backend GauntletUserType to frontend User
  */
-export function mapUserToFrontend(dbUser: GauntletCanvasUserType): User {
+export function mapUserToFrontend(dbUser: GauntletUserType): User {
   return {
     id: dbUser.id,
     name: dbUser.displayName || dbUser.username,

@@ -2,7 +2,7 @@ import { CONFIG } from './config';
 import type { WebSocketConfig } from '@/types/websocket';
 
 export const WEBSOCKET_CONFIG: WebSocketConfig = {
-    url: CONFIG.CLOUD_BASE_URL.replace('http', 'ws').replace('/api/gauntlet', '/ws'),
+    url: 'ws://localhost:3002',
     reconnectInterval: 1000,
     maxReconnectAttempts: 10,
     pingInterval: 30000,

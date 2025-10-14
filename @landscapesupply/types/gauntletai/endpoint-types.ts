@@ -4,7 +4,6 @@ import {
   GauntletErrorType,
   GauntletReferrerType,
   GauntletUserType,
-  GauntletCanvasUserType,
   GauntletCanvasType,
   GauntletCanvasObject,
   GauntletPresence,
@@ -152,7 +151,7 @@ export type LoginCanvasUserParams = {
 export type LoginCanvasUserResponse = ErrorResponse & {
   token: string;
   refreshToken: string;
-  user: GauntletCanvasUserType;
+  user: GauntletUserType;
   expiresAt: string;
 };
 
@@ -170,7 +169,7 @@ export type RegisterCanvasUserParams = {
 export type RegisterCanvasUserResponse = ErrorResponse & {
   token: string;
   refreshToken: string;
-  user: GauntletCanvasUserType;
+  user: GauntletUserType;
   expiresAt: string;
 };
 
@@ -206,7 +205,7 @@ export type LogoutCanvasUserResponse = ErrorResponse & {
 export type GetCanvasUserProfileParams = {};
 
 export type GetCanvasUserProfileResponse = ErrorResponse & {
-  user: GauntletCanvasUserType;
+  user: GauntletUserType;
 };
 
 /*
@@ -221,7 +220,7 @@ export type UpdateCanvasUserProfileParams = {
 };
 
 export type UpdateCanvasUserProfileResponse = ErrorResponse & {
-  user: GauntletCanvasUserType;
+  user: GauntletUserType;
 };
 
 // ==========================================
@@ -403,7 +402,10 @@ export type GetCanvasObjectResponse = ErrorResponse & {
  */
 export type CreateCanvasObjectParams = {
   canvasId: string;
-  object: Omit<GauntletCanvasObject, 'id' | 'createdAt' | 'updatedAt' | 'canvasId' | 'createdBy'>;
+  object: Omit<
+    GauntletCanvasObject,
+    'id' | 'createdAt' | 'updatedAt' | 'canvasId' | 'createdBy'
+  >;
 };
 
 export type CreateCanvasObjectResponse = ErrorResponse & {
@@ -417,7 +419,9 @@ export type CreateCanvasObjectResponse = ErrorResponse & {
 export type UpdateCanvasObjectParams = {
   canvasId: string;
   objectId: string;
-  updates: Partial<Omit<GauntletCanvasObject, 'id' | 'canvasId' | 'createdAt' | 'createdBy'>>;
+  updates: Partial<
+    Omit<GauntletCanvasObject, 'id' | 'canvasId' | 'createdAt' | 'createdBy'>
+  >;
 };
 
 export type UpdateCanvasObjectResponse = ErrorResponse & {
@@ -444,8 +448,18 @@ export type DeleteCanvasObjectResponse = ErrorResponse & {
 export type BatchCanvasOperationsParams = {
   canvasId: string;
   operations: Array<
-    | { type: 'create'; object: Omit<GauntletCanvasObject, 'id' | 'createdAt' | 'updatedAt' | 'canvasId' | 'createdBy'> }
-    | { type: 'update'; objectId: string; updates: Partial<GauntletCanvasObject> }
+    | {
+        type: 'create';
+        object: Omit<
+          GauntletCanvasObject,
+          'id' | 'createdAt' | 'updatedAt' | 'canvasId' | 'createdBy'
+        >;
+      }
+    | {
+        type: 'update';
+        objectId: string;
+        updates: Partial<GauntletCanvasObject>;
+      }
     | { type: 'delete'; objectId: string }
   >;
 };
@@ -712,7 +726,11 @@ export type WSConnectionMessage = {
  * ALIGNED with frontend types/websocket.ts
  */
 export type WSCanvasOperationMessage = {
-  type: 'SHAPE_CREATE' | 'SHAPE_UPDATE' | 'SHAPE_DELETE' | 'SHAPES_BATCH_UPDATE';
+  type:
+    | 'SHAPE_CREATE'
+    | 'SHAPE_UPDATE'
+    | 'SHAPE_DELETE'
+    | 'SHAPES_BATCH_UPDATE';
   userId: string;
   canvasId: string;
   messageId: string;
@@ -740,7 +758,7 @@ export type WSPresenceMessage = {
   data: {
     cursorX?: number;
     cursorY?: number;
-    user?: GauntletCanvasUserType;
+    user?: GauntletUserType;
     selectedObjectIds?: string[];
     viewportX?: number;
     viewportY?: number;
@@ -753,7 +771,12 @@ export type WSPresenceMessage = {
  * AI operation messages
  */
 export type WSAIOperationMessage = {
-  type: 'AI_COMMAND_START' | 'AI_COMMAND_PROGRESS' | 'AI_COMMAND_COMPLETE' | 'AI_COMMAND_ERROR' | 'AI_COMMAND_CANCEL';
+  type:
+    | 'AI_COMMAND_START'
+    | 'AI_COMMAND_PROGRESS'
+    | 'AI_COMMAND_COMPLETE'
+    | 'AI_COMMAND_ERROR'
+    | 'AI_COMMAND_CANCEL';
   userId: string;
   canvasId: string;
   data: {
@@ -793,7 +816,12 @@ export type WSCanvasSyncMessage = {
  */
 export type WSErrorMessage = {
   type: 'ERROR';
-  code: 'UNAUTHORIZED' | 'CANVAS_NOT_FOUND' | 'OPERATION_FAILED' | 'RATE_LIMITED' | 'INVALID_MESSAGE';
+  code:
+    | 'UNAUTHORIZED'
+    | 'CANVAS_NOT_FOUND'
+    | 'OPERATION_FAILED'
+    | 'RATE_LIMITED'
+    | 'INVALID_MESSAGE';
   message: string;
   timestamp: number;
 };
