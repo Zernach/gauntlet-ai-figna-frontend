@@ -30,6 +30,8 @@ export function useWebSocket() {
     // Build WebSocket URL with auth token and canvasId
     const wsUrl = `${WS_URL}?token=${session.access_token}&canvasId=${canvasId}`
 
+    console.log('🔌 Connecting to WebSocket:', wsUrl.replace(session.access_token, '***'))
+
     const ws = new WebSocket(wsUrl)
 
     ws.onopen = () => {
