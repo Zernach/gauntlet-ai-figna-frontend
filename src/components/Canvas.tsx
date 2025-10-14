@@ -96,6 +96,21 @@ export default function Canvas() {
     return () => clearInterval(interval)
   }, [])
 
+  // Debug: Log shape lock state changes (only when shapes change, not on every render)
+  useEffect(() => {
+    const lockedShapes = shapes.filter(s => s.locked_at && s.locked_by)
+    if (lockedShapes.length > 0) {
+      lockedShapes.forEach(shape => {
+        const isLockedByOther = shape.locked_by && shape.locked_by !== currentUserId
+        if (isLockedByOther && shape.locked_by) {
+          console.log(`🔒 DEBUG: Shape ${shape.id.slice(0, 8)} is LOCKED by user ${shape.locked_by.slice(0, 8)}`)
+        }
+      })
+    }
+    // Note: getUserColor intentionally not in deps to avoid re-render loop
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shapes, currentUserId])
+
   // Helper function to calculate remaining lock seconds
   const getRemainingLockSeconds = useCallback((lockedAt?: string | null): number | null => {
     if (!lockedAt) return null
@@ -122,11 +137,14 @@ export default function Canvas() {
   }, [currentUserId, currentUserColor, activeUsers])
 
   // Memoize filtered and deduplicated active users (by email address)
+  // Also ensure current user is excluded by email
   const uniqueActiveUsers = useMemo(() => {
-    return activeUsers.filter((user, index, self) =>
-      index === self.findIndex(u => u.email === user.email)
-    )
-  }, [activeUsers])
+    return activeUsers
+      .filter(user => user.email !== currentUserEmail) // Exclude current user by email
+      .filter((user, index, self) =>
+        index === self.findIndex(u => u.email === user.email) // Deduplicate by email
+      )
+  }, [activeUsers, currentUserEmail])
 
   // Memoize total online users count
   const onlineUsersCount = useMemo(() => {
@@ -137,6 +155,17 @@ export default function Canvas() {
   const cursorsArray = useMemo(() => {
     return Array.from(cursors.values())
   }, [cursors])
+
+  // Normalize shape fields (ensure snake_case for lock fields)
+  const normalizeShape = useCallback((s: any): Shape => {
+    const locked_at = s.locked_at !== undefined ? s.locked_at : (s.lockedAt !== undefined ? s.lockedAt : null)
+    const locked_by = s.locked_by !== undefined ? s.locked_by : (s.lockedBy !== undefined ? s.lockedBy : null)
+    return {
+      ...s,
+      locked_at,
+      locked_by,
+    }
+  }, [])
 
   // Initialize canvas and WebSocket
   useEffect(() => {
@@ -222,16 +251,16 @@ export default function Canvas() {
         // Initial sync with all shapes and users
         console.log('CANVAS_SYNC received:', message.payload)
         if (message.payload.shapes) {
-          setShapes(message.payload.shapes)
+          setShapes((message.payload.shapes as any[]).map(normalizeShape))
         }
         if (message.payload.activeUsers) {
           console.log('Active users from server:', message.payload.activeUsers)
           // Filter out current user from active users list and deduplicate
           const otherUsers = message.payload.activeUsers.filter((u: ActiveUser) => u.userId !== currentUserIdRef.current)
 
-          // Deduplicate by userId - keep only the first occurrence of each user
+          // Deduplicate by email - keep only the first occurrence of each email address
           const uniqueUsers = otherUsers.filter((user: ActiveUser, index: number, self: ActiveUser[]) =>
-            index === self.findIndex((u: ActiveUser) => u.userId === user.userId)
+            index === self.findIndex((u: ActiveUser) => u.email === user.email)
           )
 
           console.log('Other users after filtering and deduplication:', uniqueUsers)
@@ -250,11 +279,12 @@ export default function Canvas() {
         if (message.payload.shape) {
           setShapes(prev => {
             // Check if shape already exists to prevent duplicates
-            const exists = prev.some(s => s.id === message.payload.shape.id)
+            const incoming = normalizeShape(message.payload.shape)
+            const exists = prev.some(s => s.id === incoming.id)
             if (exists) {
               return prev
             }
-            return [...prev, message.payload.shape]
+            return [...prev, incoming]
           })
         }
         break
@@ -262,18 +292,28 @@ export default function Canvas() {
       case 'SHAPE_UPDATE':
         // Shape updated
         if (message.payload.shape) {
+
+          // Debug: Only log lock/unlock events
+          const shape = normalizeShape(message.payload.shape)
+          if (shape.locked_at || shape.locked_by) {
+            const isOtherUser = shape.locked_by && shape.locked_by !== currentUserIdRef.current
+            if (isOtherUser && shape.locked_by) {
+              console.log(`📨 SHAPE_UPDATE: Shape ${shape.id.slice(0, 8)} LOCKED by ${shape.locked_by.slice(0, 8)}`)
+            }
+          }
+          console.log('🧩 SHAPE: ', shape)
           setShapes(prev => prev.map(s => {
-            if (s.id === message.payload.shape.id) {
+            if (s.id === shape.id) {
               // If we're currently dragging this shape, only update non-position properties
               // to avoid conflict with local optimistic updates
               if (isDraggingShapeRef.current && dragPositionRef.current?.shapeId === s.id) {
                 return {
-                  ...message.payload.shape,
+                  ...shape,
                   x: s.x,
                   y: s.y,
                 }
               }
-              return message.payload.shape
+              return shape
             }
             return s
           }))
@@ -320,9 +360,9 @@ export default function Canvas() {
           }
         } else {
           setActiveUsers(prev => {
-            // Check if user already exists
-            if (prev.find(u => u.userId === message.payload.userId)) {
-              console.log('User already exists in activeUsers, skipping')
+            // Check if user with same email already exists
+            if (prev.find(u => u.email === message.payload.email)) {
+              console.log('User with this email already exists in activeUsers, skipping')
               return prev
             }
             const newUser = {
@@ -334,10 +374,10 @@ export default function Canvas() {
             }
             console.log('Adding new user to activeUsers:', newUser)
 
-            // Add new user and deduplicate (extra safety check)
+            // Add new user and deduplicate by email (extra safety check)
             const updatedUsers = [...prev, newUser]
             const uniqueUsers = updatedUsers.filter((user, index, self) =>
-              index === self.findIndex(u => u.userId === user.userId)
+              index === self.findIndex(u => u.email === user.email)
             )
             return uniqueUsers
           })
@@ -414,6 +454,22 @@ export default function Canvas() {
     }))
   }, [stagePos, stageScale, canvasId, currentUserId])
 
+  // Helper function to unlock a shape
+  const unlockShape = useCallback((shapeId: string) => {
+    if (wsRef.current) {
+      console.log('🔓 Unlocking shape:', shapeId)
+      wsRef.current.send(JSON.stringify({
+        type: 'SHAPE_UPDATE',
+        payload: {
+          shapeId,
+          updates: {
+            isLocked: false,
+          },
+        },
+      }))
+    }
+  }, [])
+
   // Handle shape selection
   const handleShapeClick = useCallback((id: string) => {
     // Don't select if we just finished a drag move
@@ -428,12 +484,33 @@ export default function Canvas() {
       const elapsed = (Date.now() - lockTime) / 1000
       if (elapsed < 10) {
         // Shape is still locked by another user
-        console.log('Shape is locked by another user')
+        console.log('⛔ Shape is locked by another user')
         return
       }
     }
+
+    // If switching selection, unlock the previously selected shape
+    if (selectedId && selectedId !== id) {
+      unlockShape(selectedId)
+    }
+
+    // Set selected locally
     setSelectedId(id)
-  }, [])
+
+    // Send lock message to server to notify other users
+    if (wsRef.current) {
+      console.log('🔒 Locking shape on selection:', id)
+      wsRef.current.send(JSON.stringify({
+        type: 'SHAPE_UPDATE',
+        payload: {
+          shapeId: id,
+          updates: {
+            isLocked: true,
+          },
+        },
+      }))
+    }
+  }, [selectedId, unlockShape])
 
   // Handle shape drag start
   const handleShapeDragStart = useCallback((id: string) => {
@@ -509,7 +586,7 @@ export default function Canvas() {
     }
   }, [])
 
-  // Handle shape drag end (unlock and send final position)
+  // Handle shape drag end (send final position but keep locked if still selected)
   const handleShapeDragEnd = useCallback((id: string) => {
     if (!wsRef.current) return
 
@@ -526,7 +603,8 @@ export default function Canvas() {
       isDragMoveRef.current = false
     }, 150)
 
-    // Send final position and unlock shape
+    // Send final position
+    // Keep shape locked since it's still selected after drag ends
     const finalPos = dragPositionRef.current
     if (finalPos && finalPos.shapeId === id) {
       wsRef.current.send(JSON.stringify({
@@ -536,18 +614,7 @@ export default function Canvas() {
           updates: {
             x: finalPos.x,
             y: finalPos.y,
-            isLocked: false,
-          },
-        },
-      }))
-    } else {
-      // Just unlock if no position stored
-      wsRef.current.send(JSON.stringify({
-        type: 'SHAPE_UPDATE',
-        payload: {
-          shapeId: id,
-          updates: {
-            isLocked: false,
+            // Keep shape locked - it will be unlocked when deselected
           },
         },
       }))
@@ -597,6 +664,10 @@ export default function Canvas() {
           handleDeleteShape(currentSelectedId)
         }
       } else if (e.key === 'Escape') {
+        // Unlock shape before deselecting
+        if (selectedId) {
+          unlockShape(selectedId)
+        }
         setSelectedId(null)
       } else if (e.key === ' ' && !isPanning) {
         e.preventDefault()
@@ -620,7 +691,7 @@ export default function Canvas() {
       window.removeEventListener('keyup', handleKeyUp)
       document.body.style.cursor = 'default'
     }
-  }, [handleDeleteShape, isPanning, selectedId])
+  }, [handleDeleteShape, isPanning, selectedId, unlockShape])
 
   // Handle stage click (deselect)
   const handleStageClick = useCallback((e: any) => {
@@ -631,9 +702,13 @@ export default function Canvas() {
 
     // If clicking on empty stage, deselect
     if (e.target === e.target.getStage()) {
+      // Unlock shape before deselecting
+      if (selectedId) {
+        unlockShape(selectedId)
+      }
       setSelectedId(null)
     }
-  }, [])
+  }, [selectedId, unlockShape])
 
   // Handle mouse move for cursor tracking
   const handleMouseMove = useCallback((e: any) => {
@@ -717,13 +792,17 @@ export default function Canvas() {
     return shapes.map(shape => {
       const isSelected = selectedId === shape.id
       const remainingSeconds = getRemainingLockSeconds(shape.locked_at)
-      const isLocked = remainingSeconds !== null
-      const strokeColor = isSelected
-        ? '#fbff00'
-        : isLocked && shape.locked_by
-          ? getUserColor(shape.locked_by)
+      // Treat as locked whenever locked_by exists; unlock will be delivered by server.
+      const isLocked = !!shape.locked_by
+
+      // Locked state takes precedence: show locker's color when locked by someone (including self)
+      const strokeColor = isLocked && shape.locked_by
+        ? getUserColor(shape.locked_by)
+        : isSelected
+          ? currentUserColor
           : '#505050'
-      const strokeWidth = isSelected ? 3 : isLocked ? 2 : 1
+      // Increase stroke width for locked shapes to make them more visible (4px instead of 2px)
+      const strokeWidth = isSelected ? 4 : isLocked ? 4 : 1
       const isDraggable = !isPanning && (!isLocked || shape.locked_by === currentUserId)
 
       return {
@@ -734,7 +813,7 @@ export default function Canvas() {
         remainingSeconds,
       }
     })
-  }, [shapes, selectedId, currentTime, isPanning, currentUserId, getRemainingLockSeconds, getUserColor])
+  }, [shapes, selectedId, currentTime, isPanning, currentUserId, currentUserColor, getRemainingLockSeconds, getUserColor])
 
   // Show authentication prompt if not connected
   if (!currentUserId || !canvasId || !wsRef.current) {

@@ -1,4 +1,3 @@
-import { memo } from 'react'
 import { Rect, Circle, Text as KonvaText } from 'react-konva'
 
 const DEFAULT_SHAPE_SIZE = 100
@@ -28,7 +27,7 @@ interface CanvasShapeProps {
     onDragEnd: (id: string) => void
 }
 
-const CanvasShape = memo(({
+const CanvasShape = ({
     shape,
     strokeColor,
     strokeWidth,
@@ -121,27 +120,10 @@ const CanvasShape = memo(({
             )}
         </>
     )
-}, (prevProps, nextProps) => {
-    // Custom comparison function to prevent unnecessary re-renders
-    return (
-        prevProps.shape.id === nextProps.shape.id &&
-        prevProps.shape.x === nextProps.shape.x &&
-        prevProps.shape.y === nextProps.shape.y &&
-        prevProps.shape.width === nextProps.shape.width &&
-        prevProps.shape.height === nextProps.shape.height &&
-        prevProps.shape.radius === nextProps.shape.radius &&
-        prevProps.shape.color === nextProps.shape.color &&
-        prevProps.shape.locked_at === nextProps.shape.locked_at &&
-        prevProps.shape.locked_by === nextProps.shape.locked_by &&
-        prevProps.strokeColor === nextProps.strokeColor &&
-        prevProps.strokeWidth === nextProps.strokeWidth &&
-        prevProps.isDraggable === nextProps.isDraggable &&
-        prevProps.isPanning === nextProps.isPanning &&
-        prevProps.remainingSeconds === nextProps.remainingSeconds
-    )
-})
+}
 
-CanvasShape.displayName = 'CanvasShape'
+
+
 
 export default CanvasShape
 
