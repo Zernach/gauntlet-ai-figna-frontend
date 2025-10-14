@@ -29,6 +29,10 @@ interface Shape {
   height?: number
   radius?: number
   color: string
+  text_content?: string
+  font_size?: number
+  textContent?: string
+  fontSize?: number
   locked_at?: string | null
   locked_by?: string | null
   created_by?: string
@@ -73,6 +77,9 @@ export default function Canvas() {
   const dragThrottleRef = useRef<number>(0)
   const dragPositionRef = useRef<{ shapeId: string; x: number; y: number } | null>(null)
   const isDraggingShapeRef = useRef<boolean>(false)
+  const isResizingShapeRef = useRef<boolean>(false)
+  const resizingShapeIdRef = useRef<string | null>(null)
+  const resizeThrottleRef = useRef<number>(0)
   const shapesRef = useRef<Shape[]>([])
   const currentUserIdRef = useRef<string | null>(null)
   const selectedIdRef = useRef<string | null>(null)
@@ -333,10 +340,14 @@ export default function Canvas() {
   const normalizeShape = useCallback((s: any): Shape => {
     const locked_at = s.locked_at !== undefined ? s.locked_at : (s.lockedAt !== undefined ? s.lockedAt : null)
     const locked_by = s.locked_by !== undefined ? s.locked_by : (s.lockedBy !== undefined ? s.lockedBy : null)
+    const textContent = s.textContent !== undefined ? s.textContent : (s.text_content !== undefined ? s.text_content : undefined)
+    const fontSize = s.fontSize !== undefined ? s.fontSize : (s.font_size !== undefined ? s.font_size : undefined)
     return {
       ...s,
       locked_at,
       locked_by,
+      textContent,
+      fontSize,
     }
   }, [])
 
@@ -486,6 +497,17 @@ export default function Canvas() {
                   y: s.y,
                 }
               }
+              // If we're currently resizing this shape, preserve local geometry (x/y/size)
+              if (isResizingShapeRef.current && resizingShapeIdRef.current === s.id) {
+                return {
+                  ...shape,
+                  x: s.x,
+                  y: s.y,
+                  width: s.width,
+                  height: s.height,
+                  radius: s.radius,
+                }
+              }
               return shape
             }
             return s
@@ -633,6 +655,57 @@ export default function Canvas() {
       payload: shapeData,
     }))
   }, [stagePos, stageScale, canvasId, currentUserId])
+
+  // Handle text creation
+  const handleAddText = useCallback(() => {
+    if (!wsRef.current || !canvasId || !currentUserId) return
+
+    const centerX = -stagePos.x / stageScale + (VIEWPORT_WIDTH / 2) / stageScale
+    const centerY = -stagePos.y / stageScale + (VIEWPORT_HEIGHT / 2) / stageScale
+
+    const x = Math.max(0, Math.min(centerX, CANVAS_WIDTH))
+    const y = Math.max(0, Math.min(centerY, CANVAS_HEIGHT))
+
+    const shapeData = {
+      type: 'text',
+      x,
+      y,
+      color: '#ffffff',
+      textContent: 'Text',
+      fontSize: 24,
+    }
+
+    wsRef.current.send(JSON.stringify({
+      type: 'SHAPE_CREATE',
+      payload: shapeData,
+    }))
+  }, [stagePos, stageScale, canvasId, currentUserId])
+
+  // Handle text edit on double click
+  const handleTextDoubleClick = useCallback((id: string) => {
+    const s = shapesRef.current.find(sh => sh.id === id)
+    if (!s) return
+
+    if (s.locked_at && s.locked_by && s.locked_by !== currentUserIdRef.current) {
+      const lockTime = new Date(s.locked_at).getTime()
+      const elapsed = (Date.now() - lockTime) / 1000
+      if (elapsed < 10) return
+    }
+
+    const currentText = (s as any).textContent ?? (s as any).text_content ?? ''
+    const newText = window.prompt('Edit text', String(currentText))
+    if (newText == null) return
+
+    if (wsRef.current) {
+      wsRef.current.send(JSON.stringify({
+        type: 'SHAPE_UPDATE',
+        payload: {
+          shapeId: id,
+          updates: { textContent: newText },
+        },
+      }))
+    }
+  }, [])
 
   // Helper function to unlock a shape
   const unlockShape = useCallback((shapeId: string) => {
@@ -809,6 +882,129 @@ export default function Canvas() {
     setSelectedId(null)
   }, [])
 
+  // Resize handlers
+  const handleResizeStart = useCallback((id: string) => {
+    if (!wsRef.current) return
+    isResizingShapeRef.current = true
+    resizingShapeIdRef.current = id
+    // Select and lock immediately
+    setSelectedId(id)
+    wsRef.current.send(JSON.stringify({
+      type: 'SHAPE_UPDATE',
+      payload: {
+        shapeId: id,
+        updates: { isLocked: true },
+      },
+    }))
+  }, [])
+
+  const handleResizeMove = useCallback((id: string, updates: { x?: number; y?: number; width?: number; height?: number; radius?: number; fontSize?: number }) => {
+    const shape = shapesRef.current.find(s => s.id === id)
+    if (!shape) return
+
+    const minRectSize = 10
+    const minRadius = 5
+
+    if (shape.type === 'circle') {
+      const currentRadius = shape.radius || DEFAULT_SHAPE_SIZE / 2
+      let newRadius = updates.radius !== undefined ? updates.radius : currentRadius
+      newRadius = Math.max(minRadius, newRadius)
+      // Constrain circle within canvas
+      const maxRadius = Math.min(shape.x, shape.y, CANVAS_WIDTH - shape.x, CANVAS_HEIGHT - shape.y)
+      newRadius = Math.min(newRadius, Math.max(minRadius, maxRadius))
+
+      // Optimistic update
+      setShapes(prev => prev.map(s => s.id === id ? { ...s, radius: newRadius } : s))
+
+      const now = Date.now()
+      if (wsRef.current && now - resizeThrottleRef.current > 50) {
+        resizeThrottleRef.current = now
+        wsRef.current.send(JSON.stringify({
+          type: 'SHAPE_UPDATE',
+          payload: { shapeId: id, updates: { radius: newRadius } },
+        }))
+      }
+      return
+    }
+
+    // Text proportional resize via fontSize
+    if (shape.type === 'text' && updates.fontSize !== undefined) {
+      const newFontSize = Math.max(8, Math.min(512, Math.round(updates.fontSize)))
+      // Optimistic update
+      setShapes(prev => prev.map(s => s.id === id ? { ...s, fontSize: newFontSize } : s))
+
+      const now = Date.now()
+      if (wsRef.current && now - resizeThrottleRef.current > 50) {
+        resizeThrottleRef.current = now
+        wsRef.current.send(JSON.stringify({
+          type: 'SHAPE_UPDATE',
+          payload: { shapeId: id, updates: { fontSize: newFontSize } },
+        }))
+      }
+      return
+    }
+
+    // Rectangle resize
+    const currentW = shape.width || DEFAULT_SHAPE_SIZE
+    const currentH = shape.height || DEFAULT_SHAPE_SIZE
+    let newX = updates.x !== undefined ? updates.x : shape.x
+    let newY = updates.y !== undefined ? updates.y : shape.y
+    let newW = updates.width !== undefined ? updates.width : currentW
+    let newH = updates.height !== undefined ? updates.height : currentH
+
+    // Clamp position to canvas
+    newX = Math.max(0, newX)
+    newY = Math.max(0, newY)
+    // Clamp size to min
+    newW = Math.max(minRectSize, newW)
+    newH = Math.max(minRectSize, newH)
+    // Clamp size to stay within canvas bounds
+    newW = Math.min(newW, CANVAS_WIDTH - newX)
+    newH = Math.min(newH, CANVAS_HEIGHT - newY)
+
+    // Optimistic update
+    setShapes(prev => prev.map(s => s.id === id ? { ...s, x: newX, y: newY, width: newW, height: newH } : s))
+
+    const now = Date.now()
+    if (wsRef.current && now - resizeThrottleRef.current > 50) {
+      resizeThrottleRef.current = now
+      wsRef.current.send(JSON.stringify({
+        type: 'SHAPE_UPDATE',
+        payload: { shapeId: id, updates: { x: newX, y: newY, width: newW, height: newH } },
+      }))
+    }
+  }, [])
+
+  const handleResizeEnd = useCallback((id: string) => {
+    if (!wsRef.current) return
+    // Send final geometry
+    const s = shapesRef.current.find(sh => sh.id === id)
+    if (s) {
+      const updates: any = {}
+      if (s.type === 'circle') {
+        updates.radius = s.radius
+      } else if (s.type === 'text') {
+        const fs = (s as any).fontSize ?? (s as any).font_size ?? 24
+        updates.fontSize = Math.max(8, Math.min(512, Math.round(fs)))
+      } else {
+        updates.x = s.x
+        updates.y = s.y
+        updates.width = s.width
+        updates.height = s.height
+      }
+      wsRef.current.send(JSON.stringify({ type: 'SHAPE_UPDATE', payload: { shapeId: id, updates } }))
+    }
+
+    // Clear flags
+    isResizingShapeRef.current = false
+    resizingShapeIdRef.current = null
+    resizeThrottleRef.current = 0
+
+    // Unlock and deselect
+    unlockShape(id)
+    setSelectedId(null)
+  }, [])
+
   // Handle shape deletion
   const handleDeleteShape = useCallback((shapeId?: string) => {
     if (!wsRef.current) return
@@ -940,6 +1136,14 @@ export default function Canvas() {
     animateZoomTo(1, anchor, 250)
   }, [animateZoomTo])
 
+  const handleSignOut = useCallback(async () => {
+    try {
+      await supabase.auth.signOut()
+    } catch (error) {
+      console.error('Failed to sign out:', error)
+    }
+  }, [])
+
   // Memoize shape rendering props to avoid recalculating on every render
   const shapeRenderProps = useMemo(() => {
     return shapes.map(shape => {
@@ -1061,6 +1265,21 @@ export default function Canvas() {
             Add Circle
           </button>
           <button
+            onClick={handleAddText}
+            style={{
+              padding: '8px 16px',
+              backgroundColor: '#fbff00',
+              color: '#000000',
+              border: 'none',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontSize: '14px',
+              fontWeight: '600',
+            }}
+          >
+            Add Text
+          </button>
+          <button
             onClick={handleZoomIn}
             onPointerDown={() => startZoomHold(1)}
             onPointerUp={stopZoomHold}
@@ -1144,6 +1363,29 @@ export default function Canvas() {
         border: '1px solid #404040',
         minWidth: '200px',
       }}>
+        <button
+          onClick={handleSignOut}
+          title="Sign out"
+          style={{
+            position: 'absolute',
+            top: '8px',
+            right: '8px',
+            width: '22px',
+            height: '22px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: '#2a2a2a',
+            color: '#ffffff',
+            border: '1px solid #404040',
+            borderRadius: '4px',
+            cursor: 'pointer',
+            fontSize: '12px',
+            lineHeight: 1,
+          }}
+        >
+          ⎋
+        </button>
         <div style={{ fontWeight: '600', marginBottom: '8px', fontSize: '14px', color: '#ffffff' }}>
           Online ({onlineUsersCount})
         </div>
@@ -1188,7 +1430,7 @@ export default function Canvas() {
         scaleY={stageScale}
         x={stagePos.x}
         y={stagePos.y}
-        draggable={!isShapeDragActiveRef.current}
+        draggable={!isShapeDragActiveRef.current && !isResizingShapeRef.current}
         onWheel={handleWheel}
         onClick={handleStageClick}
         onMouseMove={handleMouseMove}
@@ -1240,11 +1482,17 @@ export default function Canvas() {
               strokeWidth={props.strokeWidth}
               isPressable={props.isPressable}
               isDraggable={props.isDraggable}
+              isSelected={selectedId === props.shape.id}
+              canResize={props.isDraggable}
               remainingSeconds={props.remainingSeconds}
               onShapeClick={handleShapeClick}
               onDragStart={handleShapeDragStart}
               onDragMove={handleShapeDrag}
               onDragEnd={handleShapeDragEnd}
+              onResizeStart={handleResizeStart}
+              onResizeMove={handleResizeMove}
+              onResizeEnd={handleResizeEnd}
+              onTextDoubleClick={handleTextDoubleClick}
             />
           ))}
         </Layer>

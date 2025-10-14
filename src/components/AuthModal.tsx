@@ -38,6 +38,29 @@ export default function AuthModal({ onClose }: AuthModalProps) {
     }
   }, [mode, email, password])
 
+  const handleGoogleSignIn = useCallback(async () => {
+    setLoading(true)
+    setError('')
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: window.location.origin,
+          queryParams: {
+            access_type: 'offline',
+            prompt: 'consent',
+          },
+        },
+      })
+      if (error) throw error
+      // On success, Supabase will redirect and onAuthStateChange will update session
+    } catch (err: any) {
+      setError(err.message)
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
   const toggleMode = useCallback(() => {
     setMode(mode === 'login' ? 'signup' : 'login')
   }, [mode])
@@ -88,6 +111,51 @@ export default function AuthModal({ onClose }: AuthModalProps) {
         <h2 style={{ marginBottom: '24px', fontSize: '24px', fontWeight: '700', color: '#ffffff' }}>
           {modalTitle}
         </h2>
+
+        {/* Google Sign-In */}
+        <button
+          onClick={handleGoogleSignIn}
+          disabled={loading}
+          style={{
+            width: '100%',
+            padding: '12px',
+            backgroundColor: '#ffffff',
+            color: '#000000',
+            border: 'none',
+            borderRadius: '6px',
+            fontSize: '16px',
+            fontWeight: '600',
+            cursor: loading ? 'not-allowed' : 'pointer',
+            opacity: loading ? 0.7 : 1,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '8px',
+            boxShadow: '0 4px 6px rgba(255,255,255,0.1)'
+          }}
+        >
+          {/* Simple G icon */}
+          <span style={{
+            display: 'inline-block',
+            width: '18px',
+            height: '18px',
+            background: 'conic-gradient(from 0deg, #4285F4 0deg 90deg, #34A853 90deg 180deg, #FBBC05 180deg 270deg, #EA4335 270deg 360deg)',
+            borderRadius: '4px'
+          }} />
+          Continue with Google
+        </button>
+
+        {/* Divider */}
+        <div style={{
+          margin: '16px 0',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '12px'
+        }}>
+          <div style={{ flex: 1, height: '1px', backgroundColor: '#2a2a2a' }} />
+          <div style={{ color: '#808080', fontSize: '12px' }}>or</div>
+          <div style={{ flex: 1, height: '1px', backgroundColor: '#2a2a2a' }} />
+        </div>
 
         <form onSubmit={handleSubmit}>
           <div style={{ marginBottom: '16px' }}>
