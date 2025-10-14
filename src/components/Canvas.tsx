@@ -2,8 +2,10 @@ import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import { Stage, Layer, Rect } from 'react-konva'
 import Konva from 'konva'
 import { supabase } from '../lib/supabase'
+import ColorSlider from './ColorSlider'
 import CanvasShape from './CanvasShape'
 import CanvasCursor from './CanvasCursor'
+import ControlPanel from './ControlPanel'
 
 // Canvas constants - Extremely expansive canvas
 const CANVAS_WIDTH = 50000
@@ -28,11 +30,18 @@ interface Shape {
   width?: number
   height?: number
   radius?: number
+  rotation?: number
   color: string
   text_content?: string
   font_size?: number
+  font_family?: string
+  font_weight?: string
+  text_align?: string
   textContent?: string
   fontSize?: number
+  fontFamily?: string
+  fontWeight?: string
+  textAlign?: string
   locked_at?: string | null
   locked_by?: string | null
   created_by?: string
@@ -63,6 +72,8 @@ export default function Canvas() {
   const [cursors, setCursors] = useState<Map<string, Cursor>>(new Map())
   const [activeUsers, setActiveUsers] = useState<ActiveUser[]>([])
   const [stageScale, setStageScale] = useState(1)
+  const [canvasBgHex, setCanvasBgHex] = useState<string>('#1a1a1a')
+  const [isCanvasBgOpen, setIsCanvasBgOpen] = useState<boolean>(false)
   const [stagePos, setStagePos] = useState({
     x: VIEWPORT_WIDTH / 2 - CANVAS_WIDTH / 2,
     y: VIEWPORT_HEIGHT / 2 - CANVAS_HEIGHT / 2
@@ -85,6 +96,10 @@ export default function Canvas() {
   const selectedIdRef = useRef<string | null>(null)
   const isDragMoveRef = useRef<boolean>(false)
   const isShapeDragActiveRef = useRef<boolean>(false) // Track if we're actively dragging a shape
+  // Drag batching refs
+  const dragRafRef = useRef<number | null>(null)
+  const pendingDragUpdatesRef = useRef<Map<string, { x: number; y: number }>>(new Map())
+  const dragFrameScheduledRef = useRef<boolean>(false)
 
   // Zoom animation refs
   const zoomAnimRafRef = useRef<number | null>(null)
@@ -105,7 +120,7 @@ export default function Canvas() {
   const [colorHue, setColorHue] = useState<number>(0)
   const baseSLRef = useRef<{ s: number; l: number }>({ s: 1, l: 0.5 })
   const colorThrottleRef = useRef<number>(0)
-  const hexLastTapTsRef = useRef<number>(0)
+
 
   // Easing function for smooth zoom
   const easeInOutCubic = useCallback((t: number) => (
@@ -258,6 +273,13 @@ export default function Canvas() {
         zoomHoldRafRef.current = null
       }
       zoomHoldActiveRef.current = false
+      // Cleanup any pending drag animation frame
+      if (dragRafRef.current != null) {
+        cancelAnimationFrame(dragRafRef.current)
+        dragRafRef.current = null
+      }
+      pendingDragUpdatesRef.current.clear()
+      dragFrameScheduledRef.current = false
     }
   }, [])
 
@@ -377,17 +399,26 @@ export default function Canvas() {
         const colorIndex = parseInt(session.user.id.slice(0, 8), 16) % USER_COLORS.length
         setCurrentUserColor(USER_COLORS[colorIndex])
 
-        // Get API URL
-        const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api'
+        // Get API URL (trim trailing slash to avoid double slashes)
+        const rawApiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001/api'
+        const API_URL = rawApiUrl.endsWith('/') ? rawApiUrl.slice(0, -1) : rawApiUrl
 
         // Get the global canvas (will be created automatically if it doesn't exist)
         const response = await fetch(`${API_URL}/canvas`, {
           headers: {
             'Authorization': `Bearer ${session.access_token}`,
+            'Accept': 'application/json',
           },
         })
 
-        if (!response.ok) throw new Error('Failed to fetch global canvas')
+        if (!response.ok) throw new Error(`Failed to fetch global canvas: ${response.status} ${response.statusText}`)
+
+        // Ensure we actually received JSON to avoid parsing HTML error pages
+        const contentType = response.headers.get('content-type') || ''
+        if (!contentType.includes('application/json')) {
+          const text = await response.text()
+          throw new Error(`Expected JSON but received '${contentType}'. Check VITE_API_URL. Body: ${text.slice(0, 200)}`)
+        }
 
         const result = await response.json()
         const canvas = result.data
@@ -443,6 +474,10 @@ export default function Canvas() {
         if (message.payload.shapes) {
           setShapes((message.payload.shapes as any[]).map(normalizeShape))
         }
+        if (message.payload.canvas) {
+          const bg = message.payload.canvas.background_color ?? message.payload.canvas.backgroundColor
+          if (bg) setCanvasBgHex(bg)
+        }
         if (message.payload.activeUsers) {
           console.log('Active users from server:', message.payload.activeUsers)
           // Filter out current user from active users list and deduplicate
@@ -461,6 +496,13 @@ export default function Canvas() {
           if (currentUserData && currentUserData.color) {
             setCurrentUserColor(currentUserData.color)
           }
+        }
+        break
+
+      case 'CANVAS_UPDATE':
+        if (message.payload.canvas) {
+          const bg = message.payload.canvas.background_color ?? message.payload.canvas.backgroundColor
+          if (bg) setCanvasBgHex(bg)
         }
         break
 
@@ -603,6 +645,17 @@ export default function Canvas() {
         })
         break
 
+      case 'ACTIVE_USERS':
+        if (message.payload && Array.isArray(message.payload.activeUsers)) {
+          // Remove current user and deduplicate by email
+          const otherUsers = message.payload.activeUsers.filter((u: ActiveUser) => u.userId !== currentUserIdRef.current)
+          const uniqueUsers = otherUsers.filter((user: ActiveUser, index: number, self: ActiveUser[]) =>
+            index === self.findIndex((u: ActiveUser) => u.email === user.email)
+          )
+          setActiveUsers(uniqueUsers)
+        }
+        break
+
       case 'ERROR':
         console.error('WebSocket error:', message.payload.message)
         break
@@ -679,6 +732,9 @@ export default function Canvas() {
       color: '#ffffff',
       textContent: 'Text',
       fontSize: 24,
+      fontFamily: 'Inter',
+      fontWeight: 'normal',
+      textAlign: 'left',
     }
 
     wsRef.current.send(JSON.stringify({
@@ -795,7 +851,18 @@ export default function Canvas() {
     }))
   }, [])
 
-  // Handle shape drag - optimistic update with throttled WebSocket sync
+  const flushPendingDragUpdates = useCallback(() => {
+    dragFrameScheduledRef.current = false
+    const pending = pendingDragUpdatesRef.current
+    if (pending.size === 0) return
+    setShapes(prev => prev.map(s => {
+      const u = pending.get(s.id)
+      return u ? { ...s, x: u.x, y: u.y } : s
+    }))
+    pending.clear()
+  }, [])
+
+  // Handle shape drag - rAF-batched local update with throttled WebSocket sync
   const handleShapeDrag = useCallback((id: string, x: number, y: number) => {
     const shape = shapesRef.current.find(s => s.id === id)
     if (!shape) return
@@ -819,10 +886,12 @@ export default function Canvas() {
       constrainedY = Math.max(0, Math.min(y, CANVAS_HEIGHT - height))
     }
 
-    // Optimistic local update - update immediately for smooth dragging
-    setShapes(prev => prev.map(s =>
-      s.id === id ? { ...s, x: constrainedX, y: constrainedY } : s
-    ))
+    // Queue local update; flush at most once per frame
+    pendingDragUpdatesRef.current.set(id, { x: constrainedX, y: constrainedY })
+    if (!dragFrameScheduledRef.current) {
+      dragFrameScheduledRef.current = true
+      dragRafRef.current = requestAnimationFrame(flushPendingDragUpdates)
+    }
 
     // Store the drag position
     dragPositionRef.current = { shapeId: id, x: constrainedX, y: constrainedY }
@@ -882,6 +951,14 @@ export default function Canvas() {
     // Clear drag position
     dragPositionRef.current = null
     dragThrottleRef.current = 0
+
+    // Cancel any pending rAF and clear queued drag updates
+    if (dragRafRef.current != null) {
+      cancelAnimationFrame(dragRafRef.current)
+      dragRafRef.current = null
+    }
+    pendingDragUpdatesRef.current.clear()
+    dragFrameScheduledRef.current = false
 
     // After dropping, unlock and deselect the shape
     unlockShape(id)
@@ -1006,6 +1083,56 @@ export default function Canvas() {
     resizingShapeIdRef.current = null
     resizeThrottleRef.current = 0
 
+    // Unlock and deselect
+    unlockShape(id)
+    setSelectedId(null)
+  }, [])
+
+  // Rotation handlers
+  const handleRotateStart = useCallback((id: string) => {
+    if (!wsRef.current) return
+    // Select and lock immediately
+    setSelectedId(id)
+    wsRef.current.send(JSON.stringify({
+      type: 'SHAPE_UPDATE',
+      payload: { shapeId: id, updates: { isLocked: true } },
+    }))
+  }, [])
+
+  const handleRotateMove = useCallback((id: string, rotation: number) => {
+    const shape = shapesRef.current.find(s => s.id === id)
+    if (!shape) return
+
+    // Update local state immediately
+    setShapes(prev => prev.map(s =>
+      s.id === id ? { ...s, rotation } : s
+    ))
+    shapesRef.current = shapesRef.current.map(s =>
+      s.id === id ? { ...s, rotation } : s
+    )
+
+    // Throttle WebSocket updates
+    if (Date.now() - resizeThrottleRef.current < 16) return // ~60fps
+    resizeThrottleRef.current = Date.now()
+
+    if (wsRef.current) {
+      wsRef.current.send(JSON.stringify({
+        type: 'SHAPE_UPDATE',
+        payload: { shapeId: id, updates: { rotation } },
+      }))
+    }
+  }, [])
+
+  const handleRotateEnd = useCallback((id: string) => {
+    if (!wsRef.current) return
+    // Send final rotation
+    const s = shapesRef.current.find(sh => sh.id === id)
+    if (s) {
+      wsRef.current.send(JSON.stringify({
+        type: 'SHAPE_UPDATE',
+        payload: { shapeId: id, updates: { rotation: s.rotation } },
+      }))
+    }
     // Unlock and deselect
     unlockShape(id)
     setSelectedId(null)
@@ -1300,36 +1427,7 @@ export default function Canvas() {
     }
   }, [hslToRgb, rgbToHex, selectedId])
 
-  // ---- Hex manual edit via prompt ----
-  const normalizeHex = useCallback((val: string): string | null => {
-    let v = val.trim()
-    if (v.startsWith('#')) v = v.slice(1)
-    v = v.toLowerCase()
-    if (/^[0-9a-f]{3}$/.test(v)) {
-      v = v.split('').map(c => c + c).join('')
-    }
-    if (!/^[0-9a-f]{6}$/.test(v)) return null
-    return `#${v.toUpperCase()}`
-  }, [])
-
-  const promptHexColor = useCallback(() => {
-    if (!selectedShape) return
-    const currentHex = (selectedShape.color || currentHexFromHue || '#FFFFFF').toUpperCase()
-    const value = window.prompt('Enter hex color (e.g. #FF00FF or 0AF):', currentHex)
-    if (value == null) return
-    const normalized = normalizeHex(value)
-    if (!normalized) return
-    const rgb = hexToRgb(normalized)
-    if (rgb) {
-      const { h, s, l } = rgbToHsl(rgb.r, rgb.g, rgb.b)
-      baseSLRef.current = { s, l }
-      setColorHue(h)
-    }
-    setShapes(prev => prev.map(s => s.id === selectedId ? { ...s, color: normalized } : s))
-    if (wsRef.current && selectedId) {
-      wsRef.current.send(JSON.stringify({ type: 'SHAPE_UPDATE', payload: { shapeId: selectedId, updates: { color: normalized } } }))
-    }
-  }, [currentHexFromHue, normalizeHex, hexToRgb, rgbToHsl, selectedId, selectedShape])
+  // ---- Hex manual edit moved to ColorSlider ----
 
   // Show authentication prompt if not connected
   if (!currentUserId || !canvasId || !wsRef.current) {
@@ -1375,134 +1473,23 @@ export default function Canvas() {
     )
   }
 
+
   return (
     <div style={{ width: '100%', height: '100%', position: 'relative', overflow: 'hidden', backgroundColor: '#0a0a0a' }}>
-      {/* Controls + Zoom container (top-left column) */}
-      <div style={{ position: 'absolute', top: '20px', left: '20px', zIndex: 10, display: 'flex', flexDirection: 'column', gap: '8px' }}>
-        {/* Canvas Controls */}
-        <div style={{
-          backgroundColor: '#1a1a1a',
-          padding: '12px',
-          borderRadius: '8px',
-          boxShadow: '0 2px 8px rgba(0,0,0,0.5)',
-          border: '1px solid #404040',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '8px',
-        }}>
-          <button
-            onClick={handleAddShape}
-            style={{
-              padding: '8px 16px',
-              backgroundColor: '#72fa41',
-              color: '#000000',
-              border: 'none',
-              borderRadius: '6px',
-              cursor: 'pointer',
-              fontSize: '14px',
-              fontWeight: '600',
-            }}
-          >
-            Add Rectangle
-          </button>
-          <button
-            onClick={handleAddCircle}
-            style={{
-              padding: '8px 16px',
-              backgroundColor: '#24ccff',
-              color: '#000000',
-              border: 'none',
-              borderRadius: '6px',
-              cursor: 'pointer',
-              fontSize: '14px',
-              fontWeight: '600',
-            }}
-          >
-            Add Circle
-          </button>
-          <button
-            onClick={handleAddText}
-            style={{
-              padding: '8px 16px',
-              backgroundColor: '#fbff00',
-              color: '#000000',
-              border: 'none',
-              borderRadius: '6px',
-              cursor: 'pointer',
-              fontSize: '14px',
-              fontWeight: '600',
-            }}
-          >
-            Add Text
-          </button>
-          <button
-            onClick={handleZoomIn}
-            onPointerDown={() => startZoomHold(1)}
-            onPointerUp={stopZoomHold}
-            onPointerLeave={stopZoomHold}
-            onPointerCancel={stopZoomHold}
-            onBlur={stopZoomHold}
-            style={{
-              padding: '8px 16px',
-              backgroundColor: '#2a2a2a',
-              color: '#ffffff',
-              border: '1px solid #404040',
-              borderRadius: '6px',
-              cursor: 'pointer',
-              fontSize: '14px',
-            }}
-          >
-            Zoom In
-          </button>
-          <button
-            onClick={handleZoomOut}
-            onPointerDown={() => startZoomHold(-1)}
-            onPointerUp={stopZoomHold}
-            onPointerLeave={stopZoomHold}
-            onPointerCancel={stopZoomHold}
-            onBlur={stopZoomHold}
-            style={{
-              padding: '8px 16px',
-              backgroundColor: '#2a2a2a',
-              color: '#ffffff',
-              border: '1px solid #404040',
-              borderRadius: '6px',
-              cursor: 'pointer',
-              fontSize: '14px',
-            }}
-          >
-            Zoom Out
-          </button>
-          <button
-            onClick={handleResetView}
-            style={{
-              padding: '8px 16px',
-              backgroundColor: '#2a2a2a',
-              color: '#ffffff',
-              border: '1px solid #404040',
-              borderRadius: '6px',
-              cursor: 'pointer',
-              fontSize: '14px',
-            }}
-          >
-            Reset View
-          </button>
-        </div>
-
-        {/* Zoom Indicator (below controls) */}
-        <div style={{
-          backgroundColor: 'rgba(26,26,26,0.9)',
-          color: '#ffffff',
-          padding: '6px 10px',
-          borderRadius: '6px',
-          border: '1px solid #404040',
-          fontSize: '12px',
-          boxShadow: '0 2px 8px rgba(0,0,0,0.5)',
-          width: 'fit-content'
-        }}>
-          {Math.round(stageScale * 100)}%
-        </div>
-      </div>
+      {/* Control Panel */}
+      <ControlPanel
+        onAddRectangle={handleAddShape}
+        onAddCircle={handleAddCircle}
+        onAddText={handleAddText}
+        onZoomIn={handleZoomIn}
+        onZoomOut={handleZoomOut}
+        onResetView={handleResetView}
+        onZoomInHold={() => startZoomHold(1)}
+        onZoomOutHold={() => startZoomHold(-1)}
+        onStopZoomHold={stopZoomHold}
+        stageScale={stageScale}
+        onToggleCanvasBg={() => setIsCanvasBgOpen(v => !v)}
+      />
 
       {/* Pan Mode Indicator removed */}
 
@@ -1612,7 +1599,7 @@ export default function Canvas() {
             y={0}
             width={CANVAS_WIDTH}
             height={CANVAS_HEIGHT}
-            fill="#1a1a1a"
+            fill={canvasBgHex}
             listening={false}
           />
 
@@ -1648,6 +1635,9 @@ export default function Canvas() {
               onResizeStart={handleResizeStart}
               onResizeMove={handleResizeMove}
               onResizeEnd={handleResizeEnd}
+              onRotateStart={handleRotateStart}
+              onRotateMove={handleRotateMove}
+              onRotateEnd={handleRotateEnd}
               onTextDoubleClick={handleTextDoubleClick}
             />
           ))}
@@ -1675,54 +1665,133 @@ export default function Canvas() {
             padding: '8px 10px',
             boxShadow: '0 4px 12px rgba(0,0,0,0.6)',
             display: 'flex',
+            flexDirection: selectedShape.type === 'text' ? 'column' : 'row',
             alignItems: 'center',
             gap: '10px',
             pointerEvents: 'auto',
             color: '#fff',
           }}
         >
-          <div
-            style={{
-              width: '16px',
-              height: '16px',
-              borderRadius: '4px',
-              border: '1px solid #404040',
-              backgroundColor: currentHexFromHue,
-              boxShadow: `0 0 6px ${currentHexFromHue}`,
-            }}
-            title={currentHexFromHue}
-          />
-          <input
-            type="range"
-            min={0}
-            max={360}
-            step={1}
-            value={Math.round(colorHue)}
-            onChange={(e) => handleHueChange(Number(e.target.value))}
-            style={{
-              width: '180px',
-              WebkitAppearance: 'none',
-              height: '6px',
-              borderRadius: '4px',
-              background: 'linear-gradient(90deg, #ff0000, #ffff00, #00ff00, #00ffff, #0000ff, #ff00ff, #ff0000)',
-              outline: 'none',
-              border: '1px solid #303030',
-            }}
-          />
-          <div
-            onDoubleClick={promptHexColor}
-            onTouchEnd={() => {
-              const now = performance.now()
-              if (now - hexLastTapTsRef.current < 300) {
-                promptHexColor()
+          <ColorSlider
+            valueHex={currentHexFromHue}
+            onChangeHex={(hex) => {
+              // update hue based on hex and send shape update (reuse existing logic)
+              const rgb = hexToRgb(hex)
+              if (rgb) {
+                const { h, s, l } = rgbToHsl(rgb.r, rgb.g, rgb.b)
+                baseSLRef.current = { s, l }
+                handleHueChange(h)
               }
-              hexLastTapTsRef.current = now
             }}
-            style={{ fontFamily: 'monospace', fontSize: '12px', color: '#ddd', cursor: 'text' }}
-            title="Double-click to edit hex"
-          >
-            {currentHexFromHue.toUpperCase()}
+            allowHexEdit={true}
+            layout={selectedShape.type === 'text' ? 'column' : 'row'}
+          />
+
+          {/* Font controls for text shapes */}
+          {selectedShape.type === 'text' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '8px' }}>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <label style={{ fontSize: '12px', color: '#ccc' }}>Font:</label>
+                <select
+                  value={selectedShape.fontFamily ?? (selectedShape as any).font_family ?? 'Inter'}
+                  onChange={(e) => {
+                    if (wsRef.current && selectedId) {
+                      wsRef.current.send(JSON.stringify({
+                        type: 'SHAPE_UPDATE',
+                        payload: { shapeId: selectedId, updates: { fontFamily: e.target.value } }
+                      }))
+                    }
+                  }}
+                  style={{
+                    backgroundColor: '#333',
+                    color: '#fff',
+                    border: '1px solid #555',
+                    borderRadius: '4px',
+                    padding: '4px 8px',
+                    fontSize: '12px'
+                  }}
+                >
+                  <option value="Inter">Inter</option>
+                  <option value="Arial">Arial</option>
+                  <option value="Helvetica">Helvetica</option>
+                  <option value="Times New Roman">Times New Roman</option>
+                  <option value="Georgia">Georgia</option>
+                  <option value="Verdana">Verdana</option>
+                  <option value="Courier New">Courier New</option>
+                  <option value="Comic Sans MS">Comic Sans MS</option>
+                </select>
+              </div>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <label style={{ fontSize: '12px', color: '#ccc' }}>Weight:</label>
+                <select
+                  value={selectedShape.fontWeight ?? (selectedShape as any).font_weight ?? 'normal'}
+                  onChange={(e) => {
+                    if (wsRef.current && selectedId) {
+                      wsRef.current.send(JSON.stringify({
+                        type: 'SHAPE_UPDATE',
+                        payload: { shapeId: selectedId, updates: { fontWeight: e.target.value } }
+                      }))
+                    }
+                  }}
+                  style={{
+                    backgroundColor: '#333',
+                    color: '#fff',
+                    border: '1px solid #555',
+                    borderRadius: '4px',
+                    padding: '4px 8px',
+                    fontSize: '12px'
+                  }}
+                >
+                  <option value="normal">Normal</option>
+                  <option value="bold">Bold</option>
+                  <option value="100">100</option>
+                  <option value="200">200</option>
+                  <option value="300">300</option>
+                  <option value="400">400</option>
+                  <option value="500">500</option>
+                  <option value="600">600</option>
+                  <option value="700">700</option>
+                  <option value="800">800</option>
+                  <option value="900">900</option>
+                </select>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Floating Canvas Background Color panel (right side) */}
+      {isCanvasBgOpen && (
+        <div
+          style={{
+            position: 'absolute',
+            top: '20px',
+            right: '20px',
+            zIndex: 11,
+            backgroundColor: 'rgba(26, 26, 26, 0.95)',
+            border: '1px solid #404040',
+            borderRadius: '12px',
+            padding: '12px 14px',
+            boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4)'
+          }}
+        >
+          <div style={{ fontSize: '12px', fontWeight: 600, color: '#888', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>
+            Canvas Background
           </div>
+          <ColorSlider
+            valueHex={canvasBgHex}
+            onChangeHex={(hex) => {
+              setCanvasBgHex(hex)
+              if (wsRef.current) {
+                wsRef.current.send(JSON.stringify({
+                  type: 'CANVAS_UPDATE',
+                  payload: { updates: { backgroundColor: hex } }
+                }))
+              }
+            }}
+            allowHexEdit={true}
+            layout="row"
+          />
         </div>
       )}
     </div>

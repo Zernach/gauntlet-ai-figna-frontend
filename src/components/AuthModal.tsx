@@ -1,5 +1,5 @@
 import { useState, useCallback, useMemo } from 'react'
-import { supabase } from '../lib/supabase'
+import { supabase, getAuthRedirectUrl } from '../lib/supabase'
 
 interface AuthModalProps {
   onClose: () => void
@@ -28,6 +28,9 @@ export default function AuthModal({ onClose }: AuthModalProps) {
         const { error } = await supabase.auth.signUp({
           email,
           password,
+          options: {
+            emailRedirectTo: getAuthRedirectUrl(),
+          },
         })
         if (error) throw error
       }
@@ -45,7 +48,7 @@ export default function AuthModal({ onClose }: AuthModalProps) {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: window.location.origin,
+          redirectTo: getAuthRedirectUrl(),
           queryParams: {
             access_type: 'offline',
             prompt: 'consent',
