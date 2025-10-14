@@ -112,7 +112,6 @@ All backend documentation has been verified and aligned with the current fronten
 - [ ] POST /api/gauntlet/auth/register
 - [ ] POST /api/gauntlet/auth/refresh
 - [ ] GET /api/gauntlet/auth/profile
-- [ ] Integrate Google OAuth
 
 #### Week 3: Canvas REST API
 - [ ] GET /api/gauntlet/canvas (list)
@@ -274,11 +273,6 @@ JWT_EXPIRES_IN=7d
 REFRESH_TOKEN_SECRET=your-refresh-token-secret
 REFRESH_TOKEN_EXPIRES_IN=30d
 
-# Google OAuth
-GOOGLE_CLIENT_ID=your-google-client-id.apps.googleusercontent.com
-GOOGLE_CLIENT_SECRET=your-google-client-secret
-GOOGLE_CALLBACK_URL=http://localhost:3000/api/gauntlet/auth/google/callback
-
 # CORS
 ALLOWED_ORIGINS=http://localhost:8081,http://localhost:19006,exp://192.168.1.100:19000
 
@@ -357,7 +351,6 @@ Before starting backend development, ensure:
 - [ ] PostgreSQL instance available
 - [ ] Node.js 18+ installed
 - [ ] Redis instance (optional, for caching)
-- [ ] Google OAuth credentials obtained
 
 ---
 

@@ -5,7 +5,7 @@ A real-time collaborative design canvas application with Supabase Authentication
 ## Features
 
 - 🎨 Real-time collaborative canvas
-- 🔐 Supabase Authentication with Google Sign-In
+- 🔐 Supabase Authentication
 - 🌐 Cross-platform support (Web, iOS, Android)
 - 🔌 WebSocket-based real-time updates
 - 📱 Modern UI with gesture support
@@ -27,17 +27,21 @@ cd gauntlet-ai
 yarn install
 ```
 
-### 2. Configure Supabase
+### 2. Configure Environment
 
-Create a `.env` file in the project root:
+Create a `.env` file in the project root. See **[ENV_TEMPLATE.md](./ENV_TEMPLATE.md)** for detailed setup instructions.
+
+Quick setup:
 
 ```bash
-ENVIRONMENT=dev
+ENVIRONMENT=local
+RAILWAY_API_URL=https://your-app.railway.app
+RAILWAY_WS_URL=wss://your-app.railway.app
 SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_ANON_KEY=your-anon-key
 ```
 
-Replace with your actual Supabase project URL and anonymous key from the Supabase Dashboard.
+Replace with your actual Railway and Supabase credentials.
 
 ### 3. Run the Application
 
@@ -57,10 +61,10 @@ yarn android
 
 ## Authentication Setup
 
-This project uses **Supabase Authentication** with Google Sign-In. To set up authentication:
+This project uses **Supabase Authentication**. To set up authentication:
 
 1. Create a Supabase project at [supabase.com](https://supabase.com)
-2. Enable Google OAuth provider in Authentication → Providers
+2. Enable your preferred authentication provider in Authentication → Providers
 3. Configure authorized redirect URLs
 4. Copy your project URL and anon key to `.env`
 
@@ -117,11 +121,21 @@ For backend setup, see the `gauntlet-ai-backend` directory README.
 
 The app supports three environments configured in `constants/config.ts`:
 
-- **local**: `http://localhost:3000/api/gauntlet`
-- **dev**: `https://api-dev.archlife.org/api/gauntlet`
-- **prod**: `https://api.archlife.org/api/gauntlet`
+- **local**: `http://localhost:3001/api/gauntlet` + `ws://localhost:3002` (default)
+- **dev**: Railway URLs or dev server fallback
+- **prod**: Railway URLs or production server fallback
 
-Set the environment in `constants/config.ts` or via environment variable.
+Set the `ENVIRONMENT` variable in your `.env` file:
+
+```bash
+ENVIRONMENT=local   # For local development
+ENVIRONMENT=dev     # For dev/staging
+ENVIRONMENT=prod    # For production
+```
+
+For detailed environment setup, see:
+- **[ENV_TEMPLATE.md](./ENV_TEMPLATE.md)** - Environment variable template and setup guide
+- **[RAILWAY_SETUP.md](./RAILWAY_SETUP.md)** - Railway deployment configuration
 
 ## Development
 
@@ -172,9 +186,8 @@ yarn build:android
 1. Start the backend server (in `gauntlet-ai-backend` directory)
 2. Start the frontend: `yarn start`
 3. Open in browser or mobile device
-4. Click "Continue with Google"
-5. Sign in with your Google account
-6. Verify that:
+4. Sign in with your configured authentication provider
+5. Verify that:
    - User profile appears
    - API calls work
    - WebSocket connection establishes
@@ -189,7 +202,7 @@ yarn build:android
 - Restart the Expo development server
 
 **"Authentication failed"**
-- Ensure Google OAuth provider is enabled in Supabase Dashboard
+- Ensure your authentication provider is enabled in Supabase Dashboard
 - Check authorized redirect URLs in Supabase Dashboard
 - Verify backend is running and accessible
 
@@ -202,6 +215,8 @@ For more troubleshooting tips, see the [Supabase Documentation](https://supabase
 
 ## Documentation
 
+- [ENV_TEMPLATE.md](./ENV_TEMPLATE.md) - Environment setup and configuration
+- [RAILWAY_SETUP.md](./RAILWAY_SETUP.md) - Railway deployment guide
 - [AUTH_QUICK_REFERENCE.md](./AUTH_QUICK_REFERENCE.md) - Quick authentication reference
 - [AUTHENTICATION_IMPLEMENTATION.md](./AUTHENTICATION_IMPLEMENTATION.md) - Implementation details
 

@@ -66,7 +66,6 @@ Successfully migrated from Firebase Authentication to Supabase Authentication. T
 
 1. **`lib/firebase/config.ts`** - Firebase configuration (no longer needed)
 2. **`FIREBASE_MIGRATION_SUMMARY.md`** - Old migration docs
-3. **`GOOGLE_OAUTH_SETUP.md`** - Deprecated OAuth docs
 
 ### Backend (gauntlet-ai-backend)
 
@@ -108,7 +107,7 @@ SUPABASE_JWT_SECRET=your-jwt-secret
 ### Before (Firebase Authentication)
 
 ```
-User → Firebase Auth (Google) → Firebase ID Token → Backend verifies → JWT
+User → Firebase Auth → Firebase ID Token → Backend verifies → JWT
 ```
 
 **Issues:**
@@ -120,7 +119,7 @@ User → Firebase Auth (Google) → Firebase ID Token → Backend verifies → J
 ### After (Supabase Authentication)
 
 ```
-User → Supabase Auth (Google) → Supabase Access Token → API calls
+User → Supabase Auth → Supabase Access Token → API calls
 ```
 
 **Improvements:**
@@ -166,7 +165,7 @@ User → Supabase Auth (Google) → Supabase Access Token → API calls
 - [x] Update documentation
 
 ### Testing Tasks
-- [ ] Test sign in with Google
+- [ ] Test sign in
 - [ ] Test sign out
 - [ ] Test session persistence
 - [ ] Test token refresh
@@ -177,7 +176,7 @@ User → Supabase Auth (Google) → Supabase Access Token → API calls
 
 ### Deployment Tasks
 - [ ] Set up Supabase project
-- [ ] Enable Google OAuth provider in Supabase
+- [ ] Enable authentication provider in Supabase
 - [ ] Configure authorized redirect URLs
 - [ ] Update environment variables in production
 - [ ] Deploy frontend
@@ -204,16 +203,16 @@ User → Supabase Auth (Google) → Supabase Access Token → API calls
 5. Go to Project Settings → API → JWT Settings
 6. Copy **JWT Secret** (`SUPABASE_JWT_SECRET`) - for backend
 
-### 3. Enable Google OAuth
+### 3. Enable Authentication Provider
 
 1. Go to Authentication → Providers
-2. Find "Google" and click to expand
-3. Toggle "Enable Sign in with Google"
-4. Go to [Google Cloud Console](https://console.cloud.google.com)
+2. Find your preferred provider and click to expand
+3. Toggle "Enable Sign in with [Provider]"
+4. Go to your provider's developer console
 5. Create OAuth 2.0 credentials (if not already exists)
 6. Add authorized redirect URIs:
    - `https://your-project.supabase.co/auth/v1/callback`
-7. Copy Client ID and Client Secret to Supabase
+7. Copy credentials to Supabase
 8. Save configuration
 
 ### 4. Configure Redirect URLs
@@ -271,8 +270,8 @@ yarn start
 
 ### "OAuth provider not enabled"
 - Go to Supabase Dashboard → Authentication → Providers
-- Enable Google provider
-- Add Client ID and Secret from Google Cloud Console
+- Enable your authentication provider
+- Add required credentials from provider console
 
 ### "Invalid redirect URL"
 - Check authorized redirect URLs in Supabase Dashboard
@@ -323,7 +322,7 @@ If issues arise, you can rollback to Firebase:
 8. [ ] Deploy to production
 
 ### Future Enhancements
-1. Add more OAuth providers (Apple, GitHub)
+1. Add more OAuth providers
 2. Implement email/password authentication
 3. Add magic link authentication
 4. Set up email templates
@@ -336,7 +335,6 @@ If issues arise, you can rollback to Firebase:
 - **Supabase Dashboard**: [app.supabase.com](https://app.supabase.com)
 - **Supabase Docs**: [supabase.com/docs](https://supabase.com/docs)
 - **Auth Guide**: [supabase.com/docs/guides/auth](https://supabase.com/docs/guides/auth)
-- **Google OAuth**: [supabase.com/docs/guides/auth/social-login/auth-google](https://supabase.com/docs/guides/auth/social-login/auth-google)
 - **Project Docs**:
   - [AUTH_QUICK_REFERENCE.md](./AUTH_QUICK_REFERENCE.md)
   - [AUTHENTICATION_IMPLEMENTATION.md](./AUTHENTICATION_IMPLEMENTATION.md)

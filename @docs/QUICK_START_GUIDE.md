@@ -26,10 +26,9 @@ yarn web
 ## 📱 Using the App
 
 ### 1. Login
-- Click "Continue with Google (Demo)"
-- You'll be signed in automatically with a demo account
+- Click the sign in button
+- You'll be signed in with your configured authentication provider
 - Each session gets a unique ID and random color
-- Note: Real Google OAuth integration coming soon!
 
 ### 2. Canvas Tools
 

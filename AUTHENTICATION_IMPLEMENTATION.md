@@ -2,7 +2,7 @@
 
 **Date**: October 14, 2025  
 **Project**: Gauntlet AI  
-**Authentication**: Supabase Auth with Google OAuth
+**Authentication**: Supabase Auth
 
 ## Overview
 
@@ -70,7 +70,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
 The `AuthButton` component handles the complete authentication flow:
 
 **Sign In Flow:**
-1. User clicks "Continue with Google"
+1. User clicks sign in button
 2. Supabase opens OAuth consent screen
 3. User authorizes the application
 4. Supabase redirects back with session
@@ -186,7 +186,7 @@ This is called once during app initialization and automatically adds the `Author
 ┌─────────────────┐
 │  AuthButton     │
 └──────┬──────────┘
-       │ signInWithOAuth('google')
+       │ signInWithOAuth(provider)
        ▼
 ┌─────────────────┐
 │ Supabase Client │
@@ -194,7 +194,7 @@ This is called once during app initialization and automatically adds the `Author
        │ Opens OAuth
        ▼
 ┌─────────────────┐
-│ Google OAuth    │
+│ OAuth Provider  │
 └──────┬──────────┘
        │ User authorizes
        ▼
@@ -338,10 +338,10 @@ SUPABASE_JWT_SECRET=your-jwt-secret
 
 ### Supabase Dashboard Configuration
 
-1. **Enable Google OAuth:**
+1. **Enable Authentication Provider:**
    - Go to Authentication → Providers
-   - Enable Google provider
-   - Add Client ID and Secret from Google Cloud Console
+   - Enable your preferred provider
+   - Add required credentials from provider console
 
 2. **Configure Redirect URLs:**
    - Add your app's redirect URLs
@@ -357,7 +357,7 @@ SUPABASE_JWT_SECRET=your-jwt-secret
 ### Test Sign In
 ```bash
 1. Start app: yarn start
-2. Click "Continue with Google"
+2. Click sign in button
 3. Sign in with test account
 4. Verify user appears in Supabase Dashboard
 5. Check Redux DevTools for user state
@@ -385,9 +385,9 @@ SUPABASE_JWT_SECRET=your-jwt-secret
 ## Troubleshooting
 
 ### "Authentication failed"
-- Check Google OAuth is enabled in Supabase
+- Check authentication provider is enabled in Supabase
 - Verify redirect URLs are configured
-- Check Client ID and Secret are correct
+- Check provider credentials are correct
 
 ### "Token expired"
 - Token refresh may have failed
@@ -440,7 +440,6 @@ SUPABASE_JWT_SECRET=your-jwt-secret
 ## References
 
 - [Supabase Auth Documentation](https://supabase.com/docs/guides/auth)
-- [Google OAuth Setup](https://supabase.com/docs/guides/auth/social-login/auth-google)
 - [Supabase JavaScript Client](https://supabase.com/docs/reference/javascript/auth-signinwithoauth)
 - [JWT Best Practices](https://supabase.com/docs/learn/auth-deep-dive/auth-deep-dive-jwts)
 

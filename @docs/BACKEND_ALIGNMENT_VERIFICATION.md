@@ -327,7 +327,6 @@ Update `architecture-mermaid.md` to reflect:
   - [ ] POST /api/gauntlet/auth/register endpoint
   - [ ] POST /api/gauntlet/auth/refresh endpoint
   - [ ] GET /api/gauntlet/auth/profile endpoint
-  - [ ] Integrate with Google OAuth (demo mode → real OAuth)
 
 - [ ] **Canvas REST API**
   - [ ] GET /api/gauntlet/canvas (list canvases)
@@ -407,11 +406,6 @@ DATABASE_POOL_SIZE=20
 JWT_SECRET=your-secret-key
 JWT_EXPIRES_IN=7d
 REFRESH_TOKEN_EXPIRES_IN=30d
-
-# Google OAuth
-GOOGLE_CLIENT_ID=your-client-id
-GOOGLE_CLIENT_SECRET=your-client-secret
-GOOGLE_CALLBACK_URL=http://localhost:3000/api/gauntlet/auth/google/callback
 
 # WebSocket
 WS_PORT=8080

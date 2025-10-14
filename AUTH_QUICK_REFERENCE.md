@@ -7,7 +7,7 @@
 import { supabase } from '@/lib/supabase/config';
 
 const { data, error } = await supabase.auth.signInWithOAuth({
-  provider: 'google',
+  provider: 'your-provider', // e.g., 'github', 'azure', etc.
   options: {
     redirectTo: window.location.origin,
   },
@@ -171,7 +171,7 @@ SUPABASE_JWT_SECRET=your-jwt-secret
 
 ### "Authentication failed"
 - Check Supabase Dashboard → Authentication → Providers
-- Ensure Google OAuth provider is enabled
+- Ensure your authentication provider is enabled
 - Verify authorized redirect URLs are configured
 - Check that callback URL matches your app's domain
 
@@ -210,7 +210,6 @@ Quick Links:
 
 - [Supabase Auth Documentation](https://supabase.com/docs/guides/auth)
 - [Supabase JavaScript Client](https://supabase.com/docs/reference/javascript/introduction)
-- [Google OAuth Setup](https://supabase.com/docs/guides/auth/social-login/auth-google)
 
 ---
 
