@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
-import { Stage, Layer, Rect, Circle, Text as KonvaText } from 'react-konva'
+import { Stage, Layer, Rect } from 'react-konva'
 import Konva from 'konva'
 import { supabase } from '../lib/supabase'
+import CanvasShape from './CanvasShape'
+import CanvasCursor from './CanvasCursor'
 
 // Canvas constants - Extremely expansive canvas
 const CANVAS_WIDTH = 50000
@@ -75,6 +77,7 @@ export default function Canvas() {
   const shapesRef = useRef<Shape[]>([])
   const currentUserIdRef = useRef<string | null>(null)
   const isDragMoveRef = useRef<boolean>(false)
+  const isShapeDragActiveRef = useRef<boolean>(false) // Track if we're actively dragging a shape
 
   // Keep refs in sync with state
   useEffect(() => {
@@ -134,41 +137,6 @@ export default function Canvas() {
   const cursorsArray = useMemo(() => {
     return Array.from(cursors.values())
   }, [cursors])
-
-  // Memoize rendered cursors
-  const renderedCursors = useMemo(() => {
-    return cursorsArray.map(cursor => (
-      <g key={cursor.userId}>
-        {/* Cursor pointer */}
-        <Rect
-          x={cursor.x}
-          y={cursor.y}
-          width={2}
-          height={16}
-          fill={cursor.color}
-          listening={false}
-        />
-        <Rect
-          x={cursor.x}
-          y={cursor.y}
-          width={12}
-          height={2}
-          fill={cursor.color}
-          listening={false}
-        />
-        {/* User name label */}
-        <KonvaText
-          x={cursor.x + 14}
-          y={cursor.y - 2}
-          text={cursor.email}
-          fontSize={12}
-          fill="#ffffff"
-          fontStyle="bold"
-          listening={false}
-        />
-      </g>
-    ))
-  }, [cursorsArray])
 
   // Initialize canvas and WebSocket
   useEffect(() => {
@@ -473,6 +441,7 @@ export default function Canvas() {
 
     // Set dragging flags to prevent stage click deselection and accidental selection
     isDraggingShapeRef.current = true
+    isShapeDragActiveRef.current = true // Mark shape drag as active
     isDragMoveRef.current = false // Reset drag move flag
 
     // Select the shape being dragged
@@ -543,6 +512,9 @@ export default function Canvas() {
   // Handle shape drag end (unlock and send final position)
   const handleShapeDragEnd = useCallback((id: string) => {
     if (!wsRef.current) return
+
+    // Clear shape drag active flag immediately
+    isShapeDragActiveRef.current = false
 
     // Clear dragging flag after a longer delay to prevent accidental clicks/deselections
     setTimeout(() => {
@@ -740,8 +712,8 @@ export default function Canvas() {
     })
   }, [])
 
-  // Memoize rendered shapes to avoid recalculating on every render
-  const renderedShapes = useMemo(() => {
+  // Memoize shape rendering props to avoid recalculating on every render
+  const shapeRenderProps = useMemo(() => {
     return shapes.map(shape => {
       const isSelected = selectedId === shape.id
       const remainingSeconds = getRemainingLockSeconds(shape.locked_at)
@@ -754,79 +726,15 @@ export default function Canvas() {
       const strokeWidth = isSelected ? 3 : isLocked ? 2 : 1
       const isDraggable = !isPanning && (!isLocked || shape.locked_by === currentUserId)
 
-      if (shape.type === 'circle') {
-        return (
-          <g key={shape.id}>
-            <Circle
-              x={shape.x}
-              y={shape.y}
-              radius={shape.radius || DEFAULT_SHAPE_SIZE / 2}
-              fill={shape.color}
-              stroke={strokeColor}
-              strokeWidth={strokeWidth}
-              onTap={() => !isPanning && handleShapeClick(shape.id)}
-              onClick={() => !isPanning && handleShapeClick(shape.id)}
-              draggable={isDraggable}
-              onDragStart={() => handleShapeDragStart(shape.id)}
-              onDragMove={(e) => {
-                handleShapeDrag(shape.id, e.target.x(), e.target.y())
-              }}
-              onDragEnd={() => handleShapeDragEnd(shape.id)}
-              perfectDrawEnabled={false}
-            />
-            {/* Countdown timer for locked shapes */}
-            {isLocked && remainingSeconds !== null && (
-              <KonvaText
-                x={shape.x - 15}
-                y={shape.y - 8}
-                text={`🔒 ${Math.ceil(remainingSeconds)}s`}
-                fontSize={14}
-                fontStyle="bold"
-                fill="#ef4444"
-                listening={false}
-              />
-            )}
-          </g>
-        )
+      return {
+        shape,
+        strokeColor,
+        strokeWidth,
+        isDraggable,
+        remainingSeconds,
       }
-
-      // Default to rectangle
-      return (
-        <g key={shape.id}>
-          <Rect
-            x={shape.x}
-            y={shape.y}
-            width={shape.width || DEFAULT_SHAPE_SIZE}
-            height={shape.height || DEFAULT_SHAPE_SIZE}
-            fill={shape.color}
-            stroke={strokeColor}
-            strokeWidth={strokeWidth}
-            onTap={() => !isPanning && handleShapeClick(shape.id)}
-            onClick={() => !isPanning && handleShapeClick(shape.id)}
-            draggable={isDraggable}
-            onDragStart={() => handleShapeDragStart(shape.id)}
-            onDragMove={(e) => {
-              handleShapeDrag(shape.id, e.target.x(), e.target.y())
-            }}
-            onDragEnd={() => handleShapeDragEnd(shape.id)}
-            perfectDrawEnabled={false}
-          />
-          {/* Countdown timer for locked shapes */}
-          {isLocked && remainingSeconds !== null && (
-            <KonvaText
-              x={shape.x + 5}
-              y={shape.y + 5}
-              text={`🔒 ${Math.ceil(remainingSeconds)}s`}
-              fontSize={14}
-              fontStyle="bold"
-              fill="#ef4444"
-              listening={false}
-            />
-          )}
-        </g>
-      )
     })
-  }, [shapes, selectedId, currentTime, isPanning, currentUserId, getRemainingLockSeconds, getUserColor, handleShapeClick, handleShapeDragStart, handleShapeDrag, handleShapeDragEnd])
+  }, [shapes, selectedId, currentTime, isPanning, currentUserId, getRemainingLockSeconds, getUserColor])
 
   // Show authentication prompt if not connected
   if (!currentUserId || !canvasId || !wsRef.current) {
@@ -1049,13 +957,16 @@ export default function Canvas() {
         scaleY={stageScale}
         x={stagePos.x}
         y={stagePos.y}
-        draggable={isPanning}
+        draggable={isPanning && !isShapeDragActiveRef.current}
         onWheel={handleWheel}
         onClick={handleStageClick}
         onMouseMove={handleMouseMove}
         onDragMove={(e) => {
-          const stage = e.target as Konva.Stage
-          setStagePos({ x: stage.x(), y: stage.y() })
+          // Only update position if we're actually panning and not dragging a shape
+          if (isPanning && !isShapeDragActiveRef.current) {
+            const stage = e.target as Konva.Stage
+            setStagePos({ x: stage.x(), y: stage.y() })
+          }
         }}
         dragBoundFunc={(pos) => {
           // Constrain stage dragging to canvas boundaries
@@ -1064,7 +975,8 @@ export default function Canvas() {
           return { x: newX, y: newY }
         }}
       >
-        <Layer>
+        {/* Background Layer - separate layer prevents re-renders */}
+        <Layer listening={false}>
           {/* Canvas Background */}
           <Rect
             x={0}
@@ -1085,12 +997,32 @@ export default function Canvas() {
             strokeWidth={2}
             listening={false}
           />
+        </Layer>
 
-          {/* Shapes - using memoized renderedShapes */}
-          {renderedShapes}
+        {/* Shapes Layer - separate layer prevents re-renders of other elements */}
+        <Layer>
+          {shapeRenderProps.map(props => (
+            <CanvasShape
+              key={props.shape.id}
+              shape={props.shape}
+              strokeColor={props.strokeColor}
+              strokeWidth={props.strokeWidth}
+              isDraggable={props.isDraggable}
+              isPanning={isPanning}
+              remainingSeconds={props.remainingSeconds}
+              onShapeClick={handleShapeClick}
+              onDragStart={handleShapeDragStart}
+              onDragMove={handleShapeDrag}
+              onDragEnd={handleShapeDragEnd}
+            />
+          ))}
+        </Layer>
 
-          {/* Other users' cursors - using memoized renderedCursors */}
-          {renderedCursors}
+        {/* Cursors Layer - separate layer prevents re-renders when cursors move */}
+        <Layer listening={false}>
+          {cursorsArray.map(cursor => (
+            <CanvasCursor key={cursor.userId} cursor={cursor} />
+          ))}
         </Layer>
       </Stage>
     </div>
