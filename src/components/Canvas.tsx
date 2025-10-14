@@ -87,6 +87,13 @@ export default function Canvas() {
   const zoomFromPosRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 })
   const zoomToPosRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 })
 
+  // Continuous zoom (press-and-hold) refs
+  const zoomHoldRafRef = useRef<number | null>(null)
+  const zoomHoldActiveRef = useRef<boolean>(false)
+  const zoomHoldDirectionRef = useRef<1 | -1>(1)
+  const zoomHoldLastTsRef = useRef<number>(0)
+  const stagePosRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 })
+
   // Easing function for smooth zoom
   const easeInOutCubic = useCallback((t: number) => (
     t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2
@@ -168,6 +175,78 @@ export default function Canvas() {
 
     zoomAnimRafRef.current = requestAnimationFrame(step)
   }, [cancelZoomAnimation, computeAnchoredPosition, easeInOutCubic, stagePos, stageScale])
+
+  // Keep stage position ref in sync for continuous zoom calculations
+  useEffect(() => {
+    stagePosRef.current = stagePos
+  }, [stagePos])
+
+  // Start/stop continuous zoom
+  const startZoomHold = useCallback((direction: 1 | -1) => {
+    zoomHoldDirectionRef.current = direction
+    zoomHoldActiveRef.current = true
+    zoomHoldLastTsRef.current = 0
+    // Cancel any existing zoom animation to avoid fighting animations
+    cancelZoomAnimation()
+
+    const step = (ts: number) => {
+      if (!zoomHoldActiveRef.current) {
+        zoomHoldRafRef.current = null
+        return
+      }
+
+      if (zoomHoldLastTsRef.current === 0) {
+        zoomHoldLastTsRef.current = ts
+        zoomHoldRafRef.current = requestAnimationFrame(step)
+        return
+      }
+
+      const dt = ts - zoomHoldLastTsRef.current
+      zoomHoldLastTsRef.current = ts
+
+      const stage = stageRef.current
+      if (!stage) {
+        zoomHoldRafRef.current = requestAnimationFrame(step)
+        return
+      }
+
+      const oldScale = stage.scaleX()
+      const speedPerMs = 0.0007 // multiplicative scale speed
+      const factor = 1 + speedPerMs * dt
+      let newScale = zoomHoldDirectionRef.current > 0 ? oldScale * factor : oldScale / factor
+      newScale = Math.max(0.1, Math.min(3, newScale))
+
+      const anchor = { x: VIEWPORT_WIDTH / 2, y: VIEWPORT_HEIGHT / 2 }
+      const newPos = computeAnchoredPosition(oldScale, newScale, stagePosRef.current, anchor)
+
+      setStageScale(newScale)
+      setStagePos(newPos)
+
+      zoomHoldRafRef.current = requestAnimationFrame(step)
+    }
+
+    zoomHoldRafRef.current = requestAnimationFrame(step)
+  }, [cancelZoomAnimation, computeAnchoredPosition])
+
+  const stopZoomHold = useCallback(() => {
+    zoomHoldActiveRef.current = false
+    zoomHoldLastTsRef.current = 0
+    if (zoomHoldRafRef.current != null) {
+      cancelAnimationFrame(zoomHoldRafRef.current)
+      zoomHoldRafRef.current = null
+    }
+  }, [])
+
+  // Cleanup continuous zoom on unmount
+  useEffect(() => {
+    return () => {
+      if (zoomHoldRafRef.current != null) {
+        cancelAnimationFrame(zoomHoldRafRef.current)
+        zoomHoldRafRef.current = null
+      }
+      zoomHoldActiveRef.current = false
+    }
+  }, [])
 
   // Keep refs in sync with state
   useEffect(() => {
@@ -983,6 +1062,11 @@ export default function Canvas() {
           </button>
           <button
             onClick={handleZoomIn}
+            onPointerDown={() => startZoomHold(1)}
+            onPointerUp={stopZoomHold}
+            onPointerLeave={stopZoomHold}
+            onPointerCancel={stopZoomHold}
+            onBlur={stopZoomHold}
             style={{
               padding: '8px 16px',
               backgroundColor: '#2a2a2a',
@@ -997,6 +1081,11 @@ export default function Canvas() {
           </button>
           <button
             onClick={handleZoomOut}
+            onPointerDown={() => startZoomHold(-1)}
+            onPointerUp={stopZoomHold}
+            onPointerLeave={stopZoomHold}
+            onPointerCancel={stopZoomHold}
+            onBlur={stopZoomHold}
             style={{
               padding: '8px 16px',
               backgroundColor: '#2a2a2a',
