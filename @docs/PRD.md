@@ -1,6 +1,6 @@
-# CollabCanvas MVP - Product Requirements Document
+# Figna CollabCanvas MVP - Product Requirements Document
 
-**Project**: CollabCanvas - Real-Time Collaborative Design Tool  
+**Project**: Figna - Realtime Collaborative Design Canvas  
 **Goal**: Build a solid multiplayer foundation with basic canvas functionality
 
 **Note**: AI features are intentionally not part of this MVP and will be addressed in future phases.

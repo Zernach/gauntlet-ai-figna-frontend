@@ -1,3 +1,5 @@
+import { useMemo, useCallback } from 'react'
+
 interface AuthButtonProps {
   isAuthenticated: boolean
   onAuthClick: () => void
@@ -11,45 +13,64 @@ export default function AuthButton({
   onSignOut,
   connected,
 }: AuthButtonProps) {
+  // Memoize button style based on authentication state
+  const buttonStyle = useMemo(() => ({
+    position: 'fixed' as const,
+    top: '20px',
+    right: '20px',
+    padding: '12px 24px',
+    backgroundColor: isAuthenticated ? '#1a1a1a' : '#72fa41',
+    color: isAuthenticated ? '#ffffff' : '#000000',
+    border: isAuthenticated ? '1px solid #404040' : 'none',
+    borderRadius: '8px',
+    fontSize: '14px',
+    fontWeight: '600' as const,
+    cursor: 'pointer' as const,
+    boxShadow: isAuthenticated ? '0 4px 6px rgba(0, 0, 0, 0.5)' : '0 4px 6px rgba(114, 250, 65, 0.3)',
+    transition: 'all 0.2s',
+    display: 'flex',
+    alignItems: 'center' as const,
+    gap: '8px',
+  }), [isAuthenticated])
+
+  // Memoize connection indicator style
+  const connectionIndicatorStyle = useMemo(() => ({
+    width: '8px',
+    height: '8px',
+    borderRadius: '50%',
+    backgroundColor: connected ? '#72fa41' : '#ff0040',
+    boxShadow: connected ? '0 0 4px #72fa41' : '0 0 4px #ff0040',
+  }), [connected])
+
+  // Memoize mouse enter handler
+  const handleMouseEnter = useCallback((e: React.MouseEvent<HTMLButtonElement>) => {
+    e.currentTarget.style.transform = 'translateY(-2px)'
+    if (isAuthenticated) {
+      e.currentTarget.style.boxShadow = '0 6px 8px rgba(0, 0, 0, 0.7)'
+    } else {
+      e.currentTarget.style.boxShadow = '0 6px 8px rgba(114, 250, 65, 0.5)'
+    }
+  }, [isAuthenticated])
+
+  // Memoize mouse leave handler
+  const handleMouseLeave = useCallback((e: React.MouseEvent<HTMLButtonElement>) => {
+    e.currentTarget.style.transform = 'translateY(0)'
+    if (isAuthenticated) {
+      e.currentTarget.style.boxShadow = '0 4px 6px rgba(0, 0, 0, 0.5)'
+    } else {
+      e.currentTarget.style.boxShadow = '0 4px 6px rgba(114, 250, 65, 0.3)'
+    }
+  }, [isAuthenticated])
+
   return (
     <button
       onClick={isAuthenticated ? onSignOut : onAuthClick}
-      style={{
-        position: 'fixed',
-        top: '20px',
-        right: '20px',
-        padding: '12px 24px',
-        backgroundColor: isAuthenticated ? '#10b981' : '#3b82f6',
-        color: 'white',
-        border: 'none',
-        borderRadius: '8px',
-        fontSize: '14px',
-        fontWeight: '600',
-        cursor: 'pointer',
-        boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
-        transition: 'all 0.2s',
-        display: 'flex',
-        alignItems: 'center',
-        gap: '8px',
-      }}
-      onMouseEnter={(e) => {
-        e.currentTarget.style.transform = 'translateY(-2px)'
-        e.currentTarget.style.boxShadow = '0 6px 8px rgba(0, 0, 0, 0.15)'
-      }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.transform = 'translateY(0)'
-        e.currentTarget.style.boxShadow = '0 4px 6px rgba(0, 0, 0, 0.1)'
-      }}
+      style={buttonStyle}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
     >
       {isAuthenticated && (
-        <span
-          style={{
-            width: '8px',
-            height: '8px',
-            borderRadius: '50%',
-            backgroundColor: connected ? '#34d399' : '#ef4444',
-          }}
-        />
+        <span style={connectionIndicatorStyle} />
       )}
       {isAuthenticated ? 'Sign Out' : 'Sign In'}
     </button>

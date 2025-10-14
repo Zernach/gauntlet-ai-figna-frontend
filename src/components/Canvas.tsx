@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import { Stage, Layer, Rect, Circle, Text as KonvaText } from 'react-konva'
 import Konva from 'konva'
 import { supabase } from '../lib/supabase'
@@ -9,12 +9,13 @@ const CANVAS_HEIGHT = 50000
 const VIEWPORT_WIDTH = window.innerWidth
 const VIEWPORT_HEIGHT = window.innerHeight
 const DEFAULT_SHAPE_SIZE = 100
-const SHAPE_COLOR = '#cccccc'
+const SHAPE_COLOR = '#c1c1c1' // Gray shapes
 
-// User color palette for cursors
+// User color palette - Bright NEON colors
 const USER_COLORS = [
-  '#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6',
-  '#ec4899', '#14b8a6', '#f97316', '#06b6d4', '#84cc16'
+  '#72fa41', '#24ccff', '#fbff00', '#ff69b4', '#00ffff',
+  '#ff00ff', '#00ff00', '#ff0080', '#80ff00', '#ff8000',
+  '#0080ff', '#ff0040', '#40ff00', '#00ff80', '#8000ff'
 ]
 
 interface Shape {
@@ -26,8 +27,8 @@ interface Shape {
   height?: number
   radius?: number
   color: string
-  is_locked?: boolean
-  locked_by?: string
+  locked_at?: string | null
+  locked_by?: string | null
   created_by?: string
 }
 
@@ -35,6 +36,7 @@ interface Cursor {
   userId: string
   username: string
   displayName: string
+  email: string
   color: string
   x: number
   y: number
@@ -44,6 +46,7 @@ interface ActiveUser {
   userId: string
   username: string
   displayName: string
+  email: string
   color: string
 }
 
@@ -54,16 +57,118 @@ export default function Canvas() {
   const [cursors, setCursors] = useState<Map<string, Cursor>>(new Map())
   const [activeUsers, setActiveUsers] = useState<ActiveUser[]>([])
   const [stageScale, setStageScale] = useState(1)
-  const [stagePos, setStagePos] = useState({ x: 0, y: 0 })
+  const [stagePos, setStagePos] = useState({
+    x: VIEWPORT_WIDTH / 2 - CANVAS_WIDTH / 2,
+    y: VIEWPORT_HEIGHT / 2 - CANVAS_HEIGHT / 2
+  })
   const [canvasId, setCanvasId] = useState<string | null>(null)
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
+  const [currentUserEmail, setCurrentUserEmail] = useState<string>('')
   const [currentUserColor, setCurrentUserColor] = useState<string>('#3b82f6')
   const [isPanning, setIsPanning] = useState(false)
+  const [currentTime, setCurrentTime] = useState(Date.now()) // For countdown timers
   const wsRef = useRef<WebSocket | null>(null)
   const cursorThrottleRef = useRef<number>(0)
   const dragThrottleRef = useRef<number>(0)
   const dragPositionRef = useRef<{ shapeId: string; x: number; y: number } | null>(null)
   const isDraggingShapeRef = useRef<boolean>(false)
+  const shapesRef = useRef<Shape[]>([])
+  const currentUserIdRef = useRef<string | null>(null)
+  const isDragMoveRef = useRef<boolean>(false)
+
+  // Keep refs in sync with state
+  useEffect(() => {
+    shapesRef.current = shapes
+  }, [shapes])
+
+  useEffect(() => {
+    currentUserIdRef.current = currentUserId
+  }, [currentUserId])
+
+  // Update current time every 100ms for countdown timers
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setCurrentTime(Date.now())
+    }, 100)
+    return () => clearInterval(interval)
+  }, [])
+
+  // Helper function to calculate remaining lock seconds
+  const getRemainingLockSeconds = useCallback((lockedAt?: string | null): number | null => {
+    if (!lockedAt) return null
+    const lockTime = new Date(lockedAt).getTime()
+    const elapsed = (currentTime - lockTime) / 1000
+    const remaining = Math.max(0, 10 - elapsed)
+    return remaining > 0 ? remaining : null
+  }, [currentTime])
+
+  // Helper function to get user color by user ID
+  const getUserColor = useCallback((userId: string): string => {
+    // First check if it's the current user
+    if (userId === currentUserId) {
+      return currentUserColor
+    }
+    // Check active users
+    const user = activeUsers.find(u => u.userId === userId)
+    if (user) {
+      return user.color
+    }
+    // Fallback: calculate color from user ID
+    const colorIndex = parseInt(userId.slice(0, 8), 16) % USER_COLORS.length
+    return USER_COLORS[colorIndex]
+  }, [currentUserId, currentUserColor, activeUsers])
+
+  // Memoize filtered and deduplicated active users (by email address)
+  const uniqueActiveUsers = useMemo(() => {
+    return activeUsers.filter((user, index, self) =>
+      index === self.findIndex(u => u.email === user.email)
+    )
+  }, [activeUsers])
+
+  // Memoize total online users count
+  const onlineUsersCount = useMemo(() => {
+    return uniqueActiveUsers.length + 1 // +1 for current user
+  }, [uniqueActiveUsers])
+
+  // Memoize cursors array for rendering
+  const cursorsArray = useMemo(() => {
+    return Array.from(cursors.values())
+  }, [cursors])
+
+  // Memoize rendered cursors
+  const renderedCursors = useMemo(() => {
+    return cursorsArray.map(cursor => (
+      <g key={cursor.userId}>
+        {/* Cursor pointer */}
+        <Rect
+          x={cursor.x}
+          y={cursor.y}
+          width={2}
+          height={16}
+          fill={cursor.color}
+          listening={false}
+        />
+        <Rect
+          x={cursor.x}
+          y={cursor.y}
+          width={12}
+          height={2}
+          fill={cursor.color}
+          listening={false}
+        />
+        {/* User name label */}
+        <KonvaText
+          x={cursor.x + 14}
+          y={cursor.y - 2}
+          text={cursor.email}
+          fontSize={12}
+          fill="#ffffff"
+          fontStyle="bold"
+          listening={false}
+        />
+      </g>
+    ))
+  }, [cursorsArray])
 
   // Initialize canvas and WebSocket
   useEffect(() => {
@@ -77,8 +182,11 @@ export default function Canvas() {
 
         console.log('✅ User authenticated:', session.user.email)
         setCurrentUserId(session.user.id)
+        setCurrentUserEmail(session.user.email || '')
+        currentUserIdRef.current = session.user.id
 
-        // Assign user color
+        // Color will be assigned by server and received via CANVAS_SYNC
+        // Calculate local fallback color in case server doesn't send one
         const colorIndex = parseInt(session.user.id.slice(0, 8), 16) % USER_COLORS.length
         setCurrentUserColor(USER_COLORS[colorIndex])
 
@@ -144,11 +252,28 @@ export default function Canvas() {
     switch (message.type) {
       case 'CANVAS_SYNC':
         // Initial sync with all shapes and users
+        console.log('CANVAS_SYNC received:', message.payload)
         if (message.payload.shapes) {
           setShapes(message.payload.shapes)
         }
         if (message.payload.activeUsers) {
-          setActiveUsers(message.payload.activeUsers)
+          console.log('Active users from server:', message.payload.activeUsers)
+          // Filter out current user from active users list and deduplicate
+          const otherUsers = message.payload.activeUsers.filter((u: ActiveUser) => u.userId !== currentUserIdRef.current)
+
+          // Deduplicate by userId - keep only the first occurrence of each user
+          const uniqueUsers = otherUsers.filter((user: ActiveUser, index: number, self: ActiveUser[]) =>
+            index === self.findIndex((u: ActiveUser) => u.userId === user.userId)
+          )
+
+          console.log('Other users after filtering and deduplication:', uniqueUsers)
+          setActiveUsers(uniqueUsers)
+
+          // Update current user's color from server if present
+          const currentUserData = message.payload.activeUsers.find((u: ActiveUser) => u.userId === currentUserIdRef.current)
+          if (currentUserData && currentUserData.color) {
+            setCurrentUserColor(currentUserData.color)
+          }
         }
         break
 
@@ -169,9 +294,21 @@ export default function Canvas() {
       case 'SHAPE_UPDATE':
         // Shape updated
         if (message.payload.shape) {
-          setShapes(prev => prev.map(s =>
-            s.id === message.payload.shape.id ? message.payload.shape : s
-          ))
+          setShapes(prev => prev.map(s => {
+            if (s.id === message.payload.shape.id) {
+              // If we're currently dragging this shape, only update non-position properties
+              // to avoid conflict with local optimistic updates
+              if (isDraggingShapeRef.current && dragPositionRef.current?.shapeId === s.id) {
+                return {
+                  ...message.payload.shape,
+                  x: s.x,
+                  y: s.y,
+                }
+              }
+              return message.payload.shape
+            }
+            return s
+          }))
         }
         break
 
@@ -187,13 +324,14 @@ export default function Canvas() {
 
       case 'CURSOR_MOVE':
         // Update cursor position
-        if (message.payload.userId !== currentUserId) {
+        if (message.payload.userId !== currentUserIdRef.current) {
           setCursors(prev => {
             const newCursors = new Map(prev)
             newCursors.set(message.payload.userId, {
               userId: message.payload.userId,
               username: message.payload.username,
               displayName: message.payload.displayName,
+              email: message.payload.email,
               color: message.payload.color,
               x: message.payload.x,
               y: message.payload.y,
@@ -205,16 +343,37 @@ export default function Canvas() {
 
       case 'USER_JOIN':
         // User joined
-        console.log('User joined:', message.payload.username)
-        setActiveUsers(prev => {
-          if (prev.find(u => u.userId === message.payload.userId)) return prev
-          return [...prev, {
-            userId: message.payload.userId,
-            username: message.payload.username,
-            displayName: message.payload.displayName,
-            color: message.payload.color,
-          }]
-        })
+        console.log('USER_JOIN received:', message.payload)
+        // Don't add current user to activeUsers list
+        if (message.payload.userId === currentUserIdRef.current) {
+          // Update current user's color if it's the current user joining
+          if (message.payload.color) {
+            setCurrentUserColor(message.payload.color)
+          }
+        } else {
+          setActiveUsers(prev => {
+            // Check if user already exists
+            if (prev.find(u => u.userId === message.payload.userId)) {
+              console.log('User already exists in activeUsers, skipping')
+              return prev
+            }
+            const newUser = {
+              userId: message.payload.userId,
+              username: message.payload.username,
+              displayName: message.payload.displayName,
+              email: message.payload.email,
+              color: message.payload.color,
+            }
+            console.log('Adding new user to activeUsers:', newUser)
+
+            // Add new user and deduplicate (extra safety check)
+            const updatedUsers = [...prev, newUser]
+            const uniqueUsers = updatedUsers.filter((user, index, self) =>
+              index === self.findIndex(u => u.userId === user.userId)
+            )
+            return uniqueUsers
+          })
+        }
         break
 
       case 'USER_LEAVE':
@@ -232,7 +391,7 @@ export default function Canvas() {
         console.error('WebSocket error:', message.payload.message)
         break
     }
-  }, [currentUserId, selectedId])
+  }, [])
 
   // Handle shape creation
   const handleAddShape = useCallback(() => {
@@ -289,21 +448,32 @@ export default function Canvas() {
 
   // Handle shape selection
   const handleShapeClick = useCallback((id: string) => {
-    const shape = shapes.find(s => s.id === id)
-    if (shape && shape.is_locked && shape.locked_by !== currentUserId) {
-      // Shape is locked by another user
-      console.log('Shape is locked by another user')
+    // Don't select if we just finished a drag move
+    if (isDragMoveRef.current) {
       return
     }
+
+    const shape = shapesRef.current.find(s => s.id === id)
+    if (shape && shape.locked_at && shape.locked_by !== currentUserIdRef.current) {
+      // Check if lock is still valid (not expired)
+      const lockTime = new Date(shape.locked_at).getTime()
+      const elapsed = (Date.now() - lockTime) / 1000
+      if (elapsed < 10) {
+        // Shape is still locked by another user
+        console.log('Shape is locked by another user')
+        return
+      }
+    }
     setSelectedId(id)
-  }, [shapes, currentUserId])
+  }, [])
 
   // Handle shape drag start
   const handleShapeDragStart = useCallback((id: string) => {
     if (!wsRef.current) return
 
-    // Set dragging flag to prevent stage click deselection
+    // Set dragging flags to prevent stage click deselection and accidental selection
     isDraggingShapeRef.current = true
+    isDragMoveRef.current = false // Reset drag move flag
 
     // Select the shape being dragged
     setSelectedId(id)
@@ -322,8 +492,11 @@ export default function Canvas() {
 
   // Handle shape drag - optimistic update with throttled WebSocket sync
   const handleShapeDrag = useCallback((id: string, x: number, y: number) => {
-    const shape = shapes.find(s => s.id === id)
+    const shape = shapesRef.current.find(s => s.id === id)
     if (!shape) return
+
+    // Mark that an actual drag move occurred
+    isDragMoveRef.current = true
 
     let constrainedX: number
     let constrainedY: number
@@ -365,16 +538,21 @@ export default function Canvas() {
         },
       }))
     }
-  }, [shapes])
+  }, [])
 
   // Handle shape drag end (unlock and send final position)
   const handleShapeDragEnd = useCallback((id: string) => {
     if (!wsRef.current) return
 
-    // Clear dragging flag after a brief delay to prevent immediate stage click
+    // Clear dragging flag after a longer delay to prevent accidental clicks/deselections
     setTimeout(() => {
       isDraggingShapeRef.current = false
-    }, 10)
+    }, 100)
+
+    // Clear drag move flag after an even longer delay to prevent onClick from firing
+    setTimeout(() => {
+      isDragMoveRef.current = false
+    }, 150)
 
     // Send final position and unlock shape
     const finalPos = dragPositionRef.current
@@ -409,30 +587,43 @@ export default function Canvas() {
   }, [])
 
   // Handle shape deletion
-  const handleDeleteShape = useCallback(() => {
-    if (!selectedId || !wsRef.current) return
+  const handleDeleteShape = useCallback((shapeId?: string) => {
+    if (!wsRef.current) return
 
-    const shape = shapes.find(s => s.id === selectedId)
-    if (shape && shape.is_locked && shape.locked_by !== currentUserId) {
-      // Cannot delete locked shapes
-      console.log('Cannot delete shape locked by another user')
-      return
+    // Use passed shapeId or fall back to selectedId from closure
+    const idToDelete = shapeId
+    if (!idToDelete) return
+
+    const shape = shapesRef.current.find(s => s.id === idToDelete)
+    if (shape && shape.locked_at && shape.locked_by !== currentUserIdRef.current) {
+      // Check if lock is still valid
+      const lockTime = new Date(shape.locked_at).getTime()
+      const elapsed = (Date.now() - lockTime) / 1000
+      if (elapsed < 10) {
+        // Cannot delete locked shapes
+        console.log('Cannot delete shape locked by another user')
+        return
+      }
     }
 
     wsRef.current.send(JSON.stringify({
       type: 'SHAPE_DELETE',
-      payload: { shapeId: selectedId },
+      payload: { shapeId: idToDelete },
     }))
 
     setSelectedId(null)
-  }, [selectedId, shapes, currentUserId])
+  }, [])
 
   // Handle keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Delete' || e.key === 'Backspace') {
         e.preventDefault()
-        handleDeleteShape()
+        // Use a ref to get the current selectedId to avoid re-creating effect
+        const currentSelectedId = selectedId
+        if (currentSelectedId) {
+          handleDeleteShape(currentSelectedId)
+        }
       } else if (e.key === 'Escape') {
         setSelectedId(null)
       } else if (e.key === ' ' && !isPanning) {
@@ -457,7 +648,7 @@ export default function Canvas() {
       window.removeEventListener('keyup', handleKeyUp)
       document.body.style.cursor = 'default'
     }
-  }, [handleDeleteShape, isPanning])
+  }, [handleDeleteShape, isPanning, selectedId])
 
   // Handle stage click (deselect)
   const handleStageClick = useCallback((e: any) => {
@@ -543,8 +734,99 @@ export default function Canvas() {
 
   const handleResetView = useCallback(() => {
     setStageScale(1)
-    setStagePos({ x: 0, y: 0 })
+    setStagePos({
+      x: VIEWPORT_WIDTH / 2 - CANVAS_WIDTH / 2,
+      y: VIEWPORT_HEIGHT / 2 - CANVAS_HEIGHT / 2
+    })
   }, [])
+
+  // Memoize rendered shapes to avoid recalculating on every render
+  const renderedShapes = useMemo(() => {
+    return shapes.map(shape => {
+      const isSelected = selectedId === shape.id
+      const remainingSeconds = getRemainingLockSeconds(shape.locked_at)
+      const isLocked = remainingSeconds !== null
+      const strokeColor = isSelected
+        ? '#fbff00'
+        : isLocked && shape.locked_by
+          ? getUserColor(shape.locked_by)
+          : '#505050'
+      const strokeWidth = isSelected ? 3 : isLocked ? 2 : 1
+      const isDraggable = !isPanning && (!isLocked || shape.locked_by === currentUserId)
+
+      if (shape.type === 'circle') {
+        return (
+          <g key={shape.id}>
+            <Circle
+              x={shape.x}
+              y={shape.y}
+              radius={shape.radius || DEFAULT_SHAPE_SIZE / 2}
+              fill={shape.color}
+              stroke={strokeColor}
+              strokeWidth={strokeWidth}
+              onTap={() => !isPanning && handleShapeClick(shape.id)}
+              onClick={() => !isPanning && handleShapeClick(shape.id)}
+              draggable={isDraggable}
+              onDragStart={() => handleShapeDragStart(shape.id)}
+              onDragMove={(e) => {
+                handleShapeDrag(shape.id, e.target.x(), e.target.y())
+              }}
+              onDragEnd={() => handleShapeDragEnd(shape.id)}
+              perfectDrawEnabled={false}
+            />
+            {/* Countdown timer for locked shapes */}
+            {isLocked && remainingSeconds !== null && (
+              <KonvaText
+                x={shape.x - 15}
+                y={shape.y - 8}
+                text={`🔒 ${Math.ceil(remainingSeconds)}s`}
+                fontSize={14}
+                fontStyle="bold"
+                fill="#ef4444"
+                listening={false}
+              />
+            )}
+          </g>
+        )
+      }
+
+      // Default to rectangle
+      return (
+        <g key={shape.id}>
+          <Rect
+            x={shape.x}
+            y={shape.y}
+            width={shape.width || DEFAULT_SHAPE_SIZE}
+            height={shape.height || DEFAULT_SHAPE_SIZE}
+            fill={shape.color}
+            stroke={strokeColor}
+            strokeWidth={strokeWidth}
+            onTap={() => !isPanning && handleShapeClick(shape.id)}
+            onClick={() => !isPanning && handleShapeClick(shape.id)}
+            draggable={isDraggable}
+            onDragStart={() => handleShapeDragStart(shape.id)}
+            onDragMove={(e) => {
+              handleShapeDrag(shape.id, e.target.x(), e.target.y())
+            }}
+            onDragEnd={() => handleShapeDragEnd(shape.id)}
+            perfectDrawEnabled={false}
+          />
+          {/* Countdown timer for locked shapes */}
+          {isLocked && remainingSeconds !== null && (
+            <KonvaText
+              x={shape.x + 5}
+              y={shape.y + 5}
+              text={`🔒 ${Math.ceil(remainingSeconds)}s`}
+              fontSize={14}
+              fontStyle="bold"
+              fill="#ef4444"
+              listening={false}
+            />
+          )}
+        </g>
+      )
+    })
+  }, [shapes, selectedId, currentTime, isPanning, currentUserId, getRemainingLockSeconds, getUserColor, handleShapeClick, handleShapeDragStart, handleShapeDrag, handleShapeDragEnd])
 
   // Show authentication prompt if not connected
   if (!currentUserId || !canvasId || !wsRef.current) {
@@ -555,20 +837,21 @@ export default function Canvas() {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        backgroundColor: '#f3f4f6',
+        backgroundColor: '#0a0a0a',
       }}>
         <div style={{
-          backgroundColor: 'white',
+          backgroundColor: '#1a1a1a',
           padding: '32px',
           borderRadius: '12px',
-          boxShadow: '0 4px 16px rgba(0,0,0,0.1)',
+          boxShadow: '0 4px 16px rgba(0,0,0,0.5)',
+          border: '1px solid #404040',
           maxWidth: '400px',
           textAlign: 'center',
         }}>
-          <h2 style={{ fontSize: '24px', fontWeight: '600', marginBottom: '16px', color: '#1f2937' }}>
+          <h2 style={{ fontSize: '24px', fontWeight: '600', marginBottom: '16px', color: '#ffffff' }}>
             Canvas Loading...
           </h2>
-          <p style={{ color: '#6b7280', marginBottom: '24px' }}>
+          <p style={{ color: '#b0b0b0', marginBottom: '24px' }}>
             {!currentUserId
               ? 'Please sign in to access the canvas.'
               : !canvasId
@@ -578,8 +861,8 @@ export default function Canvas() {
           <div style={{
             width: '40px',
             height: '40px',
-            border: '4px solid #e5e7eb',
-            borderTop: '4px solid #3b82f6',
+            border: '4px solid #404040',
+            borderTop: '4px solid #24ccff',
             borderRadius: '50%',
             margin: '0 auto',
             animation: 'spin 1s linear infinite',
@@ -590,7 +873,7 @@ export default function Canvas() {
   }
 
   return (
-    <div style={{ width: '100%', height: '100%', position: 'relative', overflow: 'hidden' }}>
+    <div style={{ width: '100%', height: '100%', position: 'relative', overflow: 'hidden', backgroundColor: '#0a0a0a' }}>
       {/* Canvas Controls */}
       <div style={{
         position: 'absolute',
@@ -600,17 +883,18 @@ export default function Canvas() {
         display: 'flex',
         flexDirection: 'column',
         gap: '8px',
-        backgroundColor: 'white',
+        backgroundColor: '#1a1a1a',
         padding: '12px',
         borderRadius: '8px',
-        boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+        boxShadow: '0 2px 8px rgba(0,0,0,0.5)',
+        border: '1px solid #404040',
       }}>
         <button
           onClick={handleAddShape}
           style={{
             padding: '8px 16px',
-            backgroundColor: '#3b82f6',
-            color: 'white',
+            backgroundColor: '#72fa41',
+            color: '#000000',
             border: 'none',
             borderRadius: '6px',
             cursor: 'pointer',
@@ -624,8 +908,8 @@ export default function Canvas() {
           onClick={handleAddCircle}
           style={{
             padding: '8px 16px',
-            backgroundColor: '#10b981',
-            color: 'white',
+            backgroundColor: '#24ccff',
+            color: '#000000',
             border: 'none',
             borderRadius: '6px',
             cursor: 'pointer',
@@ -639,9 +923,9 @@ export default function Canvas() {
           onClick={handleZoomIn}
           style={{
             padding: '8px 16px',
-            backgroundColor: 'white',
-            color: '#374151',
-            border: '1px solid #d1d5db',
+            backgroundColor: '#2a2a2a',
+            color: '#ffffff',
+            border: '1px solid #404040',
             borderRadius: '6px',
             cursor: 'pointer',
             fontSize: '14px',
@@ -653,9 +937,9 @@ export default function Canvas() {
           onClick={handleZoomOut}
           style={{
             padding: '8px 16px',
-            backgroundColor: 'white',
-            color: '#374151',
-            border: '1px solid #d1d5db',
+            backgroundColor: '#2a2a2a',
+            color: '#ffffff',
+            border: '1px solid #404040',
             borderRadius: '6px',
             cursor: 'pointer',
             fontSize: '14px',
@@ -667,9 +951,9 @@ export default function Canvas() {
           onClick={handleResetView}
           style={{
             padding: '8px 16px',
-            backgroundColor: 'white',
-            color: '#374151',
-            border: '1px solid #d1d5db',
+            backgroundColor: '#2a2a2a',
+            color: '#ffffff',
+            border: '1px solid #404040',
             borderRadius: '6px',
             cursor: 'pointer',
             fontSize: '14px',
@@ -679,13 +963,13 @@ export default function Canvas() {
         </button>
         <div style={{
           padding: '8px',
-          backgroundColor: '#f3f4f6',
+          backgroundColor: '#2a2a2a',
           borderRadius: '6px',
           fontSize: '12px',
-          color: '#6b7280',
+          color: '#b0b0b0',
           textAlign: 'center',
         }}>
-          Hold <strong>Space</strong> to pan
+          Hold <strong style={{ color: '#ffffff' }}>Space</strong> to pan
         </div>
       </div>
 
@@ -696,15 +980,15 @@ export default function Canvas() {
           top: '50%',
           left: '50%',
           transform: 'translate(-50%, -50%)',
-          backgroundColor: 'rgba(59, 130, 246, 0.9)',
-          color: 'white',
+          backgroundColor: 'rgba(36, 204, 255, 0.95)',
+          color: '#000000',
           padding: '12px 24px',
           borderRadius: '8px',
           fontSize: '16px',
           fontWeight: '600',
           pointerEvents: 'none',
           zIndex: 1000,
-          boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+          boxShadow: '0 4px 12px rgba(36, 204, 255, 0.5)',
         }}>
           🖐️ Pan Mode Active
         </div>
@@ -716,14 +1000,15 @@ export default function Canvas() {
         top: '20px',
         right: '20px',
         zIndex: 10,
-        backgroundColor: 'white',
+        backgroundColor: '#1a1a1a',
         padding: '12px 16px',
         borderRadius: '8px',
-        boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+        boxShadow: '0 2px 8px rgba(0,0,0,0.5)',
+        border: '1px solid #404040',
         minWidth: '200px',
       }}>
-        <div style={{ fontWeight: '600', marginBottom: '8px', fontSize: '14px' }}>
-          Online ({activeUsers.length + 1})
+        <div style={{ fontWeight: '600', marginBottom: '8px', fontSize: '14px', color: '#ffffff' }}>
+          Online ({onlineUsersCount})
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
           {/* Current user */}
@@ -733,20 +1018,22 @@ export default function Canvas() {
               height: '8px',
               borderRadius: '50%',
               backgroundColor: currentUserColor,
+              boxShadow: `0 0 4px ${currentUserColor}`,
             }} />
-            <span style={{ fontSize: '13px' }}>You</span>
+            <span style={{ fontSize: '13px', color: '#ffffff' }}>{currentUserEmail} (you)</span>
           </div>
-          {/* Other users */}
-          {activeUsers.map(user => (
+          {/* Other users - using memoized uniqueActiveUsers */}
+          {uniqueActiveUsers.map(user => (
             <div key={user.userId} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <div style={{
                 width: '8px',
                 height: '8px',
                 borderRadius: '50%',
                 backgroundColor: user.color,
+                boxShadow: `0 0 4px ${user.color}`,
               }} />
-              <span style={{ fontSize: '13px' }}>
-                {user.displayName || user.username}
+              <span style={{ fontSize: '13px', color: '#ffffff' }}>
+                {user.email || user.username || 'Unknown User'}
               </span>
             </div>
           ))}
@@ -784,7 +1071,7 @@ export default function Canvas() {
             y={0}
             width={CANVAS_WIDTH}
             height={CANVAS_HEIGHT}
-            fill="#f8f9fa"
+            fill="#1a1a1a"
             listening={false}
           />
 
@@ -794,93 +1081,16 @@ export default function Canvas() {
             y={0}
             width={CANVAS_WIDTH}
             height={CANVAS_HEIGHT}
-            stroke="#e5e7eb"
+            stroke="#404040"
             strokeWidth={2}
             listening={false}
           />
 
-          {/* Shapes */}
-          {shapes.map(shape => {
-            const isSelected = selectedId === shape.id
-            const strokeColor = isSelected ? '#3b82f6' : shape.is_locked ? '#ef4444' : '#000000'
-            const strokeWidth = isSelected ? 3 : shape.is_locked ? 2 : 1
-            const isDraggable = !isPanning && (!shape.is_locked || shape.locked_by === currentUserId)
+          {/* Shapes - using memoized renderedShapes */}
+          {renderedShapes}
 
-            if (shape.type === 'circle') {
-              return (
-                <Circle
-                  key={shape.id}
-                  x={shape.x}
-                  y={shape.y}
-                  radius={shape.radius || DEFAULT_SHAPE_SIZE / 2}
-                  fill={shape.color}
-                  stroke={strokeColor}
-                  strokeWidth={strokeWidth}
-                  onClick={() => !isPanning && handleShapeClick(shape.id)}
-                  draggable={isDraggable}
-                  onDragStart={() => handleShapeDragStart(shape.id)}
-                  onDragMove={(e) => {
-                    handleShapeDrag(shape.id, e.target.x(), e.target.y())
-                  }}
-                  onDragEnd={() => handleShapeDragEnd(shape.id)}
-                />
-              )
-            }
-
-            // Default to rectangle
-            return (
-              <Rect
-                key={shape.id}
-                x={shape.x}
-                y={shape.y}
-                width={shape.width || DEFAULT_SHAPE_SIZE}
-                height={shape.height || DEFAULT_SHAPE_SIZE}
-                fill={shape.color}
-                stroke={strokeColor}
-                strokeWidth={strokeWidth}
-                onClick={() => !isPanning && handleShapeClick(shape.id)}
-                draggable={isDraggable}
-                onDragStart={() => handleShapeDragStart(shape.id)}
-                onDragMove={(e) => {
-                  handleShapeDrag(shape.id, e.target.x(), e.target.y())
-                }}
-                onDragEnd={() => handleShapeDragEnd(shape.id)}
-              />
-            )
-          })}
-
-          {/* Other users' cursors */}
-          {Array.from(cursors.values()).map(cursor => (
-            <g key={cursor.userId}>
-              {/* Cursor pointer */}
-              <Rect
-                x={cursor.x}
-                y={cursor.y}
-                width={2}
-                height={16}
-                fill={cursor.color}
-                listening={false}
-              />
-              <Rect
-                x={cursor.x}
-                y={cursor.y}
-                width={12}
-                height={2}
-                fill={cursor.color}
-                listening={false}
-              />
-              {/* User name label */}
-              <KonvaText
-                x={cursor.x + 14}
-                y={cursor.y - 2}
-                text={cursor.displayName || cursor.username}
-                fontSize={12}
-                fill={cursor.color}
-                fontStyle="bold"
-                listening={false}
-              />
-            </g>
-          ))}
+          {/* Other users' cursors - using memoized renderedCursors */}
+          {renderedCursors}
         </Layer>
       </Stage>
     </div>

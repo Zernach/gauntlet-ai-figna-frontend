@@ -1,5 +1,6 @@
 {
-  "name": "gauntlet-frontend",
+  "name": "figna-frontend",
+  "description": "Figna - Realtime Collaborative Design Canvas - Frontend",
   "private": true,
   "version": "1.0.0",
   "type": "module",

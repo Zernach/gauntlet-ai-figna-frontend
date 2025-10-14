@@ -1,4 +1,5 @@
-# Gauntlet Frontend
+# Figna Frontend
+## Realtime Collaborative Design Canvas
 
 A collaborative canvas application with real-time shape creation and manipulation, powered by Supabase authentication and WebSocket support.
 

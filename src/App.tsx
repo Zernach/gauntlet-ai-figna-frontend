@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { supabase } from './lib/supabase'
 import { Session } from '@supabase/supabase-js'
 import Canvas from './components/Canvas'
@@ -29,23 +29,31 @@ function App() {
     return () => subscription.unsubscribe()
   }, [])
 
-  const handleSignOut = async () => {
+  const handleSignOut = useCallback(async () => {
     await supabase.auth.signOut()
-  }
+  }, [])
+
+  const handleAuthClick = useCallback(() => {
+    setShowAuthModal(true)
+  }, [])
+
+  const handleCloseModal = useCallback(() => {
+    setShowAuthModal(false)
+  }, [])
 
   return (
-    <div style={{ width: '100vw', height: '100vh', position: 'relative' }}>
+    <div style={{ width: '100vw', height: '100vh', position: 'relative', backgroundColor: '#0a0a0a' }}>
       {session ? <Canvas /> : null}
 
       <AuthButton
         isAuthenticated={!!session}
-        onAuthClick={() => setShowAuthModal(true)}
+        onAuthClick={handleAuthClick}
         onSignOut={handleSignOut}
         connected={!!session}
       />
 
       {showAuthModal && (
-        <AuthModal onClose={() => setShowAuthModal(false)} />
+        <AuthModal onClose={handleCloseModal} />
       )}
     </div>
   )

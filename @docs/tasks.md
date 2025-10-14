@@ -1,4 +1,5 @@
-# CollabCanvas MVP - Development Task List
+# Figna CollabCanvas MVP - Development Task List
+## Realtime Collaborative Design Canvas
 
 ## Architecture Overview: Backend Proxy Pattern
 
@@ -20,7 +21,7 @@
 ## Project File Structure
 
 ```
-collabcanvas/
+figna/
 ├── public/
 │   └── index.html
 ├── src/
@@ -97,7 +98,7 @@ collabcanvas/
 - [x] **1.1: Initialize React + Vite Project**
 
   - Files to create: `package.json`, `vite.config.ts`, `index.html`
-  - Run: `npm create vite@latest collabcanvas -- --template react-ts`
+  - Run: `npm create vite@latest figna -- --template react-ts`
   - Verify dev server runs
 
 - [x] **1.2: Install Core Dependencies**
