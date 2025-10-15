@@ -6,7 +6,8 @@ import {
     ZoomIn,
     ZoomOut,
     RotateCcw,
-    MousePointer2
+    MousePointer2,
+    Lasso
 } from 'lucide-react'
 
 interface ControlPanelProps {
@@ -21,6 +22,8 @@ interface ControlPanelProps {
     onStopZoomHold: () => void
     stageScale: number
     onToggleCanvasBg: () => void
+    lassoMode: boolean
+    onToggleLassoMode: () => void
 }
 
 const ControlButton: React.FC<{
@@ -68,18 +71,18 @@ const ControlButton: React.FC<{
         const variantStyles: Record<string, React.CSSProperties> = {
             primary: {
                 backgroundColor: '#72fa41',
-                color: '#000000',
+                color: '#1c1c1c',
                 boxShadow: '0 2px 8px rgba(114, 250, 65, 0.3)',
             },
             secondary: {
                 backgroundColor: '#2a2a2a',
                 color: '#ffffff',
                 border: '1px solid #404040',
-                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.3)',
+                boxShadow: '0 2px 8px #1c1c1c4d',
             },
             accent: {
                 backgroundColor: '#24ccff',
-                color: '#000000',
+                color: '#1c1c1c',
                 boxShadow: '0 2px 8px rgba(36, 204, 255, 0.3)',
             }
         }
@@ -90,7 +93,7 @@ const ControlButton: React.FC<{
                 ? '0 4px 12px rgba(114, 250, 65, 0.4)'
                 : variant === 'accent'
                     ? '0 4px 12px rgba(36, 204, 255, 0.4)'
-                    : '0 4px 12px rgba(0, 0, 0, 0.4)',
+                    : '0 4px 12px #1c1c1c66',
         }
 
         const [isHovered, setIsHovered] = React.useState(false)
@@ -144,7 +147,9 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
     onZoomOutHold,
     onStopZoomHold,
     stageScale,
-    onToggleCanvasBg
+    onToggleCanvasBg,
+    lassoMode,
+    onToggleLassoMode
 }) => {
     return (
         <div style={{
@@ -162,7 +167,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                 backdropFilter: 'blur(10px)',
                 padding: '16px',
                 borderRadius: '12px',
-                boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4)',
+                boxShadow: '0 8px 32px #1c1c1c66',
                 border: '1px solid rgba(255, 255, 255, 0.1)',
                 display: 'flex',
                 flexDirection: 'column',
@@ -210,6 +215,14 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                         icon={<Square size={18} />}
                         label="Canvas"
                         variant="secondary"
+                    />
+
+                    {/* Lasso Mode Toggle */}
+                    <ControlButton
+                        onClick={onToggleLassoMode}
+                        icon={<Lasso size={18} />}
+                        label={lassoMode ? "Lasso: ON" : "Lasso: OFF"}
+                        variant={lassoMode ? "accent" : "secondary"}
                     />
                 </div>
 
@@ -276,7 +289,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                 border: '1px solid rgba(255, 255, 255, 0.1)',
                 fontSize: '13px',
                 fontWeight: '600',
-                boxShadow: '0 4px 16px rgba(0, 0, 0, 0.3)',
+                boxShadow: '0 4px 16px #1c1c1c4d',
                 width: 'fit-content',
                 display: 'flex',
                 alignItems: 'center',

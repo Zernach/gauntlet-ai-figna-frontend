@@ -20,13 +20,13 @@ export default function AuthButton({
     right: '20px',
     padding: '12px 24px',
     backgroundColor: isAuthenticated ? '#1a1a1a' : '#72fa41',
-    color: isAuthenticated ? '#ffffff' : '#000000',
+    color: isAuthenticated ? '#ffffff' : '#1c1c1c',
     border: isAuthenticated ? '1px solid #404040' : 'none',
     borderRadius: '8px',
     fontSize: '14px',
     fontWeight: '600' as const,
     cursor: 'pointer' as const,
-    boxShadow: isAuthenticated ? '0 4px 6px rgba(0, 0, 0, 0.5)' : '0 4px 6px rgba(114, 250, 65, 0.3)',
+    boxShadow: isAuthenticated ? '0 4px 6px #1c1c1c80' : '0 4px 6px rgba(114, 250, 65, 0.3)',
     transition: 'all 0.2s',
     display: 'flex',
     alignItems: 'center' as const,
@@ -46,7 +46,7 @@ export default function AuthButton({
   const handleMouseEnter = useCallback((e: React.MouseEvent<HTMLButtonElement>) => {
     e.currentTarget.style.transform = 'translateY(-2px)'
     if (isAuthenticated) {
-      e.currentTarget.style.boxShadow = '0 6px 8px rgba(0, 0, 0, 0.7)'
+      e.currentTarget.style.boxShadow = '0 6px 8px #1c1c1cb3'
     } else {
       e.currentTarget.style.boxShadow = '0 6px 8px rgba(114, 250, 65, 0.5)'
     }
@@ -56,7 +56,7 @@ export default function AuthButton({
   const handleMouseLeave = useCallback((e: React.MouseEvent<HTMLButtonElement>) => {
     e.currentTarget.style.transform = 'translateY(0)'
     if (isAuthenticated) {
-      e.currentTarget.style.boxShadow = '0 4px 6px rgba(0, 0, 0, 0.5)'
+      e.currentTarget.style.boxShadow = '0 4px 6px #1c1c1c80'
     } else {
       e.currentTarget.style.boxShadow = '0 4px 6px rgba(114, 250, 65, 0.3)'
     }

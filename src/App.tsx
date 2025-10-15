@@ -98,7 +98,7 @@ function App() {
                   textDecoration: 'none',
                   fontWeight: 600,
                   fontSize: '14px',
-                  boxShadow: '0 2px 8px rgba(0,0,0,0.5)',
+                  boxShadow: '0 2px 8px #1c1c1c80',
                 }}
                 title="View Frontend on GitHub"
               >
@@ -124,7 +124,7 @@ function App() {
                   textDecoration: 'none',
                   fontWeight: 600,
                   fontSize: '14px',
-                  boxShadow: '0 2px 8px rgba(0,0,0,0.5)',
+                  boxShadow: '0 2px 8px #1c1c1c80',
                 }}
                 title="View Backend on GitHub"
               >

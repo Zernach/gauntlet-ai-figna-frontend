@@ -92,7 +92,7 @@ export default function AuthModal({ onClose }: AuthModalProps) {
       style={{
         position: 'fixed',
         inset: 0,
-        backgroundColor: 'rgba(0, 0, 0, 0.8)',
+        backgroundColor: '#1c1c1ccc',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -107,7 +107,7 @@ export default function AuthModal({ onClose }: AuthModalProps) {
           padding: '32px',
           width: '400px',
           maxWidth: '90vw',
-          boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.5)',
+          boxShadow: '0 20px 25px -5px #1c1c1c80',
           border: '1px solid #404040',
         }}
       >
@@ -123,7 +123,7 @@ export default function AuthModal({ onClose }: AuthModalProps) {
             width: '100%',
             padding: '12px',
             backgroundColor: '#ffffff',
-            color: '#000000',
+            color: '#1c1c1c',
             border: 'none',
             borderRadius: '6px',
             fontSize: '16px',
@@ -242,7 +242,7 @@ export default function AuthModal({ onClose }: AuthModalProps) {
               width: '100%',
               padding: '12px',
               backgroundColor: '#24ccff',
-              color: '#000000',
+              color: '#1c1c1c',
               border: 'none',
               borderRadius: '6px',
               fontSize: '16px',

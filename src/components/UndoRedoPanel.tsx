@@ -34,7 +34,7 @@ const UndoRedoPanel: React.FC<UndoRedoPanelProps> = ({ canUndo, canRedo, onUndo,
       border: '1px solid rgba(255,255,255,0.1)',
       borderRadius: '8px',
       padding: '8px',
-      boxShadow: '0 8px 32px rgba(0,0,0,0.4)'
+      boxShadow: '0 8px 32px #1c1c1c66'
     }}>
       <div style={{ display: 'flex', gap: '8px' }}>
         <button

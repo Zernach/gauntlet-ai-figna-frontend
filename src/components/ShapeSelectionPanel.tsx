@@ -54,7 +54,7 @@ const ShapeSelectionPanel: React.FC<ShapeSelectionPanelProps> = ({
             border: '1px solid #404040',
             borderRadius: '12px',
             padding: '12px 14px',
-            boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4)',
+            boxShadow: '0 8px 32px #1c1c1c66',
             minWidth: '260px',
             color: '#fff',
         }}>
@@ -121,7 +121,7 @@ const ShapeSelectionPanel: React.FC<ShapeSelectionPanelProps> = ({
                 <div style={{ fontSize: '12px', color: '#ccc', fontWeight: 600 }}>Shadow</div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                     <ColorSlider
-                        valueHex={selectedShape.shadowColor || '#000000'}
+                        valueHex={selectedShape.shadowColor || '#1c1c1c'}
                         onChangeHex={onChangeShadowColor}
                         allowHexEdit={true}
                         label="Color"

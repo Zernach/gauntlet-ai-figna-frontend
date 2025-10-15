@@ -51,6 +51,7 @@ interface CanvasShapeProps {
     onRotateEnd?: (id: string) => void
     stageScale: number
     onTextDoubleClick?: (id: string) => void
+    onContextMenu?: (e: any, id: string) => void
 }
 
 const CanvasShapeComponent = ({
@@ -74,6 +75,7 @@ const CanvasShapeComponent = ({
     onRotateEnd: _onRotateEnd,
     stageScale,
     onTextDoubleClick,
+    onContextMenu,
 }: CanvasShapeProps) => {
     const isLocked = remainingSeconds !== null
     const BASE_HANDLE_PX = 16
@@ -123,6 +125,7 @@ const CanvasShapeComponent = ({
                     shadowOpacity={Math.min(1, Math.max(0, (shape.shadowStrength ?? 0) / 50))}
                     onTap={() => isPressable && onShapeClick(shape.id)}
                     onClick={() => isPressable && onShapeClick(shape.id)}
+                    onContextMenu={(e) => onContextMenu && onContextMenu(e, shape.id)}
                     onDblClick={() => onTextDoubleClick && onTextDoubleClick(shape.id)}
                     onDblTap={() => onTextDoubleClick && onTextDoubleClick(shape.id)}
                     draggable={isDraggable}
@@ -260,6 +263,7 @@ const CanvasShapeComponent = ({
                     shadowOpacity={Math.min(1, Math.max(0, (shape.shadowStrength ?? 0) / 50))}
                     onTap={() => isPressable && onShapeClick(shape.id)}
                     onClick={() => isPressable && onShapeClick(shape.id)}
+                    onContextMenu={(e) => onContextMenu && onContextMenu(e, shape.id)}
                     draggable={isDraggable}
                     onDragStart={() => onDragStart(shape.id)}
                     onDragMove={(e) => {
@@ -385,6 +389,7 @@ const CanvasShapeComponent = ({
                 shadowOpacity={Math.min(1, Math.max(0, (shape.shadowStrength ?? 0) / 50))}
                 onTap={() => isPressable && onShapeClick(shape.id)}
                 onClick={() => isPressable && onShapeClick(shape.id)}
+                onContextMenu={(e) => onContextMenu && onContextMenu(e, shape.id)}
                 draggable={isDraggable}
                 onDragStart={() => onDragStart(shape.id)}
                 onDragMove={(e) => {

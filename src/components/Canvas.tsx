@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
-import { Stage, Layer, Rect } from 'react-konva'
+import { Stage, Layer, Rect, Text as KonvaText, Circle as KonvaCircle } from 'react-konva'
 import Konva from 'konva'
 import { supabase } from '../lib/supabase'
 import ColorSlider from './ColorSlider'
@@ -8,6 +8,8 @@ import CanvasCursor from './CanvasCursor'
 import ControlPanel from './ControlPanel'
 import ShapeSelectionPanel from './ShapeSelectionPanel'
 import UndoRedoPanel from './UndoRedoPanel'
+import ContextMenu from './ContextMenu'
+import { ToastContainer, ToastMessage } from './Toast'
 
 // Canvas constants - Extremely expansive canvas
 const CANVAS_WIDTH = 50000
@@ -47,9 +49,13 @@ interface Shape {
   fontFamily?: string
   fontWeight?: string
   textAlign?: string
+  zIndex?: number
+  z_index?: number
   locked_at?: string | null
   locked_by?: string | null
   created_by?: string
+  last_modified_by?: string
+  last_modified_at?: number
 }
 
 interface Cursor {
@@ -74,7 +80,7 @@ export default function Canvas() {
   const stageRef = useRef<Konva.Stage>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const [shapes, setShapes] = useState<Shape[]>([])
-  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [cursors, setCursors] = useState<Map<string, Cursor>>(new Map())
   const [activeUsers, setActiveUsers] = useState<ActiveUser[]>([])
   const [stageScale, setStageScale] = useState(1)
@@ -91,6 +97,34 @@ export default function Canvas() {
   const [currentUserColor, setCurrentUserColor] = useState<string>('#3b82f6')
   const [currentTime, setCurrentTime] = useState(Date.now()) // For countdown timers
   const wsRef = useRef<WebSocket | null>(null)
+
+  // Lasso mode state
+  const [lassoMode, setLassoMode] = useState<boolean>(false)
+  const [isDrawingLasso, setIsDrawingLasso] = useState<boolean>(false)
+  const [lassoStart, setLassoStart] = useState<{ x: number; y: number } | null>(null)
+  const [lassoEnd, setLassoEnd] = useState<{ x: number; y: number } | null>(null)
+
+  // Context menu state
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; shapeId: string } | null>(null)
+
+  // Clipboard state
+  const [clipboard, setClipboard] = useState<Shape[]>([])
+
+  // Toast notifications
+  const [toasts, setToasts] = useState<ToastMessage[]>([])
+
+  // Performance monitoring
+  const [fps, setFps] = useState(60)
+  const fpsRef = useRef<number[]>([])
+  const lastFrameTimeRef = useRef(performance.now())
+
+  // Connection state management
+  const [connectionState, setConnectionState] = useState<'connecting' | 'connected' | 'disconnected' | 'reconnecting'>('connecting')
+  const [reconnectAttempts, setReconnectAttempts] = useState(0)
+  const reconnectTimeoutRef = useRef<number | null>(null)
+  const operationQueueRef = useRef<any[]>([]) // Queue operations during disconnect
+  const maxReconnectAttempts = 10
+  const baseReconnectDelay = 1000 // 1 second
   const cursorThrottleRef = useRef<number>(0)
   const dragThrottleRef = useRef<number>(0)
   const dragPositionRef = useRef<{ shapeId: string; x: number; y: number } | null>(null)
@@ -100,7 +134,7 @@ export default function Canvas() {
   const resizeThrottleRef = useRef<number>(0)
   const shapesRef = useRef<Shape[]>([])
   const currentUserIdRef = useRef<string | null>(null)
-  const selectedIdRef = useRef<string | null>(null)
+  const selectedIdsRef = useRef<string[]>([])
   const isDragMoveRef = useRef<boolean>(false)
   const isShapeDragActiveRef = useRef<boolean>(false) // Track if we're actively dragging a shape
   // Rotation refs
@@ -114,6 +148,8 @@ export default function Canvas() {
   const dragRafRef = useRef<number | null>(null)
   const pendingDragUpdatesRef = useRef<Map<string, { x: number; y: number }>>(new Map())
   const dragFrameScheduledRef = useRef<boolean>(false)
+  // Track recently dragged shapes to prevent animation on position updates
+  const recentlyDraggedRef = useRef<Map<string, { x: number; y: number; timestamp: number }>>(new Map())
 
   // Undo/Redo state
   type WSMessage = { type: string; payload?: any }
@@ -124,9 +160,40 @@ export default function Canvas() {
   const [redoCount, setRedoCount] = useState<number>(0)
   const [hasUserActed, setHasUserActed] = useState<boolean>(false)
 
+  // Toast helper function
+  const showToast = useCallback((message: string, type: 'info' | 'warning' | 'error' | 'success' = 'info', duration = 3000) => {
+    const id = `${Date.now()}-${Math.random()}`
+    setToasts(prev => [...prev, { id, message, type, duration }])
+  }, [])
+
+  const dismissToast = useCallback((id: string) => {
+    setToasts(prev => prev.filter(t => t.id !== id))
+  }, [])
+
   const sendMessage = useCallback((msg: WSMessage) => {
-    if (!wsRef.current) return
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+      // Queue operation if disconnected
+      console.log('📦 Queueing operation:', msg.type)
+      operationQueueRef.current.push({ ...msg, timestamp: Date.now() })
+      return
+    }
     wsRef.current.send(JSON.stringify(msg))
+  }, [])
+
+  // Flush queued operations after reconnection
+  const flushOperationQueue = useCallback(() => {
+    if (operationQueueRef.current.length === 0) return
+
+    console.log(`📤 Flushing ${operationQueueRef.current.length} queued operations`)
+    const queue = [...operationQueueRef.current]
+    operationQueueRef.current = []
+
+    // Send queued operations in order
+    queue.forEach(msg => {
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify(msg))
+      }
+    })
   }, [])
 
   const pushHistory = useCallback((entry: HistoryEntry) => {
@@ -162,6 +229,8 @@ export default function Canvas() {
   const dragBaselineRef = useRef<Map<string, { x: number; y: number }>>(new Map())
   const resizeBaselineRef = useRef<Map<string, any>>(new Map())
   const rotateBaselineRef = useRef<Map<string, number>>(new Map())
+  // Multi-shape drag: store initial offsets relative to the primary dragged shape
+  const multiDragOffsetsRef = useRef<Map<string, { dx: number; dy: number }>>(new Map())
 
   // Debounced property change tracking per shape
   type PendingPropChange = { shapeId: string; prop: string; initial: any; latest: any; timer: number | null }
@@ -434,8 +503,8 @@ export default function Canvas() {
   }, [currentUserId])
 
   useEffect(() => {
-    selectedIdRef.current = selectedId
-  }, [selectedId])
+    selectedIdsRef.current = selectedIds
+  }, [selectedIds])
 
   // Update current time every 100ms for countdown timers
   useEffect(() => {
@@ -443,6 +512,37 @@ export default function Canvas() {
       setCurrentTime(Date.now())
     }, 100)
     return () => clearInterval(interval)
+  }, [])
+
+  // Performance monitoring: track FPS
+  useEffect(() => {
+    let frameId: number
+    const measureFps = () => {
+      const now = performance.now()
+      const delta = now - lastFrameTimeRef.current
+      lastFrameTimeRef.current = now
+
+      if (delta > 0) {
+        const currentFps = 1000 / delta
+        fpsRef.current.push(currentFps)
+
+        // Keep only last 60 frames
+        if (fpsRef.current.length > 60) {
+          fpsRef.current.shift()
+        }
+
+        // Update FPS display every 30 frames
+        if (fpsRef.current.length % 30 === 0) {
+          const avgFps = fpsRef.current.reduce((a, b) => a + b, 0) / fpsRef.current.length
+          setFps(Math.round(avgFps))
+        }
+      }
+
+      frameId = requestAnimationFrame(measureFps)
+    }
+
+    frameId = requestAnimationFrame(measureFps)
+    return () => cancelAnimationFrame(frameId)
   }, [])
 
   // Debug: Log shape lock state changes (only when shapes change, not on every render)
@@ -589,15 +689,31 @@ export default function Canvas() {
       if (wsRef.current) {
         wsRef.current.close()
       }
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current)
+      }
     }
   }, [])
 
-  const connectWebSocket = useCallback((canvasId: string, token: string) => {
+  const connectWebSocket = useCallback((canvasId: string, token: string, isReconnect: boolean = false) => {
     const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:3002'
     const ws = new WebSocket(`${WS_URL}?token=${token}&canvasId=${canvasId}`)
 
     ws.onopen = () => {
       console.log('✅ WebSocket connected')
+      setConnectionState('connected')
+      setReconnectAttempts(0)
+
+      if (isReconnect) {
+        // Request full state sync on reconnect
+        console.log('🔄 Requesting state sync after reconnection')
+        ws.send(JSON.stringify({ type: 'RECONNECT_REQUEST' }))
+
+        // Flush any queued operations after a short delay (to allow sync first)
+        setTimeout(() => {
+          flushOperationQueue()
+        }, 500)
+      }
     }
 
     ws.onmessage = (event) => {
@@ -607,14 +723,31 @@ export default function Canvas() {
 
     ws.onerror = (error) => {
       console.error('❌ WebSocket error:', error)
+      setConnectionState('disconnected')
     }
 
     ws.onclose = () => {
       console.log('🔌 WebSocket disconnected')
+      setConnectionState('disconnected')
+
+      // Attempt to reconnect with exponential backoff
+      if (reconnectAttempts < maxReconnectAttempts) {
+        const delay = Math.min(baseReconnectDelay * Math.pow(2, reconnectAttempts), 30000) // Max 30 seconds
+        console.log(`🔄 Reconnecting in ${delay}ms (attempt ${reconnectAttempts + 1}/${maxReconnectAttempts})`)
+        setConnectionState('reconnecting')
+        setReconnectAttempts(prev => prev + 1)
+
+        reconnectTimeoutRef.current = window.setTimeout(() => {
+          connectWebSocket(canvasId, token, true)
+        }, delay)
+      } else {
+        console.error('❌ Max reconnection attempts reached')
+        setConnectionState('disconnected')
+      }
     }
 
     wsRef.current = ws
-  }, [])
+  }, [reconnectAttempts, maxReconnectAttempts, baseReconnectDelay, flushOperationQueue])
 
   const handleWebSocketMessage = useCallback((message: any) => {
     console.log('📨 WebSocket message:', message.type)
@@ -691,6 +824,15 @@ export default function Canvas() {
 
           // Debug: Only log lock/unlock events
           const shape = normalizeShape(message.payload.shape)
+
+          // Add last modified info from message payload
+          if (message.payload.lastModifiedBy) {
+            shape.last_modified_by = message.payload.lastModifiedBy
+          }
+          if (message.payload.lastModifiedAt) {
+            shape.last_modified_at = message.payload.lastModifiedAt
+          }
+
           if (shape.locked_at || shape.locked_by) {
             const isOtherUser = shape.locked_by && shape.locked_by !== currentUserIdRef.current
             if (isOtherUser && shape.locked_by) {
@@ -700,13 +842,33 @@ export default function Canvas() {
           console.log('🧩 SHAPE: ', shape)
           setShapes(prev => prev.map(s => {
             if (s.id === shape.id) {
-              // If we're currently dragging this shape, only update non-position properties
-              // to avoid conflict with local optimistic updates
-              if (isDraggingShapeRef.current && dragPositionRef.current?.shapeId === s.id) {
+              // If we're currently dragging this shape OR it has pending drag updates (multi-shape drag),
+              // only update non-position properties to avoid conflict with local optimistic updates
+              if (isDraggingShapeRef.current && (
+                dragPositionRef.current?.shapeId === s.id ||
+                pendingDragUpdatesRef.current.has(s.id)
+              )) {
                 return {
                   ...shape,
                   x: s.x,
                   y: s.y,
+                }
+              }
+              // Check if this shape was recently dragged - preserve position for 500ms after drag ends
+              // to prevent animation from delayed server updates
+              const recentDrag = recentlyDraggedRef.current.get(shape.id)
+              if (recentDrag) {
+                const timeSinceDrag = Date.now() - recentDrag.timestamp
+                // Within 500ms of drag end, preserve local position to prevent animation
+                if (timeSinceDrag < 500) {
+                  return {
+                    ...shape,
+                    x: recentDrag.x,
+                    y: recentDrag.y,
+                  }
+                } else {
+                  // Clean up old entry
+                  recentlyDraggedRef.current.delete(shape.id)
                 }
               }
               // If we're currently resizing this shape, preserve local geometry (x/y/size)
@@ -732,11 +894,11 @@ export default function Canvas() {
             return s
           }))
 
-          // If an auto-unlock happened for the currently selected shape, clear selection locally
-          const wasSelected = selectedIdRef.current && selectedIdRef.current === shape.id
+          // If an auto-unlock happened for a currently selected shape, remove it from selection locally
+          const wasSelected = selectedIdsRef.current.includes(shape.id)
           const becameUnlocked = (!shape.locked_at && !shape.locked_by)
           if (wasSelected && becameUnlocked) {
-            setSelectedId(null)
+            setSelectedIds(prev => prev.filter(id => id !== shape.id))
           }
         }
         break
@@ -745,9 +907,8 @@ export default function Canvas() {
         // Shape deleted
         if (message.payload.shapeId) {
           setShapes(prev => prev.filter(s => s.id !== message.payload.shapeId))
-          if (selectedId === message.payload.shapeId) {
-            setSelectedId(null)
-          }
+          // Remove from selection if it was selected
+          setSelectedIds(prev => prev.filter(id => id !== message.payload.shapeId))
         }
         break
 
@@ -964,7 +1125,7 @@ export default function Canvas() {
   }, [])
 
   // Handle shape selection
-  const handleShapeClick = useCallback((id: string) => {
+  const handleShapeClick = useCallback((id: string, event?: any) => {
     // Don't select if we just finished a drag move
     if (isDragMoveRef.current) {
       return
@@ -978,32 +1139,60 @@ export default function Canvas() {
       if (elapsed < 10) {
         // Shape is still locked by another user
         console.log('⛔ Shape is locked by another user')
+        // Show toast notification with user info
+        const lockedByUser = activeUsers.find(u => u.userId === shape.locked_by)
+        const userName = lockedByUser?.email?.split('@')[0] || lockedByUser?.username || 'another user'
+        showToast(`This shape is being edited by ${userName}`, 'warning', 2500)
         return
       }
     }
 
-    // If switching selection, unlock the previously selected shape
-    if (selectedId && selectedId !== id) {
-      unlockShape(selectedId)
-    }
+    // Check if this is a multi-select (shift/cmd key)
+    const isMultiSelect = event?.evt?.shiftKey || event?.evt?.metaKey
 
-    // Set selected locally
-    setSelectedId(id)
+    if (isMultiSelect) {
+      // Toggle selection
+      if (selectedIdsRef.current.includes(id)) {
+        // Deselect and unlock
+        unlockShape(id)
+        setSelectedIds(prev => prev.filter(sid => sid !== id))
+      } else {
+        // Add to selection and lock
+        setSelectedIds(prev => [...prev, id])
+        if (wsRef.current) {
+          wsRef.current.send(JSON.stringify({
+            type: 'SHAPE_UPDATE',
+            payload: {
+              shapeId: id,
+              updates: { isLocked: true },
+            },
+          }))
+        }
+      }
+    } else {
+      // Single selection - unlock all previously selected shapes
+      selectedIdsRef.current.forEach(sid => {
+        if (sid !== id) {
+          unlockShape(sid)
+        }
+      })
 
-    // Send lock message to server to notify other users
-    if (wsRef.current) {
-      console.log('🔒 Locking shape on selection:', id)
-      wsRef.current.send(JSON.stringify({
-        type: 'SHAPE_UPDATE',
-        payload: {
-          shapeId: id,
-          updates: {
-            isLocked: true,
+      // Set selected locally
+      setSelectedIds([id])
+
+      // Send lock message to server to notify other users
+      if (wsRef.current) {
+        console.log('🔒 Locking shape on selection:', id)
+        wsRef.current.send(JSON.stringify({
+          type: 'SHAPE_UPDATE',
+          payload: {
+            shapeId: id,
+            updates: { isLocked: true },
           },
-        },
-      }))
+        }))
+      }
     }
-  }, [selectedId, unlockShape])
+  }, [unlockShape, activeUsers, showToast])
 
   // Handle shape drag start
   const handleShapeDragStart = useCallback((id: string) => {
@@ -1014,24 +1203,45 @@ export default function Canvas() {
     isShapeDragActiveRef.current = true // Mark shape drag as active
     isDragMoveRef.current = false // Reset drag move flag
 
-    // Select the shape being dragged
-    setSelectedId(id)
-    const s = shapesRef.current.find(sh => sh.id === id)
-    if (s) {
-      dragBaselineRef.current.set(id, { x: s.x, y: s.y })
+    // Select the shape being dragged if not already selected
+    if (!selectedIdsRef.current.includes(id)) {
+      // Unlock previously selected shapes
+      selectedIdsRef.current.forEach(sid => unlockShape(sid))
+      setSelectedIds([id])
     }
 
-    // Send lock message immediately
-    wsRef.current.send(JSON.stringify({
-      type: 'SHAPE_UPDATE',
-      payload: {
-        shapeId: id,
-        updates: {
-          isLocked: true,
+    // Store baseline positions for all selected shapes
+    const selectedShapes = shapesRef.current.filter(s => selectedIdsRef.current.includes(s.id))
+    const primaryShape = shapesRef.current.find(sh => sh.id === id)
+
+    if (primaryShape) {
+      // Calculate offsets for multi-shape drag
+      multiDragOffsetsRef.current.clear()
+      selectedShapes.forEach(s => {
+        dragBaselineRef.current.set(s.id, { x: s.x, y: s.y })
+        if (s.id !== id) {
+          // Store offset relative to primary dragged shape
+          multiDragOffsetsRef.current.set(s.id, {
+            dx: s.x - primaryShape.x,
+            dy: s.y - primaryShape.y,
+          })
+        }
+      })
+    }
+
+    // Send lock messages for all selected shapes
+    selectedShapes.forEach(shape => {
+      wsRef.current!.send(JSON.stringify({
+        type: 'SHAPE_UPDATE',
+        payload: {
+          shapeId: shape.id,
+          updates: {
+            isLocked: true,
+          },
         },
-      },
-    }))
-  }, [])
+      }))
+    })
+  }, [unlockShape])
 
   const flushPendingRotationUpdates = useCallback(() => {
     rotationFrameScheduledRef.current = false
@@ -1079,31 +1289,121 @@ export default function Canvas() {
       constrainedY = Math.max(0, Math.min(y, CANVAS_HEIGHT - height))
     }
 
-    // Queue local update; flush at most once per frame
-    pendingDragUpdatesRef.current.set(id, { x: constrainedX, y: constrainedY })
-    if (!dragFrameScheduledRef.current) {
-      dragFrameScheduledRef.current = true
-      dragRafRef.current = requestAnimationFrame(flushPendingDragUpdates)
-    }
+    // Check if multiple shapes are selected
+    const selectedShapes = shapesRef.current.filter(s => selectedIdsRef.current.includes(s.id))
 
-    // Store the drag position
-    dragPositionRef.current = { shapeId: id, x: constrainedX, y: constrainedY }
+    if (selectedShapes.length > 1) {
+      // Multi-shape drag: use stored offsets to maintain exact relative positioning
+      const primaryNewX = constrainedX
+      const primaryNewY = constrainedY
 
-    // Throttle WebSocket updates to reduce network traffic (every 50ms)
-    const now = Date.now()
-    if (wsRef.current && now - dragThrottleRef.current > 50) {
-      dragThrottleRef.current = now
+      // Calculate new positions for all shapes
+      const newPositions = new Map<string, { x: number; y: number }>()
 
-      wsRef.current.send(JSON.stringify({
-        type: 'SHAPE_UPDATE',
-        payload: {
-          shapeId: id,
-          updates: {
-            x: constrainedX,
-            y: constrainedY,
-          },
-        },
+      selectedShapes.forEach(s => {
+        let newX, newY
+
+        if (s.id === id) {
+          // Primary dragged shape
+          newX = primaryNewX
+          newY = primaryNewY
+        } else {
+          // Other shapes: use stored offset from primary shape
+          const offset = multiDragOffsetsRef.current.get(s.id)
+          if (offset) {
+            newX = primaryNewX + offset.dx
+            newY = primaryNewY + offset.dy
+          } else {
+            // Fallback (shouldn't happen)
+            newX = s.x
+            newY = s.y
+          }
+        }
+
+        // Constrain each shape to canvas boundaries
+        if (s.type === 'circle') {
+          const radius = s.radius || DEFAULT_SHAPE_SIZE / 2
+          newX = Math.max(radius, Math.min(newX, CANVAS_WIDTH - radius))
+          newY = Math.max(radius, Math.min(newY, CANVAS_HEIGHT - radius))
+        } else {
+          const width = s.width || DEFAULT_SHAPE_SIZE
+          const height = s.height || DEFAULT_SHAPE_SIZE
+          newX = Math.max(0, Math.min(newX, CANVAS_WIDTH - width))
+          newY = Math.max(0, Math.min(newY, CANVAS_HEIGHT - height))
+        }
+
+        newPositions.set(s.id, { x: newX, y: newY })
+      })
+
+      // Immediately update only the non-primary shapes to keep them in sync with cursor
+      // The primary shape is handled smoothly by Konva's drag system - don't interfere with it
+      setShapes(prev => prev.map(s => {
+        // Skip the primary shape - Konva handles it
+        if (s.id === id) return s
+
+        const pos = newPositions.get(s.id)
+        return pos ? { ...s, x: pos.x, y: pos.y } : s
       }))
+
+      // Store positions for WebSocket updates (including primary)
+      newPositions.forEach((pos, shapeId) => {
+        pendingDragUpdatesRef.current.set(shapeId, pos)
+      })
+
+      // Throttle WebSocket updates - send all shape updates in a single batch
+      const now = Date.now()
+      if (wsRef.current && now - dragThrottleRef.current > 33) {
+        dragThrottleRef.current = now
+
+        // Send batch update for all selected shapes
+        selectedShapes.forEach(s => {
+          const updates = pendingDragUpdatesRef.current.get(s.id)
+          if (updates) {
+            wsRef.current!.send(JSON.stringify({
+              type: 'SHAPE_UPDATE',
+              payload: {
+                shapeId: s.id,
+                updates: {
+                  x: updates.x,
+                  y: updates.y,
+                },
+              },
+              timestamp: now,
+            }))
+          }
+        })
+      }
+
+      // Store the primary drag position
+      dragPositionRef.current = { shapeId: id, x: constrainedX, y: constrainedY }
+    } else {
+      // Single shape drag (original behavior)
+      pendingDragUpdatesRef.current.set(id, { x: constrainedX, y: constrainedY })
+      if (!dragFrameScheduledRef.current) {
+        dragFrameScheduledRef.current = true
+        dragRafRef.current = requestAnimationFrame(flushPendingDragUpdates)
+      }
+
+      // Store the drag position
+      dragPositionRef.current = { shapeId: id, x: constrainedX, y: constrainedY }
+
+      // Throttle WebSocket updates to reduce network traffic (every 33ms for sub-100ms target)
+      const now = Date.now()
+      if (wsRef.current && now - dragThrottleRef.current > 33) {
+        dragThrottleRef.current = now
+
+        wsRef.current.send(JSON.stringify({
+          type: 'SHAPE_UPDATE',
+          payload: {
+            shapeId: id,
+            updates: {
+              x: constrainedX,
+              y: constrainedY,
+            },
+          },
+          timestamp: now,
+        }))
+      }
     }
   }, [])
 
@@ -1124,35 +1424,108 @@ export default function Canvas() {
       isDragMoveRef.current = false
     }, 150)
 
-    // Send final position
-    // Keep shape locked since it's still selected after drag ends
-    const finalPos = dragPositionRef.current
-    if (finalPos && finalPos.shapeId === id) {
-      wsRef.current.send(JSON.stringify({
-        type: 'SHAPE_UPDATE',
-        payload: {
-          shapeId: id,
-          updates: {
-            x: finalPos.x,
-            y: finalPos.y,
-            // Keep shape locked - it will be unlocked when deselected
+    // Check if multiple shapes were dragged
+    const selectedShapes = shapesRef.current.filter(s => selectedIdsRef.current.includes(s.id))
+
+    if (selectedShapes.length > 1) {
+      // Multi-shape drag end: send final positions and create undo/redo entry
+      const undoMessages: WSMessage[] = []
+      const redoMessages: WSMessage[] = []
+
+      selectedShapes.forEach(shape => {
+        const currentPos = pendingDragUpdatesRef.current.get(shape.id) || { x: shape.x, y: shape.y }
+        const baseline = dragBaselineRef.current.get(shape.id)
+
+        // Record the final position to prevent animation from server updates
+        recentlyDraggedRef.current.set(shape.id, {
+          x: currentPos.x,
+          y: currentPos.y,
+          timestamp: Date.now(),
+        })
+
+        // Send final position
+        wsRef.current!.send(JSON.stringify({
+          type: 'SHAPE_UPDATE',
+          payload: {
+            shapeId: shape.id,
+            updates: {
+              x: currentPos.x,
+              y: currentPos.y,
+            },
           },
-        },
-      }))
-      const base = dragBaselineRef.current.get(id)
-      if (base && (base.x !== finalPos.x || base.y !== finalPos.y)) {
+        }))
+
+        // Build undo/redo if position changed
+        if (baseline && (baseline.x !== currentPos.x || baseline.y !== currentPos.y)) {
+          undoMessages.push({
+            type: 'SHAPE_UPDATE',
+            payload: { shapeId: shape.id, updates: { x: baseline.x, y: baseline.y } },
+          })
+          redoMessages.push({
+            type: 'SHAPE_UPDATE',
+            payload: { shapeId: shape.id, updates: { x: currentPos.x, y: currentPos.y } },
+          })
+        }
+
+        dragBaselineRef.current.delete(shape.id)
+      })
+
+      // Add multi-shape move to history
+      if (undoMessages.length > 0) {
         pushHistory({
-          undo: { type: 'SHAPE_UPDATE', payload: { shapeId: id, updates: { x: base.x, y: base.y } } },
-          redo: { type: 'SHAPE_UPDATE', payload: { shapeId: id, updates: { x: finalPos.x, y: finalPos.y } } },
-          label: 'Move shape',
+          undo: undoMessages,
+          redo: redoMessages,
+          label: `Move ${selectedShapes.length} shapes`,
         })
       }
+
+      // Update React state with final positions (especially for primary shape which wasn't updated during drag)
+      setShapes(prev => prev.map(s => {
+        const finalPos = pendingDragUpdatesRef.current.get(s.id)
+        return finalPos ? { ...s, x: finalPos.x, y: finalPos.y } : s
+      }))
+
+      // Unlock all selected shapes
+      selectedShapes.forEach(shape => unlockShape(shape.id))
+    } else {
+      // Single shape drag end (original behavior)
+      const finalPos = dragPositionRef.current
+      if (finalPos && finalPos.shapeId === id) {
+        // Record the final position to prevent animation from server updates
+        recentlyDraggedRef.current.set(id, {
+          x: finalPos.x,
+          y: finalPos.y,
+          timestamp: Date.now(),
+        })
+
+        wsRef.current.send(JSON.stringify({
+          type: 'SHAPE_UPDATE',
+          payload: {
+            shapeId: id,
+            updates: {
+              x: finalPos.x,
+              y: finalPos.y,
+            },
+          },
+        }))
+        const base = dragBaselineRef.current.get(id)
+        if (base && (base.x !== finalPos.x || base.y !== finalPos.y)) {
+          pushHistory({
+            undo: { type: 'SHAPE_UPDATE', payload: { shapeId: id, updates: { x: base.x, y: base.y } } },
+            redo: { type: 'SHAPE_UPDATE', payload: { shapeId: id, updates: { x: finalPos.x, y: finalPos.y } } },
+            label: 'Move shape',
+          })
+        }
+      }
+
+      dragBaselineRef.current.delete(id)
+      unlockShape(id)
     }
 
     // Clear drag position
     dragPositionRef.current = null
     dragThrottleRef.current = 0
-    dragBaselineRef.current.delete(id)
+    multiDragOffsetsRef.current.clear()
 
     // Cancel any pending rAF and clear queued drag updates
     if (dragRafRef.current != null) {
@@ -1162,10 +1535,9 @@ export default function Canvas() {
     pendingDragUpdatesRef.current.clear()
     dragFrameScheduledRef.current = false
 
-    // After dropping, unlock and deselect the shape
-    unlockShape(id)
-    setSelectedId(null)
-  }, [])
+    // Deselect shapes
+    setSelectedIds([])
+  }, [unlockShape, pushHistory])
 
   // Resize handlers
   const handleResizeStart = useCallback((id: string) => {
@@ -1173,7 +1545,10 @@ export default function Canvas() {
     isResizingShapeRef.current = true
     resizingShapeIdRef.current = id
     // Select and lock immediately
-    setSelectedId(id)
+    if (!selectedIdsRef.current.includes(id)) {
+      selectedIdsRef.current.forEach(sid => unlockShape(sid))
+      setSelectedIds([id])
+    }
     const s = shapesRef.current.find(sh => sh.id === id)
     if (s) {
       if (s.type === 'circle') {
@@ -1322,14 +1697,17 @@ export default function Canvas() {
 
     // Unlock and deselect
     unlockShape(id)
-    setSelectedId(null)
-  }, [])
+    setSelectedIds([])
+  }, [unlockShape, pushHistory])
 
   // Rotation handlers
   const handleRotateStart = useCallback((id: string) => {
     if (!wsRef.current) return
     // Select and lock immediately
-    setSelectedId(id)
+    if (!selectedIdsRef.current.includes(id)) {
+      selectedIdsRef.current.forEach(sid => unlockShape(sid))
+      setSelectedIds([id])
+    }
     isRotatingShapeRef.current = true
     rotatingShapeIdRef.current = id
     const s = shapesRef.current.find(sh => sh.id === id)
@@ -1397,46 +1775,63 @@ export default function Canvas() {
     rotatingShapeIdRef.current = null
     // Unlock and deselect
     unlockShape(id)
-    setSelectedId(null)
+    setSelectedIds([])
     rotateBaselineRef.current.delete(id)
-  }, [])
+  }, [unlockShape, pushHistory])
 
   // Handle shape deletion
-  const handleDeleteShape = useCallback((shapeId?: string) => {
+  const handleDeleteShape = useCallback((shapeIds?: string[]) => {
     if (!wsRef.current) return
 
-    // Use passed shapeId or fall back to selectedId from closure
-    const idToDelete = shapeId
-    if (!idToDelete) return
+    // Use passed shapeIds or fall back to selectedIds
+    const idsToDelete = shapeIds || selectedIdsRef.current
+    if (idsToDelete.length === 0) return
 
-    const shape = shapesRef.current.find(s => s.id === idToDelete)
-    if (shape && shape.locked_at && shape.locked_by !== currentUserIdRef.current) {
-      // Check if lock is still valid
-      const lockTime = new Date(shape.locked_at).getTime()
-      const elapsed = (Date.now() - lockTime) / 1000
-      if (elapsed < 10) {
-        // Cannot delete locked shapes
-        console.log('Cannot delete shape locked by another user')
-        return
+    const deletableShapes = idsToDelete.map(id => {
+      const shape = shapesRef.current.find(s => s.id === id)
+      if (!shape) return null
+
+      if (shape.locked_at && shape.locked_by !== currentUserIdRef.current) {
+        // Check if lock is still valid
+        const lockTime = new Date(shape.locked_at).getTime()
+        const elapsed = (Date.now() - lockTime) / 1000
+        if (elapsed < 10) {
+          // Cannot delete locked shapes
+          console.log('Cannot delete shape locked by another user')
+          return null
+        }
       }
-    }
+      return shape
+    }).filter(Boolean) as Shape[]
 
-    if (shape) {
-      const snapshot = { ...shape }
+    if (deletableShapes.length === 0) return
+
+    // Create undo/redo history
+    if (deletableShapes.length === 1) {
+      const shape = deletableShapes[0]
       pushHistory({
-        undo: { type: 'SHAPE_CREATE', payload: snapshot },
-        redo: { type: 'SHAPE_DELETE', payload: { shapeId: snapshot.id } },
+        undo: { type: 'SHAPE_CREATE', payload: shape },
+        redo: { type: 'SHAPE_DELETE', payload: { shapeId: shape.id } },
         label: 'Delete shape',
+      })
+    } else {
+      pushHistory({
+        undo: deletableShapes.map(s => ({ type: 'SHAPE_CREATE', payload: s })),
+        redo: deletableShapes.map(s => ({ type: 'SHAPE_DELETE', payload: { shapeId: s.id } })),
+        label: `Delete ${deletableShapes.length} shapes`,
       })
     }
 
-    wsRef.current.send(JSON.stringify({
-      type: 'SHAPE_DELETE',
-      payload: { shapeId: idToDelete },
-    }))
+    // Send delete messages
+    deletableShapes.forEach(shape => {
+      wsRef.current!.send(JSON.stringify({
+        type: 'SHAPE_DELETE',
+        payload: { shapeId: shape.id },
+      }))
+    })
 
-    setSelectedId(null)
-  }, [])
+    setSelectedIds([])
+  }, [pushHistory])
 
   // Handle keyboard shortcuts (Undo/Redo/Delete/Escape)
   useEffect(() => {
@@ -1455,17 +1850,14 @@ export default function Canvas() {
       }
       if (e.key === 'Delete' || e.key === 'Backspace') {
         e.preventDefault()
-        // Use a ref to get the current selectedId to avoid re-creating effect
-        const currentSelectedId = selectedId
-        if (currentSelectedId) {
-          handleDeleteShape(currentSelectedId)
+        // Use the ref to get current selectedIds
+        if (selectedIdsRef.current.length > 0) {
+          handleDeleteShape()
         }
       } else if (e.key === 'Escape') {
-        // Unlock shape before deselecting
-        if (selectedId) {
-          unlockShape(selectedId)
-        }
-        setSelectedId(null)
+        // Unlock shapes before deselecting
+        selectedIdsRef.current.forEach(id => unlockShape(id))
+        setSelectedIds([])
       }
     }
 
@@ -1474,7 +1866,7 @@ export default function Canvas() {
       window.removeEventListener('keydown', handleKeyDown)
       document.body.style.cursor = 'default'
     }
-  }, [handleDeleteShape, selectedId, unlockShape, performUndo, performRedo])
+  }, [handleDeleteShape, unlockShape, performUndo, performRedo])
 
   // Handle stage click (deselect)
   const handleStageClick = useCallback((e: any) => {
@@ -1483,15 +1875,18 @@ export default function Canvas() {
       return
     }
 
+    // Don't deselect if we're in lasso mode
+    if (isDrawingLasso) {
+      return
+    }
+
     // If clicking on empty stage, deselect
     if (e.target === e.target.getStage()) {
-      // Unlock shape before deselecting
-      if (selectedId) {
-        unlockShape(selectedId)
-      }
-      setSelectedId(null)
+      // Unlock shapes before deselecting
+      selectedIdsRef.current.forEach(id => unlockShape(id))
+      setSelectedIds([])
     }
-  }, [selectedId, unlockShape])
+  }, [unlockShape, isDrawingLasso])
 
   // Handle mouse move for cursor tracking
   const handleMouseMove = useCallback((e: any) => {
@@ -1506,14 +1901,15 @@ export default function Canvas() {
     const x = (pointerPos.x - stage.x()) / stage.scaleX()
     const y = (pointerPos.y - stage.y()) / stage.scaleY()
 
-    // Throttle cursor updates to 30 FPS (33ms)
+    // Throttle cursor updates to achieve sub-50ms target (25ms = 40 FPS)
     const now = Date.now()
-    if (now - cursorThrottleRef.current > 33) {
+    if (now - cursorThrottleRef.current > 25) {
       cursorThrottleRef.current = now
 
       wsRef.current.send(JSON.stringify({
         type: 'CURSOR_MOVE',
         payload: { x, y },
+        timestamp: now,
       }))
     }
   }, [])
@@ -1561,10 +1957,51 @@ export default function Canvas() {
     }
   }, [])
 
+  // Viewport culling: calculate visible area with padding
+  const visibleShapes = useMemo(() => {
+    // Calculate viewport bounds in canvas coordinates with generous padding for smooth scrolling
+    const padding = 500 // Extra padding to render shapes slightly outside viewport
+    const viewportMinX = (-stagePos.x / stageScale) - padding
+    const viewportMaxX = (VIEWPORT_WIDTH - stagePos.x) / stageScale + padding
+    const viewportMinY = (-stagePos.y / stageScale) - padding
+    const viewportMaxY = (VIEWPORT_HEIGHT - stagePos.y) / stageScale + padding
+
+    // Filter shapes that intersect with viewport
+    return shapes.filter(shape => {
+      let shapeMinX: number, shapeMaxX: number, shapeMinY: number, shapeMaxY: number
+
+      if (shape.type === 'circle') {
+        const radius = shape.radius || 50
+        shapeMinX = shape.x - radius
+        shapeMaxX = shape.x + radius
+        shapeMinY = shape.y - radius
+        shapeMaxY = shape.y + radius
+      } else if (shape.type === 'text') {
+        // Estimate text bounds (conservative approximation)
+        const width = ((shape.textContent || '').length * (shape.fontSize || 24)) / 2
+        const height = (shape.fontSize || 24) * 1.5
+        shapeMinX = shape.x
+        shapeMaxX = shape.x + width
+        shapeMinY = shape.y - height
+        shapeMaxY = shape.y
+      } else {
+        // Rectangle and other shapes
+        shapeMinX = shape.x
+        shapeMaxX = shape.x + (shape.width || 100)
+        shapeMinY = shape.y
+        shapeMaxY = shape.y + (shape.height || 100)
+      }
+
+      // Check if shape intersects viewport
+      return !(shapeMaxX < viewportMinX || shapeMinX > viewportMaxX ||
+        shapeMaxY < viewportMinY || shapeMinY > viewportMaxY)
+    })
+  }, [shapes, stagePos, stageScale])
+
   // Memoize shape rendering props to avoid recalculating on every render
   const shapeRenderProps = useMemo(() => {
-    return shapes.map(shape => {
-      const isSelected = selectedId === shape.id
+    return visibleShapes.map(shape => {
+      const isSelected = selectedIds.includes(shape.id)
       const remainingSeconds = getRemainingLockSeconds(shape.locked_at)
       // Treat as locked whenever locked_by exists; unlock will be delivered by server.
       const isLocked = !!shape.locked_by
@@ -1590,11 +2027,12 @@ export default function Canvas() {
         remainingSeconds,
       }
     })
-  }, [shapes, selectedId, currentTime, currentUserId, currentUserColor, getRemainingLockSeconds, getUserColor])
+  }, [visibleShapes, selectedIds, currentTime, currentUserId, currentUserColor, getRemainingLockSeconds, getUserColor])
 
-  const selectedShape = useMemo(() => shapes.find(s => s.id === selectedId) || null, [shapes, selectedId])
+  const selectedShape = useMemo(() => selectedIds.length === 1 ? shapes.find(s => s.id === selectedIds[0]) || null : null, [shapes, selectedIds])
 
   const handleChangeColor = useCallback((hex: string) => {
+    const selectedId = selectedIds[0]
     if (!selectedId || !wsRef.current) return
     // Optimistic local update
     setShapes(prev => prev.map(s => s.id === selectedId ? { ...s, color: hex } : s))
@@ -1608,10 +2046,11 @@ export default function Canvas() {
         payload: { shapeId: selectedId, updates: { color: hex } },
       }))
     }
-  }, [selectedId, recordPropChange])
+  }, [selectedIds, recordPropChange])
 
   // Panel handlers
   const handleChangeOpacity = useCallback((opacity01: number) => {
+    const selectedId = selectedIds[0]
     if (!selectedId || !wsRef.current) return
     const clamped = Math.max(0, Math.min(1, opacity01))
     // Optimistic
@@ -1625,9 +2064,10 @@ export default function Canvas() {
         payload: { shapeId: selectedId, updates: { opacity: clamped } },
       }))
     }
-  }, [selectedId, recordPropChange])
+  }, [selectedIds, recordPropChange])
 
   const handleCommitRotation = useCallback((rotationDeg: number) => {
+    const selectedId = selectedIds[0]
     if (!selectedId || !wsRef.current) return
     const normalized = Math.round(rotationDeg)
     setShapes(prev => prev.map(s => s.id === selectedId ? { ...s, rotation: normalized } : s))
@@ -1636,9 +2076,10 @@ export default function Canvas() {
       type: 'SHAPE_UPDATE',
       payload: { shapeId: selectedId, updates: { rotation: normalized } },
     }))
-  }, [selectedId, recordPropChange])
+  }, [selectedIds, recordPropChange])
 
   const handleChangeShadowColor = useCallback((hex: string) => {
+    const selectedId = selectedIds[0]
     if (!selectedId || !wsRef.current) return
     setShapes(prev => prev.map(s => s.id === selectedId ? { ...s, shadowColor: hex } : s))
     recordPropChange(selectedId, 'shadowColor', hex)
@@ -1646,9 +2087,10 @@ export default function Canvas() {
       type: 'SHAPE_UPDATE',
       payload: { shapeId: selectedId, updates: { shadowColor: hex } },
     }))
-  }, [selectedId, recordPropChange])
+  }, [selectedIds, recordPropChange])
 
   const handleChangeShadowStrength = useCallback((strength: number) => {
+    const selectedId = selectedIds[0]
     if (!selectedId || !wsRef.current) return
     const v = Math.max(0, Math.min(50, Math.round(strength)))
     setShapes(prev => prev.map(s => s.id === selectedId ? { ...s, shadowStrength: v } : s))
@@ -1661,9 +2103,10 @@ export default function Canvas() {
         payload: { shapeId: selectedId, updates: { shadowStrength: v } },
       }))
     }
-  }, [selectedId, recordPropChange])
+  }, [selectedIds, recordPropChange])
 
   const handleChangeFontFamily = useCallback((family: string) => {
+    const selectedId = selectedIds[0]
     if (!selectedId || !wsRef.current) return
     setShapes(prev => prev.map(s => s.id === selectedId ? { ...s, fontFamily: family } : s))
     recordPropChange(selectedId, 'fontFamily', family)
@@ -1671,9 +2114,10 @@ export default function Canvas() {
       type: 'SHAPE_UPDATE',
       payload: { shapeId: selectedId, updates: { fontFamily: family } },
     }))
-  }, [selectedId, recordPropChange])
+  }, [selectedIds, recordPropChange])
 
   const handleChangeFontWeight = useCallback((weight: string) => {
+    const selectedId = selectedIds[0]
     if (!selectedId || !wsRef.current) return
     setShapes(prev => prev.map(s => s.id === selectedId ? { ...s, fontWeight: weight } : s))
     recordPropChange(selectedId, 'fontWeight', weight)
@@ -1681,7 +2125,268 @@ export default function Canvas() {
       type: 'SHAPE_UPDATE',
       payload: { shapeId: selectedId, updates: { fontWeight: weight } },
     }))
-  }, [selectedId, recordPropChange])
+  }, [selectedIds, recordPropChange])
+
+  // Lasso selection handlers
+  const handleStageMouseDown = useCallback((e: any) => {
+    // Check if shift/cmd is pressed or lasso mode is active
+    const isLassoKey = e.evt?.shiftKey || e.evt?.metaKey
+    if ((lassoMode || isLassoKey) && e.target === e.target.getStage()) {
+      const stage = e.target.getStage()
+      const pos = stage.getPointerPosition()
+      if (!pos) return
+
+      const canvasX = (pos.x - stage.x()) / stage.scaleX()
+      const canvasY = (pos.y - stage.y()) / stage.scaleY()
+
+      setIsDrawingLasso(true)
+      setLassoStart({ x: canvasX, y: canvasY })
+      setLassoEnd({ x: canvasX, y: canvasY })
+    }
+  }, [lassoMode])
+
+  const handleStageMouseMove = useCallback((e: any) => {
+    if (isDrawingLasso && lassoStart) {
+      const stage = e.target.getStage()
+      const pos = stage.getPointerPosition()
+      if (!pos) return
+
+      const canvasX = (pos.x - stage.x()) / stage.scaleX()
+      const canvasY = (pos.y - stage.y()) / stage.scaleY()
+
+      setLassoEnd({ x: canvasX, y: canvasY })
+    }
+  }, [isDrawingLasso, lassoStart])
+
+  const handleStageMouseUp = useCallback(() => {
+    if (isDrawingLasso && lassoStart && lassoEnd) {
+      // Calculate circle radius
+      const dx = lassoEnd.x - lassoStart.x
+      const dy = lassoEnd.y - lassoStart.y
+      const radius = Math.sqrt(dx * dx + dy * dy)
+
+      // Find shapes within the lasso circle
+      const selectedShapes = shapes.filter(shape => {
+        // Get shape center point
+        let centerX: number, centerY: number
+        if (shape.type === 'circle') {
+          centerX = shape.x
+          centerY = shape.y
+        } else if (shape.type === 'text') {
+          centerX = shape.x
+          centerY = shape.y
+        } else {
+          // Rectangle
+          centerX = shape.x + (shape.width || 100) / 2
+          centerY = shape.y + (shape.height || 100) / 2
+        }
+
+        // Check if center is within lasso circle
+        const distX = centerX - lassoStart.x
+        const distY = centerY - lassoStart.y
+        const dist = Math.sqrt(distX * distX + distY * distY)
+
+        return dist <= radius
+      })
+
+      // Unlock previously selected shapes
+      selectedIdsRef.current.forEach(id => unlockShape(id))
+
+      // Set new selection and lock
+      const newSelectedIds = selectedShapes.map(s => s.id)
+      setSelectedIds(newSelectedIds)
+
+      // Lock all newly selected shapes
+      newSelectedIds.forEach(id => {
+        if (wsRef.current) {
+          wsRef.current.send(JSON.stringify({
+            type: 'SHAPE_UPDATE',
+            payload: { shapeId: id, updates: { isLocked: true } },
+          }))
+        }
+      })
+    }
+
+    // Reset lasso state
+    setIsDrawingLasso(false)
+    setLassoStart(null)
+    setLassoEnd(null)
+  }, [isDrawingLasso, lassoStart, lassoEnd, shapes, unlockShape])
+
+  // Context menu handlers
+  const handleShapeContextMenu = useCallback((e: any, shapeId: string) => {
+    e.evt.preventDefault()
+    const stage = stageRef.current
+    if (!stage) return
+
+    // Get screen position
+    const pos = stage.getPointerPosition()
+    if (!pos) return
+
+    setContextMenu({ x: pos.x, y: pos.y, shapeId })
+  }, [])
+
+  // Layer management handlers
+  const handleSendToFront = useCallback(() => {
+    if (!contextMenu || !wsRef.current) return
+
+    const shape = shapes.find(s => s.id === contextMenu.shapeId)
+    if (!shape) return
+
+    // Get max z-index
+    const maxZ = Math.max(...shapes.map(s => s.z_index || s.zIndex || 0), 0)
+    const newZIndex = maxZ + 1
+
+    wsRef.current.send(JSON.stringify({
+      type: 'SHAPE_UPDATE',
+      payload: { shapeId: contextMenu.shapeId, updates: { zIndex: newZIndex } },
+    }))
+
+    setContextMenu(null)
+  }, [contextMenu, shapes])
+
+  const handleSendToBack = useCallback(() => {
+    if (!contextMenu || !wsRef.current) return
+
+    const shape = shapes.find(s => s.id === contextMenu.shapeId)
+    if (!shape) return
+
+    // Get min z-index
+    const minZ = Math.min(...shapes.map(s => s.z_index || s.zIndex || 0), 0)
+    const newZIndex = minZ - 1
+
+    wsRef.current.send(JSON.stringify({
+      type: 'SHAPE_UPDATE',
+      payload: { shapeId: contextMenu.shapeId, updates: { zIndex: newZIndex } },
+    }))
+
+    setContextMenu(null)
+  }, [contextMenu, shapes])
+
+  const handleMoveForward = useCallback(() => {
+    if (!contextMenu || !wsRef.current) return
+
+    const shape = shapes.find(s => s.id === contextMenu.shapeId)
+    if (!shape) return
+
+    const currentZ = shape.z_index || shape.zIndex || 0
+    const newZIndex = currentZ + 1
+
+    wsRef.current.send(JSON.stringify({
+      type: 'SHAPE_UPDATE',
+      payload: { shapeId: contextMenu.shapeId, updates: { zIndex: newZIndex } },
+    }))
+
+    setContextMenu(null)
+  }, [contextMenu, shapes])
+
+  const handleMoveBackward = useCallback(() => {
+    if (!contextMenu || !wsRef.current) return
+
+    const shape = shapes.find(s => s.id === contextMenu.shapeId)
+    if (!shape) return
+
+    const currentZ = shape.z_index || shape.zIndex || 0
+    const newZIndex = currentZ - 1
+
+    wsRef.current.send(JSON.stringify({
+      type: 'SHAPE_UPDATE',
+      payload: { shapeId: contextMenu.shapeId, updates: { zIndex: newZIndex } },
+    }))
+
+    setContextMenu(null)
+  }, [contextMenu, shapes])
+
+  // Clipboard handlers
+  const handleCopy = useCallback(() => {
+    if (!contextMenu) return
+
+    const shape = shapes.find(s => s.id === contextMenu.shapeId)
+    if (!shape) return
+
+    setClipboard([shape])
+    setContextMenu(null)
+  }, [contextMenu, shapes])
+
+  const handleCut = useCallback(() => {
+    if (!contextMenu || !wsRef.current) return
+
+    const shape = shapes.find(s => s.id === contextMenu.shapeId)
+    if (!shape) return
+
+    setClipboard([shape])
+
+    // Delete the shape
+    wsRef.current.send(JSON.stringify({
+      type: 'SHAPE_DELETE',
+      payload: { shapeId: contextMenu.shapeId },
+    }))
+
+    pushHistory({
+      undo: { type: 'SHAPE_CREATE', payload: shape },
+      redo: { type: 'SHAPE_DELETE', payload: { shapeId: shape.id } },
+      label: 'Cut shape',
+    })
+
+    setContextMenu(null)
+  }, [contextMenu, shapes, pushHistory])
+
+  const handlePaste = useCallback(() => {
+    if (!contextMenu || clipboard.length === 0 || !wsRef.current) return
+
+    // Paste at cursor position with offset
+    const offsetX = 50
+    const offsetY = 50
+
+    clipboard.forEach(shape => {
+      const newShape = {
+        ...shape,
+        x: shape.x + offsetX,
+        y: shape.y + offsetY,
+      }
+      delete (newShape as any).id
+      delete (newShape as any).locked_at
+      delete (newShape as any).locked_by
+      delete (newShape as any).created_at
+      delete (newShape as any).updated_at
+
+      wsRef.current!.send(JSON.stringify({
+        type: 'SHAPE_CREATE',
+        payload: newShape,
+      }))
+    })
+
+    setContextMenu(null)
+  }, [contextMenu, clipboard])
+
+  const handleDuplicate = useCallback(() => {
+    if (!contextMenu || !wsRef.current) return
+
+    const shape = shapes.find(s => s.id === contextMenu.shapeId)
+    if (!shape) return
+
+    // Duplicate with offset
+    const offsetX = 50
+    const offsetY = 50
+
+    const newShape = {
+      ...shape,
+      x: shape.x + offsetX,
+      y: shape.y + offsetY,
+    }
+    delete (newShape as any).id
+    delete (newShape as any).locked_at
+    delete (newShape as any).locked_by
+    delete (newShape as any).created_at
+    delete (newShape as any).updated_at
+
+    wsRef.current.send(JSON.stringify({
+      type: 'SHAPE_CREATE',
+      payload: newShape,
+    }))
+
+    setContextMenu(null)
+  }, [contextMenu, shapes])
 
   // Show authentication prompt if not connected
   if (!currentUserId || !canvasId || !wsRef.current) {
@@ -1698,7 +2403,7 @@ export default function Canvas() {
           backgroundColor: '#1a1a1a',
           padding: '32px',
           borderRadius: '12px',
-          boxShadow: '0 4px 16px rgba(0,0,0,0.5)',
+          boxShadow: '0 4px 16px #1c1c1c80',
           border: '1px solid #404040',
           maxWidth: '400px',
           textAlign: 'center',
@@ -1731,6 +2436,133 @@ export default function Canvas() {
 
   return (
     <div ref={containerRef} style={{ width: '100%', height: '100%', position: 'relative', overflow: 'hidden', backgroundColor: '#0a0a0a' }}>
+      {/* Toast Notifications */}
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
+
+      {/* Performance & Connection Status Badge */}
+      <div style={{
+        position: 'absolute',
+        bottom: '20px',
+        left: '20px',
+        zIndex: 15,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '8px',
+      }}>
+        {/* Connection Status */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          backgroundColor: 'rgba(26, 26, 26, 0.95)',
+          padding: '8px 12px',
+          borderRadius: '8px',
+          border: '1px solid #404040',
+          boxShadow: '0 2px 8px #1c1c1c80',
+        }}>
+          <div style={{
+            width: '8px',
+            height: '8px',
+            borderRadius: '50%',
+            backgroundColor:
+              connectionState === 'connected' ? '#00ff00' :
+                connectionState === 'reconnecting' ? '#ffaa00' :
+                  connectionState === 'connecting' ? '#24ccff' :
+                    '#ff0000',
+            boxShadow: `0 0 8px ${connectionState === 'connected' ? '#00ff00' :
+              connectionState === 'reconnecting' ? '#ffaa00' :
+                connectionState === 'connecting' ? '#24ccff' :
+                  '#ff0000'
+              }`,
+            animation: connectionState === 'reconnecting' || connectionState === 'connecting' ? 'pulse 1.5s ease-in-out infinite' : 'none',
+          }} />
+          <span style={{ fontSize: '12px', color: '#ffffff', fontWeight: 500 }}>
+            {connectionState === 'connected' ? 'Connected' :
+              connectionState === 'reconnecting' ? `Reconnecting... (${reconnectAttempts}/${maxReconnectAttempts})` :
+                connectionState === 'connecting' ? 'Connecting...' :
+                  'Disconnected'}
+          </span>
+          {operationQueueRef.current.length > 0 && (
+            <span style={{ fontSize: '11px', color: '#888', marginLeft: '4px' }}>
+              ({operationQueueRef.current.length} queued)
+            </span>
+          )}
+        </div>
+
+        {/* Performance Stats */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '12px',
+          backgroundColor: 'rgba(26, 26, 26, 0.95)',
+          padding: '8px 12px',
+          borderRadius: '8px',
+          border: '1px solid #404040',
+          boxShadow: '0 2px 8px #1c1c1c80',
+          fontSize: '11px',
+          color: '#888',
+        }}>
+          <span style={{ color: fps >= 50 ? '#00ff00' : fps >= 30 ? '#ffaa00' : '#ff0000', fontWeight: 600, fontFamily: 'monospace', minWidth: '55px', display: 'inline-block' }}>
+            {fps} FPS
+          </span>
+          <span>|</span>
+          <span>
+            {visibleShapes.length}/{shapes.length} shapes
+          </span>
+          <span>|</span>
+          <span>
+            {onlineUsersCount} users
+          </span>
+        </div>
+      </div>
+
+      {/* Reconnection Overlay */}
+      {connectionState === 'reconnecting' && (
+        <div style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: '#1c1c1cb3',
+          zIndex: 50,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}>
+          <div style={{
+            backgroundColor: '#1a1a1a',
+            padding: '32px',
+            borderRadius: '12px',
+            boxShadow: '0 8px 32px #1c1c1ccc',
+            border: '1px solid #404040',
+            textAlign: 'center',
+            maxWidth: '400px',
+          }}>
+            <div style={{
+              width: '48px',
+              height: '48px',
+              border: '4px solid #404040',
+              borderTop: '4px solid #24ccff',
+              borderRadius: '50%',
+              margin: '0 auto 16px',
+              animation: 'spin 1s linear infinite',
+            }} />
+            <h3 style={{ fontSize: '18px', fontWeight: '600', marginBottom: '8px', color: '#ffffff' }}>
+              Reconnecting to server...
+            </h3>
+            <p style={{ color: '#b0b0b0', fontSize: '14px', marginBottom: '12px' }}>
+              Attempt {reconnectAttempts} of {maxReconnectAttempts}
+            </p>
+            {operationQueueRef.current.length > 0 && (
+              <p style={{ color: '#888', fontSize: '12px' }}>
+                {operationQueueRef.current.length} operation(s) queued and will sync on reconnection
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Control Panel */}
       <ControlPanel
         onAddRectangle={handleAddShape}
@@ -1744,6 +2576,8 @@ export default function Canvas() {
         onStopZoomHold={stopZoomHold}
         stageScale={stageScale}
         onToggleCanvasBg={() => setIsCanvasBgOpen(v => !v)}
+        lassoMode={lassoMode}
+        onToggleLassoMode={() => setLassoMode(v => !v)}
       />
 
       {/* Pan Mode Indicator removed */}
@@ -1757,7 +2591,7 @@ export default function Canvas() {
         backgroundColor: '#1a1a1a',
         padding: '12px 16px',
         borderRadius: '8px',
-        boxShadow: '0 2px 8px rgba(0,0,0,0.5)',
+        boxShadow: '0 2px 8px #1c1c1c80',
         border: '1px solid #404040',
         minWidth: '200px',
       }}>
@@ -1867,10 +2701,15 @@ export default function Canvas() {
         scaleY={stageScale}
         x={stagePos.x}
         y={stagePos.y}
-        draggable={!isShapeDragActiveRef.current && !isResizingShapeRef.current && !isRotatingShapeRef.current}
+        draggable={!isShapeDragActiveRef.current && !isResizingShapeRef.current && !isRotatingShapeRef.current && !isDrawingLasso}
         onWheel={handleWheel}
         onClick={handleStageClick}
-        onMouseMove={handleMouseMove}
+        onMouseDown={handleStageMouseDown}
+        onMouseMove={(e) => {
+          handleMouseMove(e)
+          handleStageMouseMove(e)
+        }}
+        onMouseUp={handleStageMouseUp}
         onDragMove={(e) => {
           // Update position if we're dragging the stage and not a shape
           if (!isShapeDragActiveRef.current) {
@@ -1919,7 +2758,7 @@ export default function Canvas() {
               strokeWidth={props.strokeWidth}
               isPressable={props.isPressable}
               isDraggable={props.isDraggable}
-              isSelected={selectedId === props.shape.id}
+              isSelected={selectedIds.includes(props.shape.id)}
               canResize={props.isDraggable}
               remainingSeconds={props.remainingSeconds}
               stageScale={stageScale}
@@ -1934,8 +2773,48 @@ export default function Canvas() {
               onRotateMove={handleRotateMove}
               onRotateEnd={handleRotateEnd}
               onTextDoubleClick={handleTextDoubleClick}
+              onContextMenu={handleShapeContextMenu}
             />
           ))}
+
+          {/* Last Edited Labels - show for recently edited shapes */}
+          {shapeRenderProps.map(props => {
+            const shape = props.shape
+            const lastModifiedAt = shape.last_modified_at
+            const lastModifiedBy = shape.last_modified_by
+
+            // Only show for shapes edited in the last 3 seconds
+            if (!lastModifiedAt || !lastModifiedBy || Date.now() - lastModifiedAt > 3000) {
+              return null
+            }
+
+            // Don't show for shapes edited by current user
+            if (lastModifiedBy === currentUserId) {
+              return null
+            }
+
+            const user = activeUsers.find(u => u.userId === lastModifiedBy)
+            const userName = user?.email?.split('@')[0] || user?.username || 'Unknown'
+            const userColor = getUserColor(lastModifiedBy)
+
+            // Position label above shape
+            const labelY = shape.type === 'circle'
+              ? shape.y - (shape.radius || 50) - 20 / stageScale
+              : shape.y - 20 / stageScale
+
+            return (
+              <KonvaText
+                key={`label-${shape.id}`}
+                x={shape.x}
+                y={labelY}
+                text={`edited by ${userName}`}
+                fontSize={12 / stageScale}
+                fill={userColor}
+                opacity={Math.max(0, 1 - (Date.now() - lastModifiedAt) / 3000)}
+                listening={false}
+              />
+            )
+          })}
         </Layer>
 
         {/* Cursors Layer - separate layer prevents re-renders when cursors move */}
@@ -1944,7 +2823,48 @@ export default function Canvas() {
             <CanvasCursor key={cursor.userId} cursor={cursor} />
           ))}
         </Layer>
+
+        {/* Lasso Layer - visualization for lasso selection */}
+        {isDrawingLasso && lassoStart && lassoEnd && (
+          <Layer listening={false}>
+            <KonvaCircle
+              x={lassoStart.x}
+              y={lassoStart.y}
+              radius={Math.sqrt((lassoEnd.x - lassoStart.x) ** 2 + (lassoEnd.y - lassoStart.y) ** 2)}
+              stroke="#24ccff"
+              strokeWidth={2 / stageScale}
+              dash={[10 / stageScale, 5 / stageScale]}
+              listening={false}
+            />
+            <KonvaCircle
+              x={lassoStart.x}
+              y={lassoStart.y}
+              radius={5 / stageScale}
+              fill="#24ccff"
+              listening={false}
+            />
+          </Layer>
+        )}
       </Stage>
+
+      {/* Context Menu */}
+      {contextMenu && (
+        <ContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          onClose={() => setContextMenu(null)}
+          onSendToFront={handleSendToFront}
+          onSendToBack={handleSendToBack}
+          onMoveForward={handleMoveForward}
+          onMoveBackward={handleMoveBackward}
+          onCopy={handleCopy}
+          onCut={handleCut}
+          onPaste={handlePaste}
+          onDuplicate={handleDuplicate}
+          hasPasteData={clipboard.length > 0}
+        />
+      )}
+
       {/* Shape Selection Panel (lower-right) */}
       {selectedShape && (
         <ShapeSelectionPanel
@@ -1972,7 +2892,7 @@ export default function Canvas() {
             border: '1px solid #404040',
             borderRadius: '12px',
             padding: '12px 14px',
-            boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4)'
+            boxShadow: '0 8px 32px #1c1c1c66'
           }}
         >
           <div style={{ fontSize: '12px', fontWeight: 600, color: '#888', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>
