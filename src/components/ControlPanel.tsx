@@ -34,6 +34,7 @@ const ControlButton: React.FC<{
     label: string
     variant?: 'primary' | 'secondary' | 'accent'
     className?: string
+    id?: string
 }> = ({
     onClick,
     onPointerDown,
@@ -44,7 +45,8 @@ const ControlButton: React.FC<{
     icon,
     label,
     variant = 'primary',
-    className = ''
+    className = '',
+    id
 }) => {
         const baseStyles: React.CSSProperties = {
             display: 'flex',
@@ -95,6 +97,7 @@ const ControlButton: React.FC<{
 
         return (
             <button
+                id={id}
                 onClick={onClick}
                 onPointerDown={onPointerDown}
                 onPointerUp={onPointerUp}
@@ -154,7 +157,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
             gap: '12px'
         }}>
             {/* Main Control Panel */}
-            <div style={{
+            <div id="main-control-panel" style={{
                 backgroundColor: 'rgba(26, 26, 26, 0.95)',
                 backdropFilter: 'blur(10px)',
                 padding: '16px',
@@ -202,6 +205,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
 
                     {/* Canvas background color */}
                     <ControlButton
+                        id="canvas-bg-btn"
                         onClick={onToggleCanvasBg}
                         icon={<Square size={18} />}
                         label="Canvas"

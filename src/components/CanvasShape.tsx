@@ -14,6 +14,9 @@ interface CanvasShapeProps {
         radius?: number
         rotation?: number
         color: string
+        opacity?: number
+        shadowColor?: string
+        shadowStrength?: number
         text_content?: string
         font_size?: number
         font_family?: string
@@ -46,6 +49,7 @@ interface CanvasShapeProps {
     onRotateStart?: (id: string) => void
     onRotateMove?: (id: string, rotation: number) => void
     onRotateEnd?: (id: string) => void
+    stageScale: number
     onTextDoubleClick?: (id: string) => void
 }
 
@@ -68,10 +72,16 @@ const CanvasShapeComponent = ({
     onRotateStart: _onRotateStart,
     onRotateMove: _onRotateMove,
     onRotateEnd: _onRotateEnd,
+    stageScale,
     onTextDoubleClick,
 }: CanvasShapeProps) => {
     const isLocked = remainingSeconds !== null
-    const handleSize = 8
+    const BASE_HANDLE_PX = 16
+    const handleSize = BASE_HANDLE_PX / stageScale
+    const handleStrokeThin = 1 / stageScale
+    const handleStrokeThick = 2 / stageScale
+    const ROTATION_OFFSET_PX = 28
+    const rotationOffset = ROTATION_OFFSET_PX / stageScale
 
     if (shape.type === 'text') {
         const textRef = useRef<any>(null)
@@ -107,6 +117,10 @@ const CanvasShapeComponent = ({
                     align={textAlign}
                     fill={shape.color || '#ffffff'}
                     rotation={shape.rotation || 0}
+                    opacity={shape.opacity ?? 1}
+                    shadowColor={shape.shadowColor ?? 'transparent'}
+                    shadowBlur={(shape.shadowStrength ?? 0)}
+                    shadowOpacity={Math.min(1, Math.max(0, (shape.shadowStrength ?? 0) / 50))}
                     onTap={() => isPressable && onShapeClick(shape.id)}
                     onClick={() => isPressable && onShapeClick(shape.id)}
                     onDblClick={() => onTextDoubleClick && onTextDoubleClick(shape.id)}
@@ -132,7 +146,7 @@ const CanvasShapeComponent = ({
                             height={handleSize}
                             fill="#ffffff"
                             stroke={strokeColor}
-                            strokeWidth={1}
+                            strokeWidth={handleStrokeThin}
                             draggable
                             onDragStart={(e) => {
                                 e.cancelBubble = true
@@ -174,12 +188,12 @@ const CanvasShapeComponent = ({
                         {/* Rotation handle */}
                         <Rect
                             x={(shape.x + textWidth / 2) - handleSize / 2}
-                            y={(shape.y - 20) - handleSize / 2}
+                            y={(shape.y - rotationOffset) - handleSize / 2}
                             width={handleSize}
                             height={handleSize}
                             fill="#4f46e5"
                             stroke="#ffffff"
-                            strokeWidth={2}
+                            strokeWidth={handleStrokeThick}
                             draggable
                             onDragStart={(e) => {
                                 e.cancelBubble = true
@@ -240,6 +254,10 @@ const CanvasShapeComponent = ({
                     stroke={strokeColor}
                     strokeWidth={strokeWidth}
                     rotation={shape.rotation || 0}
+                    opacity={shape.opacity ?? 1}
+                    shadowColor={shape.shadowColor ?? 'transparent'}
+                    shadowBlur={(shape.shadowStrength ?? 0)}
+                    shadowOpacity={Math.min(1, Math.max(0, (shape.shadowStrength ?? 0) / 50))}
                     onTap={() => isPressable && onShapeClick(shape.id)}
                     onClick={() => isPressable && onShapeClick(shape.id)}
                     draggable={isDraggable}
@@ -264,7 +282,7 @@ const CanvasShapeComponent = ({
                             height={handleSize}
                             fill="#ffffff"
                             stroke={strokeColor}
-                            strokeWidth={1}
+                            strokeWidth={handleStrokeThin}
                             draggable
                             onDragStart={(e) => {
                                 e.cancelBubble = true
@@ -296,12 +314,12 @@ const CanvasShapeComponent = ({
                         {/* Rotation handle */}
                         <Rect
                             x={shape.x - handleSize / 2}
-                            y={(shape.y - 20) - handleSize / 2}
+                            y={(shape.y - rotationOffset) - handleSize / 2}
                             width={handleSize}
                             height={handleSize}
                             fill="#4f46e5"
                             stroke="#ffffff"
-                            strokeWidth={2}
+                            strokeWidth={handleStrokeThick}
                             draggable
                             onDragStart={(e) => {
                                 e.cancelBubble = true
@@ -361,6 +379,10 @@ const CanvasShapeComponent = ({
                 stroke={strokeColor}
                 strokeWidth={strokeWidth}
                 rotation={shape.rotation || 0}
+                opacity={shape.opacity ?? 1}
+                shadowColor={shape.shadowColor ?? 'transparent'}
+                shadowBlur={(shape.shadowStrength ?? 0)}
+                shadowOpacity={Math.min(1, Math.max(0, (shape.shadowStrength ?? 0) / 50))}
                 onTap={() => isPressable && onShapeClick(shape.id)}
                 onClick={() => isPressable && onShapeClick(shape.id)}
                 draggable={isDraggable}
@@ -385,7 +407,7 @@ const CanvasShapeComponent = ({
                         height={handleSize}
                         fill="#ffffff"
                         stroke={strokeColor}
-                        strokeWidth={1}
+                        strokeWidth={handleStrokeThin}
                         draggable
                         onDragStart={(e) => {
                             e.cancelBubble = true
@@ -426,7 +448,7 @@ const CanvasShapeComponent = ({
                         height={handleSize}
                         fill="#ffffff"
                         stroke={strokeColor}
-                        strokeWidth={1}
+                        strokeWidth={handleStrokeThin}
                         draggable
                         onDragStart={(e) => {
                             e.cancelBubble = true
@@ -465,7 +487,7 @@ const CanvasShapeComponent = ({
                         height={handleSize}
                         fill="#ffffff"
                         stroke={strokeColor}
-                        strokeWidth={1}
+                        strokeWidth={handleStrokeThin}
                         draggable
                         onDragStart={(e) => {
                             e.cancelBubble = true
@@ -504,7 +526,7 @@ const CanvasShapeComponent = ({
                         height={handleSize}
                         fill="#ffffff"
                         stroke={strokeColor}
-                        strokeWidth={1}
+                        strokeWidth={handleStrokeThin}
                         draggable
                         onDragStart={(e) => {
                             e.cancelBubble = true
@@ -536,12 +558,12 @@ const CanvasShapeComponent = ({
                     {/* Rotation handle */}
                     <Rect
                         x={(shape.x + (shape.width || DEFAULT_SHAPE_SIZE) / 2) - handleSize / 2}
-                        y={(shape.y - 20) - handleSize / 2}
+                        y={(shape.y - rotationOffset) - handleSize / 2}
                         width={handleSize}
                         height={handleSize}
                         fill="#4f46e5"
                         stroke="#ffffff"
-                        strokeWidth={2}
+                        strokeWidth={handleStrokeThick}
                         draggable
                         onDragStart={(e) => {
                             e.cancelBubble = true
@@ -616,6 +638,7 @@ function areEqual(prev: CanvasShapeProps, next: CanvasShapeProps) {
     if ((prev.isSelected ?? false) !== (next.isSelected ?? false)) return false
     if ((prev.canResize ?? false) !== (next.canResize ?? false)) return false
     if ((prev.remainingSeconds ?? null) !== (next.remainingSeconds ?? null)) return false
+    if (prev.stageScale !== next.stageScale) return false
 
     // Handlers are stable (from useCallback) in parent; ignore identity changes
     return true

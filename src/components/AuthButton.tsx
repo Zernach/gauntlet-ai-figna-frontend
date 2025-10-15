@@ -62,6 +62,10 @@ export default function AuthButton({
     }
   }, [isAuthenticated])
 
+  if (isAuthenticated) {
+    return null;
+  }
+
   return (
     <button
       onClick={isAuthenticated ? onSignOut : onAuthClick}

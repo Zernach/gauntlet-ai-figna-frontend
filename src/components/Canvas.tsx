@@ -6,6 +6,8 @@ import ColorSlider from './ColorSlider'
 import CanvasShape from './CanvasShape'
 import CanvasCursor from './CanvasCursor'
 import ControlPanel from './ControlPanel'
+import ShapeSelectionPanel from './ShapeSelectionPanel'
+import UndoRedoPanel from './UndoRedoPanel'
 
 // Canvas constants - Extremely expansive canvas
 const CANVAS_WIDTH = 50000
@@ -32,6 +34,9 @@ interface Shape {
   radius?: number
   rotation?: number
   color: string
+  opacity?: number
+  shadowColor?: string
+  shadowStrength?: number
   text_content?: string
   font_size?: number
   font_family?: string
@@ -67,6 +72,7 @@ interface ActiveUser {
 
 export default function Canvas() {
   const stageRef = useRef<Konva.Stage>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
   const [shapes, setShapes] = useState<Shape[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [cursors, setCursors] = useState<Map<string, Cursor>>(new Map())
@@ -74,6 +80,7 @@ export default function Canvas() {
   const [stageScale, setStageScale] = useState(1)
   const [canvasBgHex, setCanvasBgHex] = useState<string>('#1a1a1a')
   const [isCanvasBgOpen, setIsCanvasBgOpen] = useState<boolean>(false)
+  const [canvasBgPanelPos, setCanvasBgPanelPos] = useState<{ top: number; left: number } | null>(null)
   const [stagePos, setStagePos] = useState({
     x: VIEWPORT_WIDTH / 2 - CANVAS_WIDTH / 2,
     y: VIEWPORT_HEIGHT / 2 - CANVAS_HEIGHT / 2
@@ -96,10 +103,121 @@ export default function Canvas() {
   const selectedIdRef = useRef<string | null>(null)
   const isDragMoveRef = useRef<boolean>(false)
   const isShapeDragActiveRef = useRef<boolean>(false) // Track if we're actively dragging a shape
+  // Rotation refs
+  const isRotatingShapeRef = useRef<boolean>(false)
+  const rotatingShapeIdRef = useRef<string | null>(null)
+  const rotationThrottleRef = useRef<number>(0)
+  const rotationRafRef = useRef<number | null>(null)
+  const pendingRotationUpdatesRef = useRef<Map<string, number>>(new Map())
+  const rotationFrameScheduledRef = useRef<boolean>(false)
   // Drag batching refs
   const dragRafRef = useRef<number | null>(null)
   const pendingDragUpdatesRef = useRef<Map<string, { x: number; y: number }>>(new Map())
   const dragFrameScheduledRef = useRef<boolean>(false)
+
+  // Undo/Redo state
+  type WSMessage = { type: string; payload?: any }
+  type HistoryEntry = { undo: WSMessage | WSMessage[]; redo: WSMessage | WSMessage[]; label?: string }
+  const undoStackRef = useRef<HistoryEntry[]>([])
+  const redoStackRef = useRef<HistoryEntry[]>([])
+  const [undoCount, setUndoCount] = useState<number>(0)
+  const [redoCount, setRedoCount] = useState<number>(0)
+  const [hasUserActed, setHasUserActed] = useState<boolean>(false)
+
+  const sendMessage = useCallback((msg: WSMessage) => {
+    if (!wsRef.current) return
+    wsRef.current.send(JSON.stringify(msg))
+  }, [])
+
+  const pushHistory = useCallback((entry: HistoryEntry) => {
+    undoStackRef.current.push(entry)
+    setUndoCount(undoStackRef.current.length)
+    // clear redo stack on new action
+    redoStackRef.current = []
+    setRedoCount(0)
+    if (!hasUserActed) setHasUserActed(true)
+  }, [hasUserActed])
+
+  const performUndo = useCallback(() => {
+    const entry = undoStackRef.current.pop()
+    if (!entry) return
+    const msgs = Array.isArray(entry.undo) ? entry.undo : [entry.undo]
+    msgs.forEach(sendMessage)
+    redoStackRef.current.push(entry)
+    setUndoCount(undoStackRef.current.length)
+    setRedoCount(redoStackRef.current.length)
+  }, [sendMessage])
+
+  const performRedo = useCallback(() => {
+    const entry = redoStackRef.current.pop()
+    if (!entry) return
+    const msgs = Array.isArray(entry.redo) ? entry.redo : [entry.redo]
+    msgs.forEach(sendMessage)
+    undoStackRef.current.push(entry)
+    setUndoCount(undoStackRef.current.length)
+    setRedoCount(redoStackRef.current.length)
+  }, [sendMessage])
+
+  // Baselines for compound interactions
+  const dragBaselineRef = useRef<Map<string, { x: number; y: number }>>(new Map())
+  const resizeBaselineRef = useRef<Map<string, any>>(new Map())
+  const rotateBaselineRef = useRef<Map<string, number>>(new Map())
+
+  // Debounced property change tracking per shape
+  type PendingPropChange = { shapeId: string; prop: string; initial: any; latest: any; timer: number | null }
+  const pendingPropChangesRef = useRef<Map<string, PendingPropChange>>(new Map())
+  const finalizePropChange = useCallback((key: string) => {
+    const pending = pendingPropChangesRef.current.get(key)
+    if (!pending) return
+    pending.timer = null
+    pendingPropChangesRef.current.delete(key)
+    if (pending.initial === pending.latest) return
+    pushHistory({
+      undo: { type: 'SHAPE_UPDATE', payload: { shapeId: pending.shapeId, updates: { [pending.prop]: pending.initial } } },
+      redo: { type: 'SHAPE_UPDATE', payload: { shapeId: pending.shapeId, updates: { [pending.prop]: pending.latest } } },
+      label: `Change ${pending.prop}`,
+    })
+  }, [pushHistory])
+
+  const recordPropChange = useCallback((shapeId: string, prop: string, nextValue: any, debounceMs: number = 400) => {
+    const key = `${shapeId}:${prop}`
+    const existing = pendingPropChangesRef.current.get(key)
+    if (existing) {
+      existing.latest = nextValue
+      if (existing.timer != null) window.clearTimeout(existing.timer)
+      existing.timer = window.setTimeout(() => finalizePropChange(key), debounceMs)
+      pendingPropChangesRef.current.set(key, existing)
+      return
+    }
+    const shape = shapesRef.current.find(s => s.id === shapeId)
+    const initial = (shape as any)?.[prop]
+    const created: PendingPropChange = { shapeId, prop, initial, latest: nextValue, timer: window.setTimeout(() => finalizePropChange(key), debounceMs) }
+    pendingPropChangesRef.current.set(key, created)
+  }, [finalizePropChange])
+
+  // Debounced canvas background change tracking
+  const pendingCanvasBgRef = useRef<{ initial: string; latest: string; timer: number | null } | null>(null)
+  const finalizeCanvasBgChange = useCallback(() => {
+    const p = pendingCanvasBgRef.current
+    if (!p) return
+    pendingCanvasBgRef.current = null
+    if (p.initial === p.latest) return
+    pushHistory({
+      undo: { type: 'CANVAS_UPDATE', payload: { updates: { backgroundColor: p.initial } } },
+      redo: { type: 'CANVAS_UPDATE', payload: { updates: { backgroundColor: p.latest } } },
+      label: 'Change canvas background',
+    })
+  }, [pushHistory])
+
+  const recordCanvasBgChange = useCallback((nextHex: string, debounceMs: number = 400) => {
+    if (pendingCanvasBgRef.current) {
+      pendingCanvasBgRef.current.latest = nextHex
+      if (pendingCanvasBgRef.current.timer != null) window.clearTimeout(pendingCanvasBgRef.current.timer)
+      pendingCanvasBgRef.current.timer = window.setTimeout(finalizeCanvasBgChange, debounceMs)
+      return
+    }
+    pendingCanvasBgRef.current = { initial: canvasBgHex, latest: nextHex, timer: window.setTimeout(finalizeCanvasBgChange, debounceMs) }
+  }, [canvasBgHex, finalizeCanvasBgChange])
 
   // Zoom animation refs
   const zoomAnimRafRef = useRef<number | null>(null)
@@ -116,10 +234,10 @@ export default function Canvas() {
   const zoomHoldLastTsRef = useRef<number>(0)
   const stagePosRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 })
 
-  // Color tooltip state/refs
-  const [colorHue, setColorHue] = useState<number>(0)
-  const baseSLRef = useRef<{ s: number; l: number }>({ s: 1, l: 0.5 })
+  // Color throttle ref
   const colorThrottleRef = useRef<number>(0)
+  const opacityThrottleRef = useRef<number>(0)
+  const shadowThrottleRef = useRef<number>(0)
 
 
   // Easing function for smooth zoom
@@ -283,6 +401,29 @@ export default function Canvas() {
     }
   }, [])
 
+  // Recompute canvas background panel position when opened or on resize
+  const computeCanvasBgPanelPosition = useCallback(() => {
+    const container = containerRef.current
+    const btn = typeof document !== 'undefined' ? document.getElementById('canvas-bg-btn') : null
+    const panel = typeof document !== 'undefined' ? document.getElementById('main-control-panel') : null
+    if (!container || !btn || !panel) return
+    const cRect = container.getBoundingClientRect()
+    const bRect = btn.getBoundingClientRect()
+    const pRect = panel.getBoundingClientRect()
+    const gap = 12
+    const top = Math.round(bRect.top - cRect.top)
+    const left = Math.round(pRect.right - cRect.left + gap)
+    setCanvasBgPanelPos({ top, left })
+  }, [])
+
+  useEffect(() => {
+    if (!isCanvasBgOpen) return
+    computeCanvasBgPanelPosition()
+    const onResize = () => computeCanvasBgPanelPosition()
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [isCanvasBgOpen, computeCanvasBgPanelPosition])
+
   // Keep refs in sync with state
   useEffect(() => {
     shapesRef.current = shapes
@@ -370,12 +511,18 @@ export default function Canvas() {
     const locked_by = s.locked_by !== undefined ? s.locked_by : (s.lockedBy !== undefined ? s.lockedBy : null)
     const textContent = s.textContent !== undefined ? s.textContent : (s.text_content !== undefined ? s.text_content : undefined)
     const fontSize = s.fontSize !== undefined ? s.fontSize : (s.font_size !== undefined ? s.font_size : undefined)
+    const opacity = s.opacity !== undefined ? s.opacity : undefined
+    const shadowColor = s.shadowColor !== undefined ? s.shadowColor : (s.shadow_color !== undefined ? s.shadow_color : undefined)
+    const shadowStrength = s.shadowStrength !== undefined ? s.shadowStrength : (s.shadow_strength !== undefined ? s.shadow_strength : undefined)
     return {
       ...s,
       locked_at,
       locked_by,
       textContent,
       fontSize,
+      opacity,
+      shadowColor,
+      shadowStrength,
     }
   }, [])
 
@@ -424,6 +571,11 @@ export default function Canvas() {
         const canvas = result.data
 
         console.log('✅ Connected to global canvas:', canvas.name)
+        // Hydrate canvas background immediately from API response (before WS sync)
+        const initialBg = canvas.background_color ?? canvas.backgroundColor
+        if (initialBg) {
+          setCanvasBgHex(initialBg)
+        }
         setCanvasId(canvas.id)
         connectWebSocket(canvas.id, session.access_token)
       } catch (error) {
@@ -518,6 +670,18 @@ export default function Canvas() {
             }
             return [...prev, incoming]
           })
+          // Record undo/redo if it was created by current user
+          try {
+            const createdBy = message.payload.shape.created_by ?? message.payload.shape.createdBy
+            if (createdBy && createdBy === currentUserIdRef.current) {
+              const fullShape = normalizeShape(message.payload.shape)
+              pushHistory({
+                undo: { type: 'SHAPE_DELETE', payload: { shapeId: fullShape.id } },
+                redo: { type: 'SHAPE_CREATE', payload: { ...fullShape } },
+                label: 'Create shape',
+              })
+            }
+          } catch { }
         }
         break
 
@@ -554,6 +718,13 @@ export default function Canvas() {
                   width: s.width,
                   height: s.height,
                   radius: s.radius,
+                }
+              }
+              // If we're currently rotating this shape, preserve local rotation to avoid flicker
+              if (isRotatingShapeRef.current && rotatingShapeIdRef.current === s.id) {
+                return {
+                  ...shape,
+                  rotation: s.rotation,
                 }
               }
               return shape
@@ -759,6 +930,13 @@ export default function Canvas() {
     if (newText == null) return
 
     if (wsRef.current) {
+      if (newText !== currentText) {
+        pushHistory({
+          undo: { type: 'SHAPE_UPDATE', payload: { shapeId: id, updates: { textContent: currentText } } },
+          redo: { type: 'SHAPE_UPDATE', payload: { shapeId: id, updates: { textContent: newText } } },
+          label: 'Edit text',
+        })
+      }
       wsRef.current.send(JSON.stringify({
         type: 'SHAPE_UPDATE',
         payload: {
@@ -838,6 +1016,10 @@ export default function Canvas() {
 
     // Select the shape being dragged
     setSelectedId(id)
+    const s = shapesRef.current.find(sh => sh.id === id)
+    if (s) {
+      dragBaselineRef.current.set(id, { x: s.x, y: s.y })
+    }
 
     // Send lock message immediately
     wsRef.current.send(JSON.stringify({
@@ -849,6 +1031,17 @@ export default function Canvas() {
         },
       },
     }))
+  }, [])
+
+  const flushPendingRotationUpdates = useCallback(() => {
+    rotationFrameScheduledRef.current = false
+    const pending = pendingRotationUpdatesRef.current
+    if (pending.size === 0) return
+    setShapes(prev => prev.map(s => {
+      const angle = pending.get(s.id)
+      return angle !== undefined ? { ...s, rotation: angle } : s
+    }))
+    pending.clear()
   }, [])
 
   const flushPendingDragUpdates = useCallback(() => {
@@ -946,11 +1139,20 @@ export default function Canvas() {
           },
         },
       }))
+      const base = dragBaselineRef.current.get(id)
+      if (base && (base.x !== finalPos.x || base.y !== finalPos.y)) {
+        pushHistory({
+          undo: { type: 'SHAPE_UPDATE', payload: { shapeId: id, updates: { x: base.x, y: base.y } } },
+          redo: { type: 'SHAPE_UPDATE', payload: { shapeId: id, updates: { x: finalPos.x, y: finalPos.y } } },
+          label: 'Move shape',
+        })
+      }
     }
 
     // Clear drag position
     dragPositionRef.current = null
     dragThrottleRef.current = 0
+    dragBaselineRef.current.delete(id)
 
     // Cancel any pending rAF and clear queued drag updates
     if (dragRafRef.current != null) {
@@ -972,6 +1174,17 @@ export default function Canvas() {
     resizingShapeIdRef.current = id
     // Select and lock immediately
     setSelectedId(id)
+    const s = shapesRef.current.find(sh => sh.id === id)
+    if (s) {
+      if (s.type === 'circle') {
+        resizeBaselineRef.current.set(id, { radius: s.radius })
+      } else if (s.type === 'text') {
+        const fs = (s as any).fontSize ?? (s as any).font_size ?? 24
+        resizeBaselineRef.current.set(id, { fontSize: fs })
+      } else {
+        resizeBaselineRef.current.set(id, { x: s.x, y: s.y, width: s.width, height: s.height })
+      }
+    }
     wsRef.current.send(JSON.stringify({
       type: 'SHAPE_UPDATE',
       payload: {
@@ -1076,12 +1289,36 @@ export default function Canvas() {
         updates.height = s.height
       }
       wsRef.current.send(JSON.stringify({ type: 'SHAPE_UPDATE', payload: { shapeId: id, updates } }))
+      const base = resizeBaselineRef.current.get(id)
+      if (base) {
+        let before: any = {}
+        let after: any = {}
+        if (s.type === 'circle') {
+          before = { radius: base.radius }
+          after = { radius: updates.radius }
+        } else if (s.type === 'text') {
+          before = { fontSize: base.fontSize }
+          after = { fontSize: updates.fontSize }
+        } else {
+          before = { x: base.x, y: base.y, width: base.width, height: base.height }
+          after = { x: updates.x, y: updates.y, width: updates.width, height: updates.height }
+        }
+        const changed = Object.keys(after).some(k => (before as any)[k] !== (after as any)[k])
+        if (changed) {
+          pushHistory({
+            undo: { type: 'SHAPE_UPDATE', payload: { shapeId: id, updates: before } },
+            redo: { type: 'SHAPE_UPDATE', payload: { shapeId: id, updates: after } },
+            label: 'Resize shape',
+          })
+        }
+      }
     }
 
     // Clear flags
     isResizingShapeRef.current = false
     resizingShapeIdRef.current = null
     resizeThrottleRef.current = 0
+    resizeBaselineRef.current.delete(id)
 
     // Unlock and deselect
     unlockShape(id)
@@ -1093,6 +1330,12 @@ export default function Canvas() {
     if (!wsRef.current) return
     // Select and lock immediately
     setSelectedId(id)
+    isRotatingShapeRef.current = true
+    rotatingShapeIdRef.current = id
+    const s = shapesRef.current.find(sh => sh.id === id)
+    if (s) {
+      rotateBaselineRef.current.set(id, s.rotation ?? 0)
+    }
     wsRef.current.send(JSON.stringify({
       type: 'SHAPE_UPDATE',
       payload: { shapeId: id, updates: { isLocked: true } },
@@ -1103,17 +1346,17 @@ export default function Canvas() {
     const shape = shapesRef.current.find(s => s.id === id)
     if (!shape) return
 
-    // Update local state immediately
-    setShapes(prev => prev.map(s =>
-      s.id === id ? { ...s, rotation } : s
-    ))
-    shapesRef.current = shapesRef.current.map(s =>
-      s.id === id ? { ...s, rotation } : s
-    )
+    // Queue local rotation update; flush at most once per frame
+    pendingRotationUpdatesRef.current.set(id, rotation)
+    if (!rotationFrameScheduledRef.current) {
+      rotationFrameScheduledRef.current = true
+      rotationRafRef.current = requestAnimationFrame(flushPendingRotationUpdates)
+    }
 
-    // Throttle WebSocket updates
-    if (Date.now() - resizeThrottleRef.current < 16) return // ~60fps
-    resizeThrottleRef.current = Date.now()
+    // Throttle WebSocket rotation updates (~20fps)
+    const now = Date.now()
+    if (now - rotationThrottleRef.current < 50) return
+    rotationThrottleRef.current = now
 
     if (wsRef.current) {
       wsRef.current.send(JSON.stringify({
@@ -1132,10 +1375,30 @@ export default function Canvas() {
         type: 'SHAPE_UPDATE',
         payload: { shapeId: id, updates: { rotation: s.rotation } },
       }))
+      const base = rotateBaselineRef.current.get(id) ?? 0
+      const finalRot = s.rotation ?? 0
+      if (base !== finalRot) {
+        pushHistory({
+          undo: { type: 'SHAPE_UPDATE', payload: { shapeId: id, updates: { rotation: base } } },
+          redo: { type: 'SHAPE_UPDATE', payload: { shapeId: id, updates: { rotation: finalRot } } },
+          label: 'Rotate shape',
+        })
+      }
     }
+    // Cleanup rotation batching
+    if (rotationRafRef.current != null) {
+      cancelAnimationFrame(rotationRafRef.current)
+      rotationRafRef.current = null
+    }
+    pendingRotationUpdatesRef.current.clear()
+    rotationFrameScheduledRef.current = false
+    rotationThrottleRef.current = 0
+    isRotatingShapeRef.current = false
+    rotatingShapeIdRef.current = null
     // Unlock and deselect
     unlockShape(id)
     setSelectedId(null)
+    rotateBaselineRef.current.delete(id)
   }, [])
 
   // Handle shape deletion
@@ -1158,6 +1421,15 @@ export default function Canvas() {
       }
     }
 
+    if (shape) {
+      const snapshot = { ...shape }
+      pushHistory({
+        undo: { type: 'SHAPE_CREATE', payload: snapshot },
+        redo: { type: 'SHAPE_DELETE', payload: { shapeId: snapshot.id } },
+        label: 'Delete shape',
+      })
+    }
+
     wsRef.current.send(JSON.stringify({
       type: 'SHAPE_DELETE',
       payload: { shapeId: idToDelete },
@@ -1166,9 +1438,21 @@ export default function Canvas() {
     setSelectedId(null)
   }, [])
 
-  // Handle keyboard shortcuts (Delete/Backspace/Escape only)
+  // Handle keyboard shortcuts (Undo/Redo/Delete/Escape)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      const isMac = navigator.platform.toUpperCase().includes('MAC')
+      const ctrlOrMeta = isMac ? e.metaKey : e.ctrlKey
+      if (ctrlOrMeta && e.key.toLowerCase() === 'z' && !e.shiftKey) {
+        e.preventDefault()
+        performUndo()
+        return
+      }
+      if ((ctrlOrMeta && e.key.toLowerCase() === 'z' && e.shiftKey) || (!isMac && e.ctrlKey && e.key.toLowerCase() === 'y')) {
+        e.preventDefault()
+        performRedo()
+        return
+      }
       if (e.key === 'Delete' || e.key === 'Backspace') {
         e.preventDefault()
         // Use a ref to get the current selectedId to avoid re-creating effect
@@ -1190,7 +1474,7 @@ export default function Canvas() {
       window.removeEventListener('keydown', handleKeyDown)
       document.body.style.cursor = 'default'
     }
-  }, [handleDeleteShape, selectedId, unlockShape])
+  }, [handleDeleteShape, selectedId, unlockShape, performUndo, performRedo])
 
   // Handle stage click (deselect)
   const handleStageClick = useCallback((e: any) => {
@@ -1308,126 +1592,96 @@ export default function Canvas() {
     })
   }, [shapes, selectedId, currentTime, currentUserId, currentUserColor, getRemainingLockSeconds, getUserColor])
 
-  // ---- Color helpers ----
-  const hexToRgb = useCallback((hex: string): { r: number; g: number; b: number } | null => {
-    const clean = hex.replace('#', '')
-    if (clean.length !== 6) return null
-    const r = parseInt(clean.slice(0, 2), 16)
-    const g = parseInt(clean.slice(2, 4), 16)
-    const b = parseInt(clean.slice(4, 6), 16)
-    if (Number.isNaN(r) || Number.isNaN(g) || Number.isNaN(b)) return null
-    return { r, g, b }
-  }, [])
-
-  const rgbToHex = useCallback((r: number, g: number, b: number): string => {
-    const toHex = (v: number) => v.toString(16).padStart(2, '0')
-    return `#${toHex(Math.max(0, Math.min(255, Math.round(r))))}${toHex(Math.max(0, Math.min(255, Math.round(g))))}${toHex(Math.max(0, Math.min(255, Math.round(b))))}`
-  }, [])
-
-  const rgbToHsl = useCallback((r: number, g: number, b: number): { h: number; s: number; l: number } => {
-    r /= 255; g /= 255; b /= 255
-    const max = Math.max(r, g, b), min = Math.min(r, g, b)
-    let h = 0, s = 0
-    const l = (max + min) / 2
-    if (max !== min) {
-      const d = max - min
-      s = l > 0.5 ? d / (2 - max - min) : d / (max - min)
-      switch (max) {
-        case r: h = (g - b) / d + (g < b ? 6 : 0); break
-        case g: h = (b - r) / d + 2; break
-        case b: h = (r - g) / d + 4; break
-      }
-      h *= 60
-    }
-    return { h, s, l }
-  }, [])
-
-  const hslToRgb = useCallback((h: number, s: number, l: number): { r: number; g: number; b: number } => {
-    const c = (1 - Math.abs(2 * l - 1)) * s
-    const x = c * (1 - Math.abs(((h / 60) % 2) - 1))
-    const m = l - c / 2
-    let r1 = 0, g1 = 0, b1 = 0
-    if (h < 60) { r1 = c; g1 = x; b1 = 0 }
-    else if (h < 120) { r1 = x; g1 = c; b1 = 0 }
-    else if (h < 180) { r1 = 0; g1 = c; b1 = x }
-    else if (h < 240) { r1 = 0; g1 = x; b1 = c }
-    else if (h < 300) { r1 = x; g1 = 0; b1 = c }
-    else { r1 = c; g1 = 0; b1 = x }
-    return { r: (r1 + m) * 255, g: (g1 + m) * 255, b: (b1 + m) * 255 }
-  }, [])
-
   const selectedShape = useMemo(() => shapes.find(s => s.id === selectedId) || null, [shapes, selectedId])
 
-  // Sync slider with selected shape color
-  useEffect(() => {
-    if (!selectedShape) return
-    const rgb = hexToRgb(selectedShape.color)
-    if (!rgb) return
-    const { h, s, l } = rgbToHsl(rgb.r, rgb.g, rgb.b)
-    // If saturation is near zero (grays), use a pleasant default so hue changes are visible
-    const baseS = s < 0.05 ? 0.9 : s
-    const baseL = s < 0.05 ? 0.5 : l
-    baseSLRef.current = { s: baseS, l: baseL }
-    setColorHue(h)
-  }, [selectedShape, hexToRgb, rgbToHsl])
-
-  const canvasToScreen = useCallback((pt: { x: number; y: number }) => {
-    return { x: stagePos.x + pt.x * stageScale, y: stagePos.y + pt.y * stageScale }
-  }, [stagePos, stageScale])
-
-  const tooltipScreenPos = useMemo(() => {
-    if (!selectedShape) return null
-    let anchorX = selectedShape.x
-    let anchorY = selectedShape.y
-    if (selectedShape.type === 'circle') {
-      const r = selectedShape.radius || DEFAULT_SHAPE_SIZE / 2
-      anchorY = selectedShape.y + r + 8
-      anchorX = selectedShape.x
-    } else if (selectedShape.type === 'text') {
-      const fontSize = (selectedShape as any).fontSize ?? (selectedShape as any).font_size ?? 24
-      anchorY = selectedShape.y + fontSize + 8
-      anchorX = selectedShape.x
-    } else {
-      const w = selectedShape.width || DEFAULT_SHAPE_SIZE
-      const h = selectedShape.height || DEFAULT_SHAPE_SIZE
-      anchorX = selectedShape.x + w / 2
-      anchorY = selectedShape.y + h + 8
-    }
-    return canvasToScreen({ x: anchorX, y: anchorY })
-  }, [selectedShape, canvasToScreen])
-
-  const currentHexFromHue = useMemo(() => {
-    const { s, l } = baseSLRef.current
-    const { r, g, b } = hslToRgb(colorHue, s, l)
-    return rgbToHex(r, g, b)
-  }, [colorHue, hslToRgb, rgbToHex])
-
-  const handleHueChange = useCallback((newHue: number) => {
-    if (!wsRef.current || !selectedId) return
-    setColorHue(newHue)
-    const hex = (() => {
-      const { s, l } = baseSLRef.current
-      const { r, g, b } = hslToRgb(newHue, s, l)
-      return rgbToHex(r, g, b)
-    })()
-
+  const handleChangeColor = useCallback((hex: string) => {
+    if (!selectedId || !wsRef.current) return
     // Optimistic local update
     setShapes(prev => prev.map(s => s.id === selectedId ? { ...s, color: hex } : s))
-
+    // Debounced history
+    recordPropChange(selectedId, 'color', hex)
     const now = Date.now()
     if (now - colorThrottleRef.current > 50) {
       colorThrottleRef.current = now
       wsRef.current.send(JSON.stringify({
         type: 'SHAPE_UPDATE',
-        payload: {
-          shapeId: selectedId,
-          updates: { color: hex },
-        },
+        payload: { shapeId: selectedId, updates: { color: hex } },
       }))
     }
-  }, [hslToRgb, rgbToHex, selectedId])
+  }, [selectedId, recordPropChange])
 
-  // ---- Hex manual edit moved to ColorSlider ----
+  // Panel handlers
+  const handleChangeOpacity = useCallback((opacity01: number) => {
+    if (!selectedId || !wsRef.current) return
+    const clamped = Math.max(0, Math.min(1, opacity01))
+    // Optimistic
+    setShapes(prev => prev.map(s => s.id === selectedId ? { ...s, opacity: clamped } : s))
+    recordPropChange(selectedId, 'opacity', clamped)
+    const now = Date.now()
+    if (now - opacityThrottleRef.current > 50) {
+      opacityThrottleRef.current = now
+      wsRef.current.send(JSON.stringify({
+        type: 'SHAPE_UPDATE',
+        payload: { shapeId: selectedId, updates: { opacity: clamped } },
+      }))
+    }
+  }, [selectedId, recordPropChange])
+
+  const handleCommitRotation = useCallback((rotationDeg: number) => {
+    if (!selectedId || !wsRef.current) return
+    const normalized = Math.round(rotationDeg)
+    setShapes(prev => prev.map(s => s.id === selectedId ? { ...s, rotation: normalized } : s))
+    recordPropChange(selectedId, 'rotation', normalized)
+    wsRef.current.send(JSON.stringify({
+      type: 'SHAPE_UPDATE',
+      payload: { shapeId: selectedId, updates: { rotation: normalized } },
+    }))
+  }, [selectedId, recordPropChange])
+
+  const handleChangeShadowColor = useCallback((hex: string) => {
+    if (!selectedId || !wsRef.current) return
+    setShapes(prev => prev.map(s => s.id === selectedId ? { ...s, shadowColor: hex } : s))
+    recordPropChange(selectedId, 'shadowColor', hex)
+    wsRef.current.send(JSON.stringify({
+      type: 'SHAPE_UPDATE',
+      payload: { shapeId: selectedId, updates: { shadowColor: hex } },
+    }))
+  }, [selectedId, recordPropChange])
+
+  const handleChangeShadowStrength = useCallback((strength: number) => {
+    if (!selectedId || !wsRef.current) return
+    const v = Math.max(0, Math.min(50, Math.round(strength)))
+    setShapes(prev => prev.map(s => s.id === selectedId ? { ...s, shadowStrength: v } : s))
+    recordPropChange(selectedId, 'shadowStrength', v)
+    const now = Date.now()
+    if (now - shadowThrottleRef.current > 50) {
+      shadowThrottleRef.current = now
+      wsRef.current.send(JSON.stringify({
+        type: 'SHAPE_UPDATE',
+        payload: { shapeId: selectedId, updates: { shadowStrength: v } },
+      }))
+    }
+  }, [selectedId, recordPropChange])
+
+  const handleChangeFontFamily = useCallback((family: string) => {
+    if (!selectedId || !wsRef.current) return
+    setShapes(prev => prev.map(s => s.id === selectedId ? { ...s, fontFamily: family } : s))
+    recordPropChange(selectedId, 'fontFamily', family)
+    wsRef.current.send(JSON.stringify({
+      type: 'SHAPE_UPDATE',
+      payload: { shapeId: selectedId, updates: { fontFamily: family } },
+    }))
+  }, [selectedId, recordPropChange])
+
+  const handleChangeFontWeight = useCallback((weight: string) => {
+    if (!selectedId || !wsRef.current) return
+    setShapes(prev => prev.map(s => s.id === selectedId ? { ...s, fontWeight: weight } : s))
+    recordPropChange(selectedId, 'fontWeight', weight)
+    wsRef.current.send(JSON.stringify({
+      type: 'SHAPE_UPDATE',
+      payload: { shapeId: selectedId, updates: { fontWeight: weight } },
+    }))
+  }, [selectedId, recordPropChange])
 
   // Show authentication prompt if not connected
   if (!currentUserId || !canvasId || !wsRef.current) {
@@ -1470,12 +1724,13 @@ export default function Canvas() {
           }} />
         </div>
       </div>
+
     )
   }
 
 
   return (
-    <div style={{ width: '100%', height: '100%', position: 'relative', overflow: 'hidden', backgroundColor: '#0a0a0a' }}>
+    <div ref={containerRef} style={{ width: '100%', height: '100%', position: 'relative', overflow: 'hidden', backgroundColor: '#0a0a0a' }}>
       {/* Control Panel */}
       <ControlPanel
         onAddRectangle={handleAddShape}
@@ -1494,7 +1749,7 @@ export default function Canvas() {
       {/* Pan Mode Indicator removed */}
 
       {/* Presence List */}
-      <div style={{
+      <div id="presence-panel" style={{
         position: 'absolute',
         top: '20px',
         right: '20px',
@@ -1562,6 +1817,45 @@ export default function Canvas() {
         </div>
       </div>
 
+      {/* Undo/Redo Panel - rendered 20px below Presence List */}
+      {hasUserActed && (
+        <div
+          style={{
+            position: 'absolute',
+            right: '20px',
+            zIndex: 9,
+            // top computed dynamically via inline script below
+          }}
+          ref={(el) => {
+            if (!el) return
+            const presence = document.getElementById('presence-panel')
+            const container = containerRef.current
+            if (!presence || !container) return
+            const update = () => {
+              const cRect = container.getBoundingClientRect()
+              const pRect = presence.getBoundingClientRect()
+              const top = Math.max(0, Math.round(pRect.bottom - cRect.top + 20))
+              el.style.top = `${top}px`
+            }
+            update()
+            const ro = new ResizeObserver(update)
+            ro.observe(presence)
+            window.addEventListener('resize', update)
+            return () => {
+              ro.disconnect()
+              window.removeEventListener('resize', update)
+            }
+          }}
+        >
+          <UndoRedoPanel
+            canUndo={undoCount > 0}
+            canRedo={redoCount > 0}
+            onUndo={performUndo}
+            onRedo={performRedo}
+          />
+        </div>
+      )}
+
       {/* Zoom Indicator moved below controls */}
 
       {/* Konva Stage */}
@@ -1573,7 +1867,7 @@ export default function Canvas() {
         scaleY={stageScale}
         x={stagePos.x}
         y={stagePos.y}
-        draggable={!isShapeDragActiveRef.current && !isResizingShapeRef.current}
+        draggable={!isShapeDragActiveRef.current && !isResizingShapeRef.current && !isRotatingShapeRef.current}
         onWheel={handleWheel}
         onClick={handleStageClick}
         onMouseMove={handleMouseMove}
@@ -1628,6 +1922,7 @@ export default function Canvas() {
               isSelected={selectedId === props.shape.id}
               canResize={props.isDraggable}
               remainingSeconds={props.remainingSeconds}
+              stageScale={stageScale}
               onShapeClick={handleShapeClick}
               onDragStart={handleShapeDragStart}
               onDragMove={handleShapeDrag}
@@ -1650,123 +1945,28 @@ export default function Canvas() {
           ))}
         </Layer>
       </Stage>
-      {/* Color Tooltip */}
-      {tooltipScreenPos && selectedShape && (
-        <div
-          style={{
-            position: 'absolute',
-            left: `${tooltipScreenPos.x}px`,
-            top: `${tooltipScreenPos.y}px`,
-            transform: 'translateX(-50%)',
-            zIndex: 20,
-            backgroundColor: 'rgba(26,26,26,0.95)',
-            border: '1px solid #404040',
-            borderRadius: '8px',
-            padding: '8px 10px',
-            boxShadow: '0 4px 12px rgba(0,0,0,0.6)',
-            display: 'flex',
-            flexDirection: selectedShape.type === 'text' ? 'column' : 'row',
-            alignItems: 'center',
-            gap: '10px',
-            pointerEvents: 'auto',
-            color: '#fff',
-          }}
-        >
-          <ColorSlider
-            valueHex={currentHexFromHue}
-            onChangeHex={(hex) => {
-              // update hue based on hex and send shape update (reuse existing logic)
-              const rgb = hexToRgb(hex)
-              if (rgb) {
-                const { h, s, l } = rgbToHsl(rgb.r, rgb.g, rgb.b)
-                baseSLRef.current = { s, l }
-                handleHueChange(h)
-              }
-            }}
-            allowHexEdit={true}
-            layout={selectedShape.type === 'text' ? 'column' : 'row'}
-          />
-
-          {/* Font controls for text shapes */}
-          {selectedShape.type === 'text' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '8px' }}>
-              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                <label style={{ fontSize: '12px', color: '#ccc' }}>Font:</label>
-                <select
-                  value={selectedShape.fontFamily ?? (selectedShape as any).font_family ?? 'Inter'}
-                  onChange={(e) => {
-                    if (wsRef.current && selectedId) {
-                      wsRef.current.send(JSON.stringify({
-                        type: 'SHAPE_UPDATE',
-                        payload: { shapeId: selectedId, updates: { fontFamily: e.target.value } }
-                      }))
-                    }
-                  }}
-                  style={{
-                    backgroundColor: '#333',
-                    color: '#fff',
-                    border: '1px solid #555',
-                    borderRadius: '4px',
-                    padding: '4px 8px',
-                    fontSize: '12px'
-                  }}
-                >
-                  <option value="Inter">Inter</option>
-                  <option value="Arial">Arial</option>
-                  <option value="Helvetica">Helvetica</option>
-                  <option value="Times New Roman">Times New Roman</option>
-                  <option value="Georgia">Georgia</option>
-                  <option value="Verdana">Verdana</option>
-                  <option value="Courier New">Courier New</option>
-                  <option value="Comic Sans MS">Comic Sans MS</option>
-                </select>
-              </div>
-              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                <label style={{ fontSize: '12px', color: '#ccc' }}>Weight:</label>
-                <select
-                  value={selectedShape.fontWeight ?? (selectedShape as any).font_weight ?? 'normal'}
-                  onChange={(e) => {
-                    if (wsRef.current && selectedId) {
-                      wsRef.current.send(JSON.stringify({
-                        type: 'SHAPE_UPDATE',
-                        payload: { shapeId: selectedId, updates: { fontWeight: e.target.value } }
-                      }))
-                    }
-                  }}
-                  style={{
-                    backgroundColor: '#333',
-                    color: '#fff',
-                    border: '1px solid #555',
-                    borderRadius: '4px',
-                    padding: '4px 8px',
-                    fontSize: '12px'
-                  }}
-                >
-                  <option value="normal">Normal</option>
-                  <option value="bold">Bold</option>
-                  <option value="100">100</option>
-                  <option value="200">200</option>
-                  <option value="300">300</option>
-                  <option value="400">400</option>
-                  <option value="500">500</option>
-                  <option value="600">600</option>
-                  <option value="700">700</option>
-                  <option value="800">800</option>
-                  <option value="900">900</option>
-                </select>
-              </div>
-            </div>
-          )}
-        </div>
+      {/* Shape Selection Panel (lower-right) */}
+      {selectedShape && (
+        <ShapeSelectionPanel
+          selectedShape={selectedShape as any}
+          onChangeColor={handleChangeColor}
+          onChangeOpacity={handleChangeOpacity}
+          onCommitRotation={handleCommitRotation}
+          onChangeShadowColor={handleChangeShadowColor}
+          onChangeShadowStrength={handleChangeShadowStrength}
+          onChangeFontFamily={handleChangeFontFamily}
+          onChangeFontWeight={handleChangeFontWeight}
+        />
       )}
+      {/* Color Tooltip removed in favor of ShapeSelectionPanel */}
 
       {/* Floating Canvas Background Color panel (right side) */}
       {isCanvasBgOpen && (
         <div
           style={{
             position: 'absolute',
-            top: '20px',
-            right: '20px',
+            top: canvasBgPanelPos ? `${canvasBgPanelPos.top}px` : '20px',
+            left: canvasBgPanelPos ? `${canvasBgPanelPos.left}px` : 'calc(20px + 200px + 12px)',
             zIndex: 11,
             backgroundColor: 'rgba(26, 26, 26, 0.95)',
             border: '1px solid #404040',
@@ -1788,6 +1988,7 @@ export default function Canvas() {
                   payload: { updates: { backgroundColor: hex } }
                 }))
               }
+              recordCanvasBgChange(hex)
             }}
             allowHexEdit={true}
             layout="row"

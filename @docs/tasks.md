@@ -805,4 +805,11 @@ figna/
 - PR #12: Resize and rotate functionality
 - PR #13: AI agent integration
 - PR #14: Multi-select and grouping
-- PR #15: Undo/redo system
+- PR #15: Undo/redo system (Implemented locally on frontend)
+
+### Note: Frontend Undo/Redo (local-only)
+- Implemented a local undo/redo stack in `src/components/Canvas.tsx`.
+- Tracks: create, delete, drag/move, resize, rotate, text edits, color/opacity/shadow/font changes, and canvas background color.
+- Executes by re-sending appropriate WebSocket messages to mirror prior states; no backend changes required.
+- UI: `UndoRedoPanel` renders below the active users panel and only appears after the first action.
+- Shortcuts: Cmd/Ctrl+Z (undo), Shift+Cmd/Ctrl+Z or Ctrl+Y (redo).
