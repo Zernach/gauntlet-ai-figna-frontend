@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, memo } from 'react'
 import ColorSlider from './ColorSlider'
 
 interface CanvasBackgroundPanelProps {
@@ -8,7 +8,7 @@ interface CanvasBackgroundPanelProps {
   onChangeHex: (hex: string) => void
 }
 
-export default function CanvasBackgroundPanel({
+function CanvasBackgroundPanel({
   isOpen,
   position,
   valueHex,
@@ -66,4 +66,7 @@ export default function CanvasBackgroundPanel({
     </div>
   )
 }
+
+// Memoize to prevent unnecessary re-renders
+export default memo(CanvasBackgroundPanel)
 

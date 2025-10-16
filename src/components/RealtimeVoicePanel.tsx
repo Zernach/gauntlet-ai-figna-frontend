@@ -1,7 +1,8 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { getVoiceRelayUrl } from '../lib/api'
 import { useAgenticToolCalling } from '../hooks/useAgenticToolCalling'
 import AudioVisualizer from './AudioVisualizer'
+import { performanceMonitor } from '../lib/performanceMonitor'
 
 interface RealtimeVoicePanelProps {
     session: any
@@ -15,6 +16,7 @@ export default function RealtimeVoicePanel({ session, onRegisterTools, viewportC
     const [isConnected, setIsConnected] = useState(false)
     const [error, setError] = useState<string | null>(null)
     const [isSpeaking, setIsSpeaking] = useState(false)
+    const [isProcessingCommand, setIsProcessingCommand] = useState(false)
     const peerConnectionRef = useRef<RTCPeerConnection | null>(null)
     const audioElementRef = useRef<HTMLAudioElement | null>(null)
     const dataChannelRef = useRef<RTCDataChannel | null>(null)
@@ -82,9 +84,10 @@ export default function RealtimeVoicePanel({ session, onRegisterTools, viewportC
     // Update session with viewport center and canvas shapes when they change
     useEffect(() => {
         if (isConnected && dataChannelRef.current && dataChannelRef.current.readyState === 'open') {
-            const centerX = viewportCenter ? Math.round(viewportCenter.x) : 25000
-            const centerY = viewportCenter ? Math.round(viewportCenter.y) : 25000
-            const shapeContext = generateShapeContext(canvasShapes)
+            const DEBUG = false;
+            const centerX = viewportCenter ? Math.round(viewportCenter.x) : 25000;
+            const centerY = viewportCenter ? Math.round(viewportCenter.y) : 25000;
+            const shapeContext = generateShapeContext(canvasShapes);
 
             const instructions = `You are a helpful AI assistant that can manipulate shapes on a collaborative canvas. The canvas is 50000x50000 pixels (coordinates from 0 to 50000). The user's current viewport is centered at (${centerX}, ${centerY}).
 
@@ -102,62 +105,61 @@ IMPORTANT SHAPE CREATION GUIDELINES:
 
 ${shapeContext}
 
-When the user refers to objects by their content (like "the Hello World text" or "the red circle"), use the shape IDs from the list above to identify and modify them. You can use updateShape with the appropriate shape ID to modify existing objects.`
+When the user refers to objects by their content (like "the Hello World text" or "the red circle"), use the shape IDs from the list above to identify and modify them. You can use updateShapes with an array of shape updates to modify existing objects. Always pass an array to updateShapes, even for a single shape: updateShapes({shapes: [{shapeId: "id", color: "#FF0000"}]})`
 
             const sessionUpdatePayload = {
                 type: 'session.update',
                 session: {
                     instructions
                 }
-            }
+            };
 
-            console.log('📍 [Voice Panel] Updating session with viewport and canvas context:', {
-                x: centerX,
-                y: centerY,
-                shapeCount: canvasShapes.length
-            })
-            dataChannelRef.current.send(JSON.stringify(sessionUpdatePayload))
+            if (DEBUG) console.log('📍 Updating session:', { x: centerX, y: centerY, shapeCount: canvasShapes.length });
+            dataChannelRef.current.send(JSON.stringify(sessionUpdatePayload));
         }
     }, [viewportCenter, canvasShapes, isConnected])
 
-    // Handle function call from OpenAI
-    const handleFunctionCall = (callId: string, name: string, args: string) => {
-        console.log('📞 [Voice Panel] Function call received:', { callId, name, args });
+    // Handle function call from OpenAI - optimized for <50ms execution
+    const handleFunctionCall = useCallback((callId: string, name: string, args: string) => {
+        const DEBUG = false; // Set to true for debugging
+
+        // Start performance monitoring
+        performanceMonitor.startTimer(`voiceAgent_${name}`);
 
         try {
-            const parsedArgs = JSON.parse(args)
-            console.log('📦 [Voice Panel] Parsed arguments:', parsedArgs);
+            // Fast path: parse and execute immediately
+            const parsedArgs = JSON.parse(args);
+            const result = executeTool(name, parsedArgs);
 
-            const result = executeTool(name, parsedArgs)
-            console.log('📤 [Voice Panel] Tool execution result:', result);
-
-            // Send function result back to OpenAI
-            if (dataChannelRef.current && dataChannelRef.current.readyState === 'open') {
-                const responsePayload = {
+            // Send response immediately if channel is ready
+            const dc = dataChannelRef.current;
+            if (dc?.readyState === 'open') {
+                // Pre-build payload structure for speed
+                dc.send(JSON.stringify({
                     type: 'conversation.item.create',
                     item: {
                         type: 'function_call_output',
                         call_id: callId,
                         output: JSON.stringify(result)
                     }
-                }
-
-                console.log('📨 [Voice Panel] Sending function result to OpenAI:', responsePayload);
-                dataChannelRef.current.send(JSON.stringify(responsePayload))
-
-                console.log('✅ [Voice Panel] Function result sent - OpenAI will automatically continue the response');
-                // Note: We don't need to call response.create here - OpenAI automatically continues
-                // the response after receiving function outputs. Calling response.create would cause
-                // "conversation_already_has_active_response" error.
-            } else {
-                console.warn('⚠️ [Voice Panel] Data channel not open, cannot send function result');
+                }));
+            } else if (DEBUG) {
+                console.warn('⚠️ Data channel not ready');
             }
-        } catch (error) {
-            console.error('❌ [Voice Panel] Error handling function call:', error);
 
-            // Send error back to OpenAI
-            if (dataChannelRef.current && dataChannelRef.current.readyState === 'open') {
-                const errorPayload = {
+            // End performance monitoring
+            const duration = performanceMonitor.endTimer(`voiceAgent_${name}`);
+            if (DEBUG && duration !== null) {
+                console.log(`⚡ Tool ${name} executed in ${duration.toFixed(2)}ms`);
+            }
+
+            // Command processing complete
+            setIsProcessingCommand(false);
+        } catch (error) {
+            // Fast error path
+            const dc = dataChannelRef.current;
+            if (dc?.readyState === 'open') {
+                dc.send(JSON.stringify({
                     type: 'conversation.item.create',
                     item: {
                         type: 'function_call_output',
@@ -167,17 +169,14 @@ When the user refers to objects by their content (like "the Hello World text" or
                             error: error instanceof Error ? error.message : 'Function call failed'
                         })
                     }
-                }
-
-                console.log('📨 [Voice Panel] Sending error result to OpenAI:', errorPayload);
-                dataChannelRef.current.send(JSON.stringify(errorPayload))
-
-                console.log('✅ [Voice Panel] Error result sent - OpenAI will automatically continue the response');
-                // Note: We don't need to call response.create here - OpenAI automatically continues
-                // the response after receiving function outputs, even error outputs.
+                }));
             }
+            performanceMonitor.endTimer(`voiceAgent_${name}`);
+            if (DEBUG) console.error('❌ Error:', error);
+            // Command processing complete even on error
+            setIsProcessingCommand(false);
         }
-    }
+    }, [executeTool])
 
     const handleDisconnect = () => {
         if (peerConnectionRef.current) {
@@ -199,81 +198,80 @@ When the user refers to objects by their content (like "the Hello World text" or
         pendingToolCallRef.current = null
         setIsConnected(false)
         setIsSpeaking(false)
+        setIsProcessingCommand(false)
     }
 
     const handleStartVoice = async () => {
+        const DEBUG = false; // Set to true for debugging
+
         if (!session) {
-            setError('Please sign in to use voice assistant')
-            return
+            setError('Please sign in to use voice assistant');
+            return;
         }
 
         if (isConnected) {
-            console.log('🛑 [Voice Panel] Disconnecting...');
-            handleDisconnect()
-            return
+            if (DEBUG) console.log('🛑 Disconnecting...');
+            handleDisconnect();
+            return;
         }
 
-        console.log('🚀 [Voice Panel] Starting voice assistant...');
-        setIsLoading(true)
-        setError(null)
+        if (DEBUG) console.log('🚀 Starting voice assistant...');
+        setIsLoading(true);
+        setError(null);
 
         try {
-            // Get the relay URL/ephemeral token from backend
-            console.log('🔑 [Voice Panel] Fetching relay URL from backend...');
-            const { relayUrl } = await getVoiceRelayUrl()
-            console.log('✅ [Voice Panel] Relay URL obtained');
+            const { relayUrl } = await getVoiceRelayUrl();
+            if (DEBUG) console.log('✅ Relay URL obtained');
 
             // Create audio context for visualization
-            const ctx = new AudioContext()
-            setAudioContext(ctx)
+            const ctx = new AudioContext();
+            setAudioContext(ctx);
 
             // Create RTCPeerConnection
-            console.log('🔗 [Voice Panel] Creating peer connection...');
-            const pc = new RTCPeerConnection()
-            peerConnectionRef.current = pc
+            const pc = new RTCPeerConnection();
+            peerConnectionRef.current = pc;
 
             // Set up audio element to receive remote audio
-            const audioEl = audioElementRef.current
+            const audioEl = audioElementRef.current;
             if (audioEl) {
                 pc.ontrack = (e) => {
-                    console.log('🎵 [Voice Panel] Received remote audio track');
-                    audioEl.srcObject = e.streams[0]
+                    if (DEBUG) console.log('🎵 Received remote audio track');
+                    audioEl.srcObject = e.streams[0];
 
                     // Set up agent audio analyser
-                    const agentSource = ctx.createMediaStreamSource(e.streams[0])
-                    const agentAnalyserNode = ctx.createAnalyser()
-                    agentAnalyserNode.smoothingTimeConstant = 0.8
-                    agentSource.connect(agentAnalyserNode)
-                    setAgentAnalyser(agentAnalyserNode)
-                }
+                    const agentSource = ctx.createMediaStreamSource(e.streams[0]);
+                    const agentAnalyserNode = ctx.createAnalyser();
+                    agentAnalyserNode.smoothingTimeConstant = 0.8;
+                    agentSource.connect(agentAnalyserNode);
+                    setAgentAnalyser(agentAnalyserNode);
+                };
             }
 
             // Add local audio track from microphone
-            console.log('🎤 [Voice Panel] Requesting microphone access...');
             const ms = await navigator.mediaDevices.getUserMedia({
                 audio: {
                     echoCancellation: true,
                     noiseSuppression: true,
                     autoGainControl: true,
                 }
-            })
-            pc.addTrack(ms.getTracks()[0])
+            });
+            pc.addTrack(ms.getTracks()[0]);
 
             // Set up user audio analyser
-            const userSource = ctx.createMediaStreamSource(ms)
-            const userAnalyserNode = ctx.createAnalyser()
-            userAnalyserNode.smoothingTimeConstant = 0.8
-            userSource.connect(userAnalyserNode)
-            setUserAnalyser(userAnalyserNode)
+            const userSource = ctx.createMediaStreamSource(ms);
+            const userAnalyserNode = ctx.createAnalyser();
+            userAnalyserNode.smoothingTimeConstant = 0.8;
+            userSource.connect(userAnalyserNode);
+            setUserAnalyser(userAnalyserNode);
 
             // Set up data channel for sending/receiving events
-            const dc = pc.createDataChannel('oai-events')
-            dataChannelRef.current = dc
+            const dc = pc.createDataChannel('oai-events');
+            dataChannelRef.current = dc;
 
             dc.addEventListener('open', () => {
-                console.log('🔌 [Voice Panel] Data channel opened');
-                setIsConnected(true)
-                setIsLoading(false)
+                if (DEBUG) console.log('🔌 Data channel opened');
+                setIsConnected(true);
+                setIsLoading(false);
 
                 // Send session update to configure the session with tools
                 const centerX = viewportCenter?.x ?? 25000
@@ -296,7 +294,7 @@ IMPORTANT SHAPE CREATION GUIDELINES:
 
 ${shapeContext}
 
-When the user refers to objects by their content (like "the Hello World text" or "the red circle"), use the shape IDs from the list above to identify and modify them. You can use updateShape with the appropriate shape ID to modify existing objects.`
+When the user refers to objects by their content (like "the Hello World text" or "the red circle"), use the shape IDs from the list above to identify and modify them. You can use updateShapes with an array of shape updates to modify existing objects. Always pass an array to updateShapes, even for a single shape: updateShapes({shapes: [{shapeId: "id", color: "#FF0000"}]})`
 
                 const sessionUpdatePayload = {
                     type: 'session.update',
@@ -308,133 +306,115 @@ When the user refers to objects by their content (like "the Hello World text" or
                         instructions
                     }
                 };
-                console.log('📨 [Voice Panel] Sending session update with tools, viewport, and canvas context:', {
-                    toolCount: tools.length,
-                    toolNames: tools.map((t: any) => t.name),
-                    viewportCenter: { x: Math.round(centerX), y: Math.round(centerY) },
-                    shapeCount: canvasShapes.length
-                });
-                dc.send(JSON.stringify(sessionUpdatePayload))
-            })
+                if (DEBUG) console.log('📨 Sending session update:', { toolCount: tools.length });
+                dc.send(JSON.stringify(sessionUpdatePayload));
+            });
 
             dc.addEventListener('message', (e) => {
+                const DEBUG = false; // Set to true for debugging
+
                 try {
-                    const event = JSON.parse(e.data)
+                    const event = JSON.parse(e.data);
+                    const eventType = event.type;
 
-                    // Log all events for debugging (filter out very noisy ones)
-                    if (!['response.audio.delta', 'input_audio_buffer.speech_started', 'input_audio_buffer.speech_stopped'].includes(event.type)) {
-                        console.log('📥 [Voice Panel] Received event:', event.type, event);
-                    }
+                    // Fast path: handle most common events with minimal processing
+                    switch (eventType) {
+                        case 'response.audio.delta':
+                        case 'response.audio_transcript.delta':
+                            setIsSpeaking(true);
+                            return;
 
-                    // Track when AI is speaking
-                    if (event.type === 'response.audio.delta' || event.type === 'response.audio_transcript.delta') {
-                        setIsSpeaking(true)
-                    } else if (event.type === 'response.done' || event.type === 'response.audio.done') {
-                        setIsSpeaking(false)
-                    }
+                        case 'response.done':
+                        case 'response.audio.done':
+                            setIsSpeaking(false);
+                            return;
 
-                    // Log session updates
-                    if (event.type === 'session.updated') {
-                        console.log('✅ [Voice Panel] Session updated successfully:', {
-                            tools: event.session?.tools?.length || 0,
-                            toolChoice: event.session?.tool_choice
-                        });
-                    }
+                        case 'input_audio_buffer.speech_started':
+                        case 'input_audio_buffer.speech_stopped':
+                            return; // Skip noisy events
 
-                    // Handle function calls from OpenAI - capture the function name when it's added
-                    if (event.type === 'response.output_item.added' && event.item?.type === 'function_call') {
-                        console.log('🆕 [Voice Panel] Function call started:', event.item);
-                        pendingToolCallRef.current = {
-                            call_id: event.item.call_id || '',
-                            name: event.item.name || '',
-                            arguments: ''
-                        }
-                        console.log('📝 [Voice Panel] Initialized function call:', event.item.name);
-                    }
+                        case 'session.updated':
+                            if (DEBUG) console.log('✅ Session updated');
+                            return;
 
-                    if (event.type === 'response.function_call_arguments.delta') {
-                        console.log('🔄 [Voice Panel] Function call arguments delta:', event);
-                        // Accumulate function call arguments
-                        if (!pendingToolCallRef.current) {
-                            console.warn('⚠️ [Voice Panel] Received delta without function call initialization');
-                            pendingToolCallRef.current = {
-                                call_id: event.call_id,
-                                name: event.name || '',
-                                arguments: ''
+                        case 'response.output_item.added':
+                            if (event.item?.type === 'function_call') {
+                                pendingToolCallRef.current = {
+                                    call_id: event.item.call_id || '',
+                                    name: event.item.name || '',
+                                    arguments: ''
+                                };
+                                // Show loading spinner when command starts
+                                setIsProcessingCommand(true);
                             }
-                        }
-                        // Update call_id and name if provided
-                        if (event.call_id) pendingToolCallRef.current.call_id = event.call_id
-                        if (event.name) pendingToolCallRef.current.name = event.name
+                            return;
 
-                        pendingToolCallRef.current.arguments += event.delta
-                    }
-
-                    if (event.type === 'response.function_call_arguments.done') {
-                        console.log('✔️ [Voice Panel] Function call arguments complete');
-                        // Execute the complete function call
-                        const toolCall = pendingToolCallRef.current
-                        if (toolCall && toolCall.name && toolCall.call_id) {
-                            // Check if we've already executed this call_id
-                            if (!executedCallIdsRef.current.has(toolCall.call_id)) {
-                                console.log('🎯 [Voice Panel] Executing accumulated function call:', toolCall);
-                                handleFunctionCall(toolCall.call_id, toolCall.name, toolCall.arguments)
-                                executedCallIdsRef.current.add(toolCall.call_id)
-                            } else {
-                                console.log('⏭️ [Voice Panel] Skipping duplicate execution (call_id already executed)');
+                        case 'response.function_call_arguments.delta':
+                            // Fast path: accumulate arguments
+                            if (!pendingToolCallRef.current) {
+                                pendingToolCallRef.current = {
+                                    call_id: event.call_id,
+                                    name: event.name || '',
+                                    arguments: ''
+                                };
                             }
-                            pendingToolCallRef.current = null
-                        } else {
-                            console.warn('⚠️ [Voice Panel] Function call done but missing name or call_id:', toolCall);
-                        }
-                    }
+                            if (event.call_id) pendingToolCallRef.current.call_id = event.call_id;
+                            if (event.name) pendingToolCallRef.current.name = event.name;
+                            pendingToolCallRef.current.arguments += event.delta;
+                            return;
 
-                    // Also handle the newer event format (fallback only if arguments.done didn't fire)
-                    if (event.type === 'response.output_item.done' && event.item?.type === 'function_call') {
-                        console.log('🎯 [Voice Panel] Received complete function call (output_item.done):', event.item);
-                        const { call_id, name, arguments: args } = event.item
+                        case 'response.function_call_arguments.done':
+                            // Execute immediately
+                            const toolCall = pendingToolCallRef.current;
+                            if (toolCall?.name && toolCall.call_id && !executedCallIdsRef.current.has(toolCall.call_id)) {
+                                handleFunctionCall(toolCall.call_id, toolCall.name, toolCall.arguments);
+                                executedCallIdsRef.current.add(toolCall.call_id);
+                                pendingToolCallRef.current = null;
+                            }
+                            return;
 
-                        // Only execute if we haven't already handled this call_id
-                        if (call_id && !executedCallIdsRef.current.has(call_id) && name && args) {
-                            console.log('📞 [Voice Panel] Executing function call from output_item.done (arguments.done did not fire)');
-                            handleFunctionCall(call_id, name, args)
-                            executedCallIdsRef.current.add(call_id)
-                            pendingToolCallRef.current = null
-                        } else if (call_id && executedCallIdsRef.current.has(call_id)) {
-                            console.log('⏭️ [Voice Panel] Skipping duplicate function call execution (already handled by arguments.done)');
-                        } else {
-                            console.warn('⚠️ [Voice Panel] Incomplete function call data:', { call_id, name, hasArgs: !!args });
-                        }
-                    }
+                        case 'response.output_item.done':
+                            // Fallback execution path
+                            if (event.item?.type === 'function_call') {
+                                const { call_id, name, arguments: args } = event.item;
+                                if (call_id && name && args && !executedCallIdsRef.current.has(call_id)) {
+                                    handleFunctionCall(call_id, name, args);
+                                    executedCallIdsRef.current.add(call_id);
+                                    pendingToolCallRef.current = null;
+                                }
+                            }
+                            return;
 
-                    // Log errors
-                    if (event.type === 'error') {
-                        console.error('❌ [Voice Panel] OpenAI error event:', event);
+                        case 'error':
+                            if (DEBUG) console.error('❌ OpenAI error:', event);
+                            return;
+
+                        default:
+                            if (DEBUG) console.log('📥 Event:', eventType);
                     }
                 } catch (err) {
-                    console.error('❌ [Voice Panel] Error parsing message:', err, 'Raw data:', e.data);
+                    if (DEBUG) console.error('❌ Parse error:', err);
                 }
             })
 
             dc.addEventListener('close', () => {
-                console.log('🔌 [Voice Panel] Data channel closed');
-                handleDisconnect()
-            })
+                if (DEBUG) console.log('🔌 Data channel closed');
+                handleDisconnect();
+            });
 
             dc.addEventListener('error', (e) => {
-                console.error('❌ [Voice Panel] Data channel error:', e);
-                setError('Connection error occurred')
-                handleDisconnect()
-            })
+                if (DEBUG) console.error('❌ Data channel error:', e);
+                setError('Connection error occurred');
+                handleDisconnect();
+            });
 
             // Create and set local description (SDP offer)
-            const offer = await pc.createOffer()
-            await pc.setLocalDescription(offer)
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
 
             // Send the offer to OpenAI and get back the answer
-            const baseUrl = 'https://api.openai.com/v1/realtime'
-            const model = 'gpt-4o-realtime-preview-2024-12-17'
-            console.log('🌐 [Voice Panel] Connecting to OpenAI realtime API...');
+            const baseUrl = 'https://api.openai.com/v1/realtime';
+            const model = 'gpt-4o-realtime-preview-2024-12-17';
             const sdpResponse = await fetch(`${baseUrl}?model=${model}`, {
                 method: 'POST',
                 body: offer.sdp,
@@ -442,26 +422,25 @@ When the user refers to objects by their content (like "the Hello World text" or
                     Authorization: `Bearer ${relayUrl}`,
                     'Content-Type': 'application/sdp',
                 },
-            })
+            });
 
             if (!sdpResponse.ok) {
                 const errorText = await sdpResponse.text();
-                console.error('❌ [Voice Panel] Failed to connect to OpenAI:', sdpResponse.status, errorText);
-                throw new Error(`Failed to connect to OpenAI: ${sdpResponse.statusText}`)
+                if (DEBUG) console.error('❌ Failed to connect:', sdpResponse.status, errorText);
+                throw new Error(`Failed to connect to OpenAI: ${sdpResponse.statusText}`);
             }
 
-            const answerSdp = await sdpResponse.text()
-            console.log('✅ [Voice Panel] Received SDP answer, setting remote description...');
+            const answerSdp = await sdpResponse.text();
             await pc.setRemoteDescription({
                 type: 'answer',
                 sdp: answerSdp,
-            })
-            console.log('🎉 [Voice Panel] Voice assistant setup complete!');
+            });
+            if (DEBUG) console.log('🎉 Voice assistant ready!');
         } catch (err) {
-            console.error('❌ [Voice Panel] Error starting voice assistant:', err);
-            setError(err instanceof Error ? err.message : 'Failed to start voice assistant')
-            handleDisconnect()
-            setIsLoading(false)
+            if (DEBUG) console.error('❌ Error:', err);
+            setError(err instanceof Error ? err.message : 'Failed to start voice assistant');
+            handleDisconnect();
+            setIsLoading(false);
         }
     }
 
@@ -603,6 +582,7 @@ When the user refers to objects by their content (like "the Hello World text" or
                         analyserNode={agentAnalyser}
                         label="Agent Voice"
                         color="#c864ff"
+                        isProcessing={isProcessingCommand}
                     />
                 </div>
             )}
@@ -733,6 +713,15 @@ When the user refers to objects by their content (like "the Hello World text" or
             }
             100% {
               background-position: 300% 0;
+            }
+          }
+
+          @keyframes spin {
+            0% {
+              transform: rotate(0deg);
+            }
+            100% {
+              transform: rotate(360deg);
             }
           }
           

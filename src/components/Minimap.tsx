@@ -1,4 +1,4 @@
-import { useRef, useEffect } from 'react'
+import { useRef, useEffect, memo, useCallback } from 'react'
 import { Shape } from '../types/canvas'
 
 interface MinimapProps {
@@ -16,7 +16,7 @@ interface MinimapProps {
 const MINIMAP_SIZE = 200 // px
 const MINIMAP_PADDING = 10 // px from edges
 
-export default function Minimap({
+function Minimap({
     shapes,
     canvasWidth,
     canvasHeight,
@@ -96,7 +96,7 @@ export default function Minimap({
         ctx.strokeRect(0, 0, MINIMAP_SIZE, MINIMAP_SIZE)
     }, [shapes, canvasWidth, canvasHeight, viewportX, viewportY, viewportWidth, viewportHeight, stageScale])
 
-    const handleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const handleClick = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
         if (!onNavigate) return
 
         const canvas = canvasRef.current
@@ -111,7 +111,7 @@ export default function Minimap({
         const canvasY = (clickY / MINIMAP_SIZE) * canvasHeight
 
         onNavigate(canvasX, canvasY)
-    }
+    }, [onNavigate, canvasWidth, canvasHeight])
 
     return (
         <div
@@ -138,7 +138,7 @@ export default function Minimap({
                     color: '#a0a0a0',
                 }}
             >
-                <span>Minimap</span>
+                <span>Figna Minimap</span>
                 <span style={{ fontSize: '10px', color: '#666' }}>({shapes.length}) shapes</span>
             </div>
             <canvas
@@ -152,7 +152,38 @@ export default function Minimap({
                     cursor: 'pointer',
                 }}
             />
+            <a
+                href="https://archlife.org"
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                    display: 'block',
+                    marginTop: '8px',
+                    fontSize: '8px',
+                    color: '#555',
+                    textAlign: 'center',
+                    lineHeight: '1.2',
+                    textDecoration: 'none',
+                    cursor: 'pointer',
+                    padding: '4px',
+                    borderRadius: '4px',
+                    transition: 'all 0.2s ease',
+                }}
+                onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = '#2a2a2a'
+                    e.currentTarget.style.color = '#888'
+                }}
+                onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = 'transparent'
+                    e.currentTarget.style.color = '#555'
+                }}
+            >
+                {new Date().getFullYear()}© ArchLife Industries Software
+            </a>
         </div>
     )
 }
+
+// Memoize to prevent unnecessary re-renders
+export default memo(Minimap)
 

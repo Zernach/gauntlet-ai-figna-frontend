@@ -3,6 +3,81 @@ import { useRef, useState, useEffect, memo } from 'react'
 
 const DEFAULT_SHAPE_SIZE = 100
 
+// Helper function to rotate a point around an origin
+const rotatePoint = (x: number, y: number, originX: number, originY: number, angleDeg: number) => {
+    const angleRad = (angleDeg * Math.PI) / 180
+    const cos = Math.cos(angleRad)
+    const sin = Math.sin(angleRad)
+    const dx = x - originX
+    const dy = y - originY
+    return {
+        x: originX + dx * cos - dy * sin,
+        y: originY + dx * sin + dy * cos
+    }
+}
+
+// Helper function to calculate resize for rotated rectangles
+// Given the opposite corner (fixed) and dragged corner (moving), calculate new rect params
+const calculateRotatedResize = (
+    oppositeCornerCanvas: { x: number; y: number },
+    draggedCornerCanvas: { x: number; y: number },
+    rotation: number,
+    minSize: number = 10
+) => {
+    // Vector from opposite to dragged corner in canvas space
+    const dx = draggedCornerCanvas.x - oppositeCornerCanvas.x
+    const dy = draggedCornerCanvas.y - oppositeCornerCanvas.y
+
+    // Convert rotation to radians for calculations
+    const angleRad = (rotation * Math.PI) / 180
+    const cos = Math.cos(angleRad)
+    const sin = Math.sin(angleRad)
+
+    // Project the diagonal vector onto the local X and Y axes
+    // Local X-axis direction: (cos(θ), sin(θ))
+    // Local Y-axis direction: (-sin(θ), cos(θ))  
+    const projX = dx * cos + dy * sin
+    const projY = -dx * sin + dy * cos
+
+    // Width and height are absolute values, with minimum size
+    const width = Math.max(minSize, Math.abs(projX))
+    const height = Math.max(minSize, Math.abs(projY))
+
+    // Determine which corner in local space is the opposite corner
+    // This tells us where to position the new origin
+    const isLeftEdge = projX < 0
+    const isTopEdge = projY < 0
+
+    // Calculate the canvas position of the new origin (top-left in local space)
+    let originCanvasX: number
+    let originCanvasY: number
+
+    if (!isLeftEdge && !isTopEdge) {
+        // Opposite is top-left, so it becomes the origin
+        originCanvasX = oppositeCornerCanvas.x
+        originCanvasY = oppositeCornerCanvas.y
+    } else if (isLeftEdge && !isTopEdge) {
+        // Opposite is top-right, origin is at top-left
+        originCanvasX = oppositeCornerCanvas.x - width * cos
+        originCanvasY = oppositeCornerCanvas.y - width * sin
+    } else if (!isLeftEdge && isTopEdge) {
+        // Opposite is bottom-left, origin is at top-left
+        originCanvasX = oppositeCornerCanvas.x + height * sin
+        originCanvasY = oppositeCornerCanvas.y - height * cos
+    } else {
+        // Opposite is bottom-right, origin is at top-left
+        originCanvasX = oppositeCornerCanvas.x + height * sin - width * cos
+        originCanvasY = oppositeCornerCanvas.y - height * cos - width * sin
+    }
+
+    return {
+        x: originCanvasX,
+        y: originCanvasY,
+        width,
+        height
+    }
+}
+
 interface CanvasShapeProps {
     shape: {
         id: string
@@ -87,6 +162,7 @@ const CanvasShapeComponent = ({
     const shapeRef = useRef<any>(null)
     const isRotatingRef = useRef(false)
     const lastRotationRef = useRef(shape.rotation || 0)
+    const resizeOppositeCornerRef = useRef<{ x: number; y: number } | null>(null)
 
     if (shape.type === 'text') {
         const textRef = useRef<any>(null)
@@ -147,107 +223,127 @@ const CanvasShapeComponent = ({
                     perfectDrawEnabled={false}
                     listening={!isRotatingRef.current}
                 />
-                {isSelected && canResize && (
-                    <Group>
-                        <Rect
-                            x={(shape.x + textWidth) - handleSize / 2}
-                            y={(shape.y + textHeight) - handleSize / 2}
-                            width={handleSize}
-                            height={handleSize}
-                            fill="#ffffff"
-                            stroke={strokeColor}
-                            strokeWidth={handleStrokeThin}
-                            draggable
-                            onDragStart={(e) => {
-                                e.cancelBubble = true
-                                onResizeStart && onResizeStart(shape.id, 'text-scale')
-                                // Capture baseline metrics for proportional scaling
-                                setBaselineFontSize(fontSize)
-                                setBaselineWidth(textWidth || 1)
-                                setBaselineHeight(textHeight || 1)
-                            }}
-                            onDragMove={(e) => {
-                                e.cancelBubble = true
-                                const stage = e.target.getStage()
-                                if (!stage) return
-                                const pointer = stage.getPointerPosition()
-                                if (!pointer) return
-                                const scaleX = stage.scaleX()
-                                const scaleY = stage.scaleY()
-                                const stageX = stage.x()
-                                const stageY = stage.y()
-                                const canvasX = (pointer.x - stageX) / scaleX
-                                const canvasY = (pointer.y - stageY) / scaleY
-                                const dx = Math.max(1, canvasX - shape.x)
-                                const dy = Math.max(1, canvasY - shape.y)
-                                const baseW = Math.max(1, baselineWidth || textWidth || 1)
-                                const baseH = Math.max(1, baselineHeight || textHeight || 1)
-                                // proportional scale factor based on diagonal
-                                const baseDiag = Math.sqrt(baseW * baseW + baseH * baseH)
-                                const newDiag = Math.sqrt(dx * dx + dy * dy)
-                                const scale = Math.max(0.2, Math.min(10, newDiag / baseDiag))
-                                const newFontSize = Math.max(8, Math.min(512, baselineFontSize * scale))
-                                onResizeMove && onResizeMove(shape.id, { fontSize: newFontSize })
-                            }}
-                            onDragEnd={(e) => {
-                                e.cancelBubble = true
-                                onResizeEnd && onResizeEnd(shape.id)
-                            }}
-                            perfectDrawEnabled={false}
-                        />
-                        {/* Rotation handle */}
-                        <Rect
-                            x={(shape.x + textWidth / 2) - handleSize / 2}
-                            y={(shape.y - rotationOffset) - handleSize / 2}
-                            width={handleSize}
-                            height={handleSize}
-                            fill="#4f46e5"
-                            stroke="#ffffff"
-                            strokeWidth={handleStrokeThick}
-                            draggable
-                            onDragStart={(e) => {
-                                e.cancelBubble = true
-                                isRotatingRef.current = true
-                                lastRotationRef.current = shape.rotation || 0
-                                _onRotateStart && _onRotateStart(shape.id)
-                            }}
-                            onDragMove={(e) => {
-                                e.cancelBubble = true
-                                const stage = e.target.getStage()
-                                if (!stage) return
-                                const pointer = stage.getPointerPosition()
-                                if (!pointer) return
-                                const scaleX = stage.scaleX()
-                                const stageX = stage.x()
-                                const stageY = stage.y()
-                                const canvasX = (pointer.x - stageX) / scaleX
-                                const canvasY = (pointer.y - stageY) / scaleX
+                {isSelected && canResize && (() => {
+                    const rotation = shape.rotation || 0
+                    // Calculate rotated bottom-right corner for resize handle
+                    const resizeCorner = rotatePoint(
+                        shape.x + textWidth,
+                        shape.y + textHeight,
+                        shape.x,
+                        shape.y,
+                        rotation
+                    )
+                    // Calculate rotated top-center for rotation handle
+                    const rotationHandle = rotatePoint(
+                        shape.x + textWidth / 2,
+                        shape.y - rotationOffset,
+                        shape.x,
+                        shape.y,
+                        rotation
+                    )
 
-                                // Calculate rotation angle (optimized)
-                                const centerX = shape.x + textWidth / 2
-                                const centerY = shape.y + textHeight / 2
-                                const dx = canvasX - centerX
-                                const dy = canvasY - centerY
-                                const angle = Math.atan2(dy, dx) * 57.29577951308232
+                    return (
+                        <Group>
+                            <Rect
+                                x={resizeCorner.x - handleSize / 2}
+                                y={resizeCorner.y - handleSize / 2}
+                                width={handleSize}
+                                height={handleSize}
+                                fill="#ffffff"
+                                stroke={strokeColor}
+                                strokeWidth={handleStrokeThin}
+                                draggable
+                                onDragStart={(e) => {
+                                    e.cancelBubble = true
+                                    onResizeStart && onResizeStart(shape.id, 'text-scale')
+                                    // Capture baseline metrics for proportional scaling
+                                    setBaselineFontSize(fontSize)
+                                    setBaselineWidth(textWidth || 1)
+                                    setBaselineHeight(textHeight || 1)
+                                }}
+                                onDragMove={(e) => {
+                                    e.cancelBubble = true
+                                    const stage = e.target.getStage()
+                                    if (!stage) return
+                                    const pointer = stage.getPointerPosition()
+                                    if (!pointer) return
+                                    const scaleX = stage.scaleX()
+                                    const scaleY = stage.scaleY()
+                                    const stageX = stage.x()
+                                    const stageY = stage.y()
+                                    const canvasX = (pointer.x - stageX) / scaleX
+                                    const canvasY = (pointer.y - stageY) / scaleY
+                                    const dx = Math.max(1, canvasX - shape.x)
+                                    const dy = Math.max(1, canvasY - shape.y)
+                                    const baseW = Math.max(1, baselineWidth || textWidth || 1)
+                                    const baseH = Math.max(1, baselineHeight || textHeight || 1)
+                                    // proportional scale factor based on diagonal
+                                    const baseDiag = Math.sqrt(baseW * baseW + baseH * baseH)
+                                    const newDiag = Math.sqrt(dx * dx + dy * dy)
+                                    const scale = Math.max(0.2, Math.min(10, newDiag / baseDiag))
+                                    const newFontSize = Math.max(8, Math.min(512, baselineFontSize * scale))
+                                    onResizeMove && onResizeMove(shape.id, { fontSize: newFontSize })
+                                }}
+                                onDragEnd={(e) => {
+                                    e.cancelBubble = true
+                                    onResizeEnd && onResizeEnd(shape.id)
+                                }}
+                                perfectDrawEnabled={false}
+                            />
+                            {/* Rotation handle */}
+                            <Rect
+                                x={rotationHandle.x - handleSize / 2}
+                                y={rotationHandle.y - handleSize / 2}
+                                width={handleSize}
+                                height={handleSize}
+                                fill="#4f46e5"
+                                stroke="#ffffff"
+                                strokeWidth={handleStrokeThick}
+                                draggable
+                                onDragStart={(e) => {
+                                    e.cancelBubble = true
+                                    isRotatingRef.current = true
+                                    lastRotationRef.current = shape.rotation || 0
+                                    _onRotateStart && _onRotateStart(shape.id)
+                                }}
+                                onDragMove={(e) => {
+                                    e.cancelBubble = true
+                                    const stage = e.target.getStage()
+                                    if (!stage) return
+                                    const pointer = stage.getPointerPosition()
+                                    if (!pointer) return
+                                    const scaleX = stage.scaleX()
+                                    const stageX = stage.x()
+                                    const stageY = stage.y()
+                                    const canvasX = (pointer.x - stageX) / scaleX
+                                    const canvasY = (pointer.y - stageY) / scaleX
 
-                                // Apply rotation directly to Konva node for instant visual feedback
-                                if (shapeRef.current && Math.abs(angle - lastRotationRef.current) > 0.5) {
-                                    shapeRef.current.rotation(angle)
-                                    lastRotationRef.current = angle
-                                    shapeRef.current.getLayer()?.batchDraw()
-                                }
+                                    // Calculate rotation angle (optimized)
+                                    const centerX = shape.x + textWidth / 2
+                                    const centerY = shape.y + textHeight / 2
+                                    const dx = canvasX - centerX
+                                    const dy = canvasY - centerY
+                                    const angle = Math.atan2(dy, dx) * 57.29577951308232
 
-                                _onRotateMove && _onRotateMove(shape.id, angle)
-                            }}
-                            onDragEnd={(e) => {
-                                e.cancelBubble = true
-                                isRotatingRef.current = false
-                                _onRotateEnd && _onRotateEnd(shape.id)
-                            }}
-                            perfectDrawEnabled={false}
-                        />
-                    </Group>
-                )}
+                                    // Apply rotation directly to Konva node for instant visual feedback
+                                    if (shapeRef.current && Math.abs(angle - lastRotationRef.current) > 0.5) {
+                                        shapeRef.current.rotation(angle)
+                                        lastRotationRef.current = angle
+                                        shapeRef.current.getLayer()?.batchDraw()
+                                    }
+
+                                    _onRotateMove && _onRotateMove(shape.id, angle)
+                                }}
+                                onDragEnd={(e) => {
+                                    e.cancelBubble = true
+                                    isRotatingRef.current = false
+                                    _onRotateEnd && _onRotateEnd(shape.id)
+                                }}
+                                perfectDrawEnabled={false}
+                            />
+                        </Group>
+                    )
+                })()}
                 {/* Countdown timer for locked shapes */}
                 {isLocked && remainingSeconds !== null && (
                     <KonvaText
@@ -435,217 +531,266 @@ const CanvasShapeComponent = ({
                 perfectDrawEnabled={false}
                 listening={!isRotatingRef.current}
             />
-            {isSelected && canResize && (
-                <Group>
-                    {/* NW handle */}
-                    <Rect
-                        x={(shape.x) - handleSize / 2}
-                        y={(shape.y) - handleSize / 2}
-                        width={handleSize}
-                        height={handleSize}
-                        fill="#ffffff"
-                        stroke={strokeColor}
-                        strokeWidth={handleStrokeThin}
-                        draggable
-                        onDragStart={(e) => {
-                            e.cancelBubble = true
-                            onResizeStart && onResizeStart(shape.id, 'nw')
-                        }}
-                        onDragMove={(e) => {
-                            e.cancelBubble = true
-                            const stage = e.target.getStage()
-                            if (!stage) return
-                            const pointer = stage.getPointerPosition()
-                            if (!pointer) return
-                            const scaleX = stage.scaleX()
-                            const scaleY = stage.scaleY()
-                            const stageX = stage.x()
-                            const stageY = stage.y()
-                            const canvasX = (pointer.x - stageX) / scaleX
-                            const canvasY = (pointer.y - stageY) / scaleY
-                            const currentW = shape.width || DEFAULT_SHAPE_SIZE
-                            const currentH = shape.height || DEFAULT_SHAPE_SIZE
-                            const minSize = 10
-                            const newX = Math.min(shape.x + currentW - minSize, canvasX)
-                            const newY = Math.min(shape.y + currentH - minSize, canvasY)
-                            const newW = Math.max(minSize, (shape.x + currentW) - newX)
-                            const newH = Math.max(minSize, (shape.y + currentH) - newY)
-                            onResizeMove && onResizeMove(shape.id, { x: newX, y: newY, width: newW, height: newH })
-                        }}
-                        onDragEnd={(e) => {
-                            e.cancelBubble = true
-                            onResizeEnd && onResizeEnd(shape.id)
-                        }}
-                        perfectDrawEnabled={false}
-                    />
-                    {/* NE handle */}
-                    <Rect
-                        x={(shape.x + (shape.width || DEFAULT_SHAPE_SIZE)) - handleSize / 2}
-                        y={(shape.y) - handleSize / 2}
-                        width={handleSize}
-                        height={handleSize}
-                        fill="#ffffff"
-                        stroke={strokeColor}
-                        strokeWidth={handleStrokeThin}
-                        draggable
-                        onDragStart={(e) => {
-                            e.cancelBubble = true
-                            onResizeStart && onResizeStart(shape.id, 'ne')
-                        }}
-                        onDragMove={(e) => {
-                            e.cancelBubble = true
-                            const stage = e.target.getStage()
-                            if (!stage) return
-                            const pointer = stage.getPointerPosition()
-                            if (!pointer) return
-                            const scaleX = stage.scaleX()
-                            const scaleY = stage.scaleY()
-                            const stageX = stage.x()
-                            const stageY = stage.y()
-                            const canvasX = (pointer.x - stageX) / scaleX
-                            const canvasY = (pointer.y - stageY) / scaleY
-                            const currentH2 = shape.height || DEFAULT_SHAPE_SIZE
-                            const minSize = 10
-                            const newW = Math.max(minSize, canvasX - shape.x)
-                            const newY = Math.min(shape.y + currentH2 - minSize, canvasY)
-                            const newH = Math.max(minSize, (shape.y + currentH2) - newY)
-                            onResizeMove && onResizeMove(shape.id, { y: newY, width: newW, height: newH })
-                        }}
-                        onDragEnd={(e) => {
-                            e.cancelBubble = true
-                            onResizeEnd && onResizeEnd(shape.id)
-                        }}
-                        perfectDrawEnabled={false}
-                    />
-                    {/* SW handle */}
-                    <Rect
-                        x={(shape.x) - handleSize / 2}
-                        y={(shape.y + (shape.height || DEFAULT_SHAPE_SIZE)) - handleSize / 2}
-                        width={handleSize}
-                        height={handleSize}
-                        fill="#ffffff"
-                        stroke={strokeColor}
-                        strokeWidth={handleStrokeThin}
-                        draggable
-                        onDragStart={(e) => {
-                            e.cancelBubble = true
-                            onResizeStart && onResizeStart(shape.id, 'sw')
-                        }}
-                        onDragMove={(e) => {
-                            e.cancelBubble = true
-                            const stage = e.target.getStage()
-                            if (!stage) return
-                            const pointer = stage.getPointerPosition()
-                            if (!pointer) return
-                            const scaleX = stage.scaleX()
-                            const scaleY = stage.scaleY()
-                            const stageX = stage.x()
-                            const stageY = stage.y()
-                            const canvasX = (pointer.x - stageX) / scaleX
-                            const canvasY = (pointer.y - stageY) / scaleY
-                            const currentW3 = shape.width || DEFAULT_SHAPE_SIZE
-                            const minSize = 10
-                            const newX = Math.min(shape.x + currentW3 - minSize, canvasX)
-                            const newW = Math.max(minSize, (shape.x + currentW3) - newX)
-                            const newH = Math.max(minSize, canvasY - shape.y)
-                            onResizeMove && onResizeMove(shape.id, { x: newX, width: newW, height: newH })
-                        }}
-                        onDragEnd={(e) => {
-                            e.cancelBubble = true
-                            onResizeEnd && onResizeEnd(shape.id)
-                        }}
-                        perfectDrawEnabled={false}
-                    />
-                    {/* SE handle */}
-                    <Rect
-                        x={(shape.x + (shape.width || DEFAULT_SHAPE_SIZE)) - handleSize / 2}
-                        y={(shape.y + (shape.height || DEFAULT_SHAPE_SIZE)) - handleSize / 2}
-                        width={handleSize}
-                        height={handleSize}
-                        fill="#ffffff"
-                        stroke={strokeColor}
-                        strokeWidth={handleStrokeThin}
-                        draggable
-                        onDragStart={(e) => {
-                            e.cancelBubble = true
-                            onResizeStart && onResizeStart(shape.id, 'se')
-                        }}
-                        onDragMove={(e) => {
-                            e.cancelBubble = true
-                            const stage = e.target.getStage()
-                            if (!stage) return
-                            const pointer = stage.getPointerPosition()
-                            if (!pointer) return
-                            const scaleX = stage.scaleX()
-                            const scaleY = stage.scaleY()
-                            const stageX = stage.x()
-                            const stageY = stage.y()
-                            const canvasX = (pointer.x - stageX) / scaleX
-                            const canvasY = (pointer.y - stageY) / scaleY
-                            const minSize = 10
-                            const newW = Math.max(minSize, canvasX - shape.x)
-                            const newH = Math.max(minSize, canvasY - shape.y)
-                            onResizeMove && onResizeMove(shape.id, { width: newW, height: newH })
-                        }}
-                        onDragEnd={(e) => {
-                            e.cancelBubble = true
-                            onResizeEnd && onResizeEnd(shape.id)
-                        }}
-                        perfectDrawEnabled={false}
-                    />
-                    {/* Rotation handle */}
-                    <Rect
-                        x={(shape.x + (shape.width || DEFAULT_SHAPE_SIZE) / 2) - handleSize / 2}
-                        y={(shape.y - rotationOffset) - handleSize / 2}
-                        width={handleSize}
-                        height={handleSize}
-                        fill="#4f46e5"
-                        stroke="#ffffff"
-                        strokeWidth={handleStrokeThick}
-                        draggable
-                        onDragStart={(e) => {
-                            e.cancelBubble = true
-                            isRotatingRef.current = true
-                            lastRotationRef.current = shape.rotation || 0
-                            _onRotateStart && _onRotateStart(shape.id)
-                        }}
-                        onDragMove={(e) => {
-                            e.cancelBubble = true
-                            const stage = e.target.getStage()
-                            if (!stage) return
-                            const pointer = stage.getPointerPosition()
-                            if (!pointer) return
-                            const scaleX = stage.scaleX()
-                            const stageX = stage.x()
-                            const stageY = stage.y()
-                            const canvasX = (pointer.x - stageX) / scaleX
-                            const canvasY = (pointer.y - stageY) / scaleX
+            {isSelected && canResize && (() => {
+                const rotation = shape.rotation || 0
+                const width = shape.width || DEFAULT_SHAPE_SIZE
+                const height = shape.height || DEFAULT_SHAPE_SIZE
 
-                            // Calculate rotation angle (optimized)
-                            const centerX = shape.x + (shape.width || DEFAULT_SHAPE_SIZE) / 2
-                            const centerY = shape.y + (shape.height || DEFAULT_SHAPE_SIZE) / 2
-                            const dx = canvasX - centerX
-                            const dy = canvasY - centerY
-                            const angle = Math.atan2(dy, dx) * 57.29577951308232
+                // Calculate rotated corner positions
+                const nwCorner = rotatePoint(shape.x, shape.y, shape.x, shape.y, rotation)
+                const neCorner = rotatePoint(shape.x + width, shape.y, shape.x, shape.y, rotation)
+                const swCorner = rotatePoint(shape.x, shape.y + height, shape.x, shape.y, rotation)
+                const seCorner = rotatePoint(shape.x + width, shape.y + height, shape.x, shape.y, rotation)
 
-                            // Apply rotation directly to Konva node for instant visual feedback
-                            if (shapeRef.current && Math.abs(angle - lastRotationRef.current) > 0.5) {
-                                shapeRef.current.rotation(angle)
-                                lastRotationRef.current = angle
-                                shapeRef.current.getLayer()?.batchDraw()
-                            }
+                // Calculate rotated top-center for rotation handle
+                const rotationHandle = rotatePoint(
+                    shape.x + width / 2,
+                    shape.y - rotationOffset,
+                    shape.x,
+                    shape.y,
+                    rotation
+                )
 
-                            _onRotateMove && _onRotateMove(shape.id, angle)
-                        }}
-                        onDragEnd={(e) => {
-                            e.cancelBubble = true
-                            isRotatingRef.current = false
-                            _onRotateEnd && _onRotateEnd(shape.id)
-                        }}
-                        perfectDrawEnabled={false}
-                    />
-                </Group>
-            )}
+                return (
+                    <Group>
+                        {/* NW handle */}
+                        <Rect
+                            x={nwCorner.x - handleSize / 2}
+                            y={nwCorner.y - handleSize / 2}
+                            width={handleSize}
+                            height={handleSize}
+                            fill="#ffffff"
+                            stroke={strokeColor}
+                            strokeWidth={handleStrokeThin}
+                            draggable
+                            onDragStart={(e) => {
+                                e.cancelBubble = true
+                                // Store SE corner as the opposite corner (stays fixed)
+                                resizeOppositeCornerRef.current = seCorner
+                                onResizeStart && onResizeStart(shape.id, 'nw')
+                            }}
+                            onDragMove={(e) => {
+                                e.cancelBubble = true
+                                const stage = e.target.getStage()
+                                if (!stage || !resizeOppositeCornerRef.current) return
+                                const pointer = stage.getPointerPosition()
+                                if (!pointer) return
+                                const scaleX = stage.scaleX()
+                                const scaleY = stage.scaleY()
+                                const stageX = stage.x()
+                                const stageY = stage.y()
+                                const canvasX = (pointer.x - stageX) / scaleX
+                                const canvasY = (pointer.y - stageY) / scaleY
+
+                                // Calculate new dimensions keeping SE corner fixed
+                                const newDimensions = calculateRotatedResize(
+                                    resizeOppositeCornerRef.current,
+                                    { x: canvasX, y: canvasY },
+                                    rotation,
+                                    10
+                                )
+
+                                onResizeMove && onResizeMove(shape.id, newDimensions)
+                            }}
+                            onDragEnd={(e) => {
+                                e.cancelBubble = true
+                                resizeOppositeCornerRef.current = null
+                                onResizeEnd && onResizeEnd(shape.id)
+                            }}
+                            perfectDrawEnabled={false}
+                        />
+                        {/* NE handle */}
+                        <Rect
+                            x={neCorner.x - handleSize / 2}
+                            y={neCorner.y - handleSize / 2}
+                            width={handleSize}
+                            height={handleSize}
+                            fill="#ffffff"
+                            stroke={strokeColor}
+                            strokeWidth={handleStrokeThin}
+                            draggable
+                            onDragStart={(e) => {
+                                e.cancelBubble = true
+                                // Store SW corner as the opposite corner (stays fixed)
+                                resizeOppositeCornerRef.current = swCorner
+                                onResizeStart && onResizeStart(shape.id, 'ne')
+                            }}
+                            onDragMove={(e) => {
+                                e.cancelBubble = true
+                                const stage = e.target.getStage()
+                                if (!stage || !resizeOppositeCornerRef.current) return
+                                const pointer = stage.getPointerPosition()
+                                if (!pointer) return
+                                const scaleX = stage.scaleX()
+                                const scaleY = stage.scaleY()
+                                const stageX = stage.x()
+                                const stageY = stage.y()
+                                const canvasX = (pointer.x - stageX) / scaleX
+                                const canvasY = (pointer.y - stageY) / scaleY
+
+                                // Calculate new dimensions keeping SW corner fixed
+                                const newDimensions = calculateRotatedResize(
+                                    resizeOppositeCornerRef.current,
+                                    { x: canvasX, y: canvasY },
+                                    rotation,
+                                    10
+                                )
+
+                                onResizeMove && onResizeMove(shape.id, newDimensions)
+                            }}
+                            onDragEnd={(e) => {
+                                e.cancelBubble = true
+                                resizeOppositeCornerRef.current = null
+                                onResizeEnd && onResizeEnd(shape.id)
+                            }}
+                            perfectDrawEnabled={false}
+                        />
+                        {/* SW handle */}
+                        <Rect
+                            x={swCorner.x - handleSize / 2}
+                            y={swCorner.y - handleSize / 2}
+                            width={handleSize}
+                            height={handleSize}
+                            fill="#ffffff"
+                            stroke={strokeColor}
+                            strokeWidth={handleStrokeThin}
+                            draggable
+                            onDragStart={(e) => {
+                                e.cancelBubble = true
+                                // Store NE corner as the opposite corner (stays fixed)
+                                resizeOppositeCornerRef.current = neCorner
+                                onResizeStart && onResizeStart(shape.id, 'sw')
+                            }}
+                            onDragMove={(e) => {
+                                e.cancelBubble = true
+                                const stage = e.target.getStage()
+                                if (!stage || !resizeOppositeCornerRef.current) return
+                                const pointer = stage.getPointerPosition()
+                                if (!pointer) return
+                                const scaleX = stage.scaleX()
+                                const scaleY = stage.scaleY()
+                                const stageX = stage.x()
+                                const stageY = stage.y()
+                                const canvasX = (pointer.x - stageX) / scaleX
+                                const canvasY = (pointer.y - stageY) / scaleY
+
+                                // Calculate new dimensions keeping NE corner fixed
+                                const newDimensions = calculateRotatedResize(
+                                    resizeOppositeCornerRef.current,
+                                    { x: canvasX, y: canvasY },
+                                    rotation,
+                                    10
+                                )
+
+                                onResizeMove && onResizeMove(shape.id, newDimensions)
+                            }}
+                            onDragEnd={(e) => {
+                                e.cancelBubble = true
+                                resizeOppositeCornerRef.current = null
+                                onResizeEnd && onResizeEnd(shape.id)
+                            }}
+                            perfectDrawEnabled={false}
+                        />
+                        {/* SE handle */}
+                        <Rect
+                            x={seCorner.x - handleSize / 2}
+                            y={seCorner.y - handleSize / 2}
+                            width={handleSize}
+                            height={handleSize}
+                            fill="#ffffff"
+                            stroke={strokeColor}
+                            strokeWidth={handleStrokeThin}
+                            draggable
+                            onDragStart={(e) => {
+                                e.cancelBubble = true
+                                // Store NW corner as the opposite corner (stays fixed)
+                                resizeOppositeCornerRef.current = nwCorner
+                                onResizeStart && onResizeStart(shape.id, 'se')
+                            }}
+                            onDragMove={(e) => {
+                                e.cancelBubble = true
+                                const stage = e.target.getStage()
+                                if (!stage || !resizeOppositeCornerRef.current) return
+                                const pointer = stage.getPointerPosition()
+                                if (!pointer) return
+                                const scaleX = stage.scaleX()
+                                const scaleY = stage.scaleY()
+                                const stageX = stage.x()
+                                const stageY = stage.y()
+                                const canvasX = (pointer.x - stageX) / scaleX
+                                const canvasY = (pointer.y - stageY) / scaleY
+
+                                // Calculate new dimensions keeping NW corner fixed
+                                const newDimensions = calculateRotatedResize(
+                                    resizeOppositeCornerRef.current,
+                                    { x: canvasX, y: canvasY },
+                                    rotation,
+                                    10
+                                )
+
+                                onResizeMove && onResizeMove(shape.id, newDimensions)
+                            }}
+                            onDragEnd={(e) => {
+                                e.cancelBubble = true
+                                resizeOppositeCornerRef.current = null
+                                onResizeEnd && onResizeEnd(shape.id)
+                            }}
+                            perfectDrawEnabled={false}
+                        />
+                        {/* Rotation handle */}
+                        <Rect
+                            x={rotationHandle.x - handleSize / 2}
+                            y={rotationHandle.y - handleSize / 2}
+                            width={handleSize}
+                            height={handleSize}
+                            fill="#4f46e5"
+                            stroke="#ffffff"
+                            strokeWidth={handleStrokeThick}
+                            draggable
+                            onDragStart={(e) => {
+                                e.cancelBubble = true
+                                isRotatingRef.current = true
+                                lastRotationRef.current = shape.rotation || 0
+                                _onRotateStart && _onRotateStart(shape.id)
+                            }}
+                            onDragMove={(e) => {
+                                e.cancelBubble = true
+                                const stage = e.target.getStage()
+                                if (!stage) return
+                                const pointer = stage.getPointerPosition()
+                                if (!pointer) return
+                                const scaleX = stage.scaleX()
+                                const stageX = stage.x()
+                                const stageY = stage.y()
+                                const canvasX = (pointer.x - stageX) / scaleX
+                                const canvasY = (pointer.y - stageY) / scaleX
+
+                                // Calculate rotation angle (optimized)
+                                const centerX = shape.x + (shape.width || DEFAULT_SHAPE_SIZE) / 2
+                                const centerY = shape.y + (shape.height || DEFAULT_SHAPE_SIZE) / 2
+                                const dx = canvasX - centerX
+                                const dy = canvasY - centerY
+                                const angle = Math.atan2(dy, dx) * 57.29577951308232
+
+                                // Apply rotation directly to Konva node for instant visual feedback
+                                if (shapeRef.current && Math.abs(angle - lastRotationRef.current) > 0.5) {
+                                    shapeRef.current.rotation(angle)
+                                    lastRotationRef.current = angle
+                                    shapeRef.current.getLayer()?.batchDraw()
+                                }
+
+                                _onRotateMove && _onRotateMove(shape.id, angle)
+                            }}
+                            onDragEnd={(e) => {
+                                e.cancelBubble = true
+                                isRotatingRef.current = false
+                                _onRotateEnd && _onRotateEnd(shape.id)
+                            }}
+                            perfectDrawEnabled={false}
+                        />
+                    </Group>
+                )
+            })()}
             {/* Countdown timer for locked shapes */}
             {isLocked && remainingSeconds !== null && (
                 <KonvaText

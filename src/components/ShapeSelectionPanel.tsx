@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, memo } from 'react'
 import ColorSlider from './ColorSlider'
 
 interface ShapeSelectionPanelProps {
@@ -209,6 +209,7 @@ const ShapeSelectionPanel: React.FC<ShapeSelectionPanelProps> = ({
     )
 }
 
-export default ShapeSelectionPanel
+// Memoize to prevent unnecessary re-renders
+export default memo(ShapeSelectionPanel)
 
 

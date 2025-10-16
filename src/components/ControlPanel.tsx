@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { memo } from 'react'
 import {
     Square,
     Circle,
@@ -349,4 +349,5 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
     )
 }
 
-export default ControlPanel
+// Memoize to prevent unnecessary re-renders
+export default memo(ControlPanel)

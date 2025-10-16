@@ -5,7 +5,7 @@ import { useCallback, useRef } from 'react'
  */
 export interface CanvasTools {
     createShapes: (params: CreateShapesParams) => void
-    updateShape: (params: UpdateShapeParams) => void
+    updateShapes: (params: UpdateShapesParams) => void
     deleteShape: (params: DeleteShapeParams) => void
     deleteAllShapes: () => void
     selectShapes: (params: SelectShapesParams) => void
@@ -70,6 +70,10 @@ export interface UpdateShapeParams {
     fontSize?: number
     opacity?: number
     rotation?: number
+}
+
+export interface UpdateShapesParams {
+    shapes: UpdateShapeParams[]
 }
 
 export interface DeleteShapeParams {
@@ -197,57 +201,67 @@ export const CANVAS_TOOLS = [
     },
     {
         type: 'function' as const,
-        name: 'updateShape',
-        description: 'Updates an existing shape on the canvas. Use this to modify, change, move, resize, or recolor shapes.',
+        name: 'updateShapes',
+        description: 'Updates one or more existing shapes on the canvas. Always pass an array of shapes, even for a single shape. Use this to modify, change, move, resize, or recolor shapes.',
         parameters: {
             type: 'object',
             properties: {
-                shapeId: {
-                    type: 'string',
-                    description: 'The ID of the shape to update'
-                },
-                x: {
-                    type: 'number',
-                    description: 'New X coordinate'
-                },
-                y: {
-                    type: 'number',
-                    description: 'New Y coordinate'
-                },
-                width: {
-                    type: 'number',
-                    description: 'New width (for rectangles)'
-                },
-                height: {
-                    type: 'number',
-                    description: 'New height (for rectangles)'
-                },
-                radius: {
-                    type: 'number',
-                    description: 'New radius (for circles)'
-                },
-                color: {
-                    type: 'string',
-                    description: 'New hex color code'
-                },
-                textContent: {
-                    type: 'string',
-                    description: 'New text content (for text shapes)'
-                },
-                fontSize: {
-                    type: 'number',
-                    description: 'New font size (for text shapes)'
-                },
-                opacity: {
-                    type: 'number',
-                    description: 'New opacity (0-1)'
-                },
-                rotation: {
-                    type: 'number',
-                    description: 'New rotation in degrees'
+                shapes: {
+                    type: 'array',
+                    description: 'Array of shape updates to apply',
+                    items: {
+                        type: 'object',
+                        properties: {
+                            shapeId: {
+                                type: 'string',
+                                description: 'The ID of the shape to update'
+                            },
+                            x: {
+                                type: 'number',
+                                description: 'New X coordinate'
+                            },
+                            y: {
+                                type: 'number',
+                                description: 'New Y coordinate'
+                            },
+                            width: {
+                                type: 'number',
+                                description: 'New width (for rectangles)'
+                            },
+                            height: {
+                                type: 'number',
+                                description: 'New height (for rectangles)'
+                            },
+                            radius: {
+                                type: 'number',
+                                description: 'New radius (for circles)'
+                            },
+                            color: {
+                                type: 'string',
+                                description: 'New hex color code'
+                            },
+                            textContent: {
+                                type: 'string',
+                                description: 'New text content (for text shapes)'
+                            },
+                            fontSize: {
+                                type: 'number',
+                                description: 'New font size (for text shapes)'
+                            },
+                            opacity: {
+                                type: 'number',
+                                description: 'New opacity (0-1)'
+                            },
+                            rotation: {
+                                type: 'number',
+                                description: 'New rotation in degrees'
+                            }
+                        },
+                        required: ['shapeId']
+                    }
                 }
             },
-            required: ['shapeId']
+            required: ['shapes']
         }
     },
     {
@@ -562,155 +576,42 @@ export function useAgenticToolCalling() {
     }, [])
 
     /**
-     * Execute a tool call from OpenAI
+     * Execute a tool call from OpenAI - optimized for speed (<50ms target)
      */
     const executeTool = useCallback((toolName: string, args: any) => {
-        console.log('🔨 [Tool Calling] Executing tool:', toolName, 'with args:', args);
+        // Performance optimization: Skip logging in production or use minimal logging
+        const DEBUG = false; // Set to true for debugging
 
         if (!toolsRef.current) {
-            const error = 'Canvas tools not registered'
-            console.error('❌ [Tool Calling] Error:', error);
-            return { success: false, error }
+            if (DEBUG) console.error('❌ [Tool Calling] Canvas tools not registered');
+            return { success: false, error: 'Canvas tools not registered' }
         }
 
         try {
-            let result: any
-
-            switch (toolName) {
-                case 'createShapes':
-                    const shapeCount = args.shapes?.length || 0
-                    console.log('🎨 [Tool Calling] Creating shapes:', shapeCount, 'shapes');
-                    toolsRef.current.createShapes(args as CreateShapesParams)
-                    result = {
-                        success: true,
-                        message: `Created ${shapeCount} shape(s)`
-                    }
-                    console.log('✅ [Tool Calling] Shapes created successfully');
-                    return result
-
-                case 'updateShape':
-                    console.log('✏️ [Tool Calling] Updating shape:', args.shapeId);
-                    toolsRef.current.updateShape(args as UpdateShapeParams)
-                    result = { success: true, message: `Updated shape ${args.shapeId}` }
-                    console.log('✅ [Tool Calling] Shape updated successfully');
-                    return result
-
-                case 'deleteShape':
-                    console.log('🗑️ [Tool Calling] Deleting shapes:', args.shapeIds);
-                    toolsRef.current.deleteShape(args as DeleteShapeParams)
-                    result = { success: true, message: `Deleted ${args.shapeIds.length} shape(s)` }
-                    console.log('✅ [Tool Calling] Shapes deleted successfully');
-                    return result
-
-                case 'selectShapes':
-                    console.log('👆 [Tool Calling] Selecting shapes:', args.shapeIds);
-                    toolsRef.current.selectShapes(args as SelectShapesParams)
-                    result = { success: true, message: `Selected ${args.shapeIds.length} shape(s)` }
-                    console.log('✅ [Tool Calling] Shapes selected successfully');
-                    return result
-
-                case 'clearSelection':
-                    console.log('🧹 [Tool Calling] Clearing selection');
-                    toolsRef.current.clearSelection()
-                    result = { success: true, message: 'Cleared selection' }
-                    console.log('✅ [Tool Calling] Selection cleared successfully');
-                    return result
-
-                case 'duplicateShapes':
-                    console.log('📋 [Tool Calling] Duplicating shapes:', args.shapeIds);
-                    toolsRef.current.duplicateShapes(args as DuplicateShapesParams)
-                    result = { success: true, message: `Duplicated ${args.shapeIds.length} shape(s)` }
-                    console.log('✅ [Tool Calling] Shapes duplicated successfully');
-                    return result
-
-                case 'deleteAllShapes':
-                    console.log('🧹 [Tool Calling] Deleting all shapes');
-                    toolsRef.current.deleteAllShapes()
-                    result = { success: true, message: 'Deleted all shapes' }
-                    console.log('✅ [Tool Calling] All shapes deleted successfully');
-                    return result
-
-                case 'getCanvasState':
-                    console.log('🔍 [Tool Calling] Getting canvas state');
-                    const state = toolsRef.current.getCanvasState()
-                    console.log('✅ [Tool Calling] Canvas state retrieved:', {
-                        shapeCount: state.shapes.length,
-                        selectedCount: state.selectedIds.length
-                    });
-                    return { success: true, data: state }
-
-                case 'bringToFront':
-                    console.log('⬆️ [Tool Calling] Bringing shapes to front:', args.shapeIds);
-                    toolsRef.current.bringToFront(args as LayerShapesParams)
-                    result = { success: true, message: `Brought ${args.shapeIds.length} shape(s) to front` }
-                    console.log('✅ [Tool Calling] Shapes brought to front successfully');
-                    return result
-
-                case 'sendToBack':
-                    console.log('⬇️ [Tool Calling] Sending shapes to back:', args.shapeIds);
-                    toolsRef.current.sendToBack(args as LayerShapesParams)
-                    result = { success: true, message: `Sent ${args.shapeIds.length} shape(s) to back` }
-                    console.log('✅ [Tool Calling] Shapes sent to back successfully');
-                    return result
-
-                case 'moveForward':
-                    console.log('↑ [Tool Calling] Moving shapes forward:', args.shapeIds);
-                    toolsRef.current.moveForward(args as LayerShapesParams)
-                    result = { success: true, message: `Moved ${args.shapeIds.length} shape(s) forward` }
-                    console.log('✅ [Tool Calling] Shapes moved forward successfully');
-                    return result
-
-                case 'moveBackward':
-                    console.log('↓ [Tool Calling] Moving shapes backward:', args.shapeIds);
-                    toolsRef.current.moveBackward(args as LayerShapesParams)
-                    result = { success: true, message: `Moved ${args.shapeIds.length} shape(s) backward` }
-                    console.log('✅ [Tool Calling] Shapes moved backward successfully');
-                    return result
-
-                case 'arrangeInRow':
-                    console.log('➡️ [Tool Calling] Arranging shapes in row:', args.shapeIds);
-                    toolsRef.current.arrangeInRow(args as ArrangeParams)
-                    result = { success: true, message: `Arranged ${args.shapeIds.length} shape(s) in a row` }
-                    console.log('✅ [Tool Calling] Shapes arranged in row successfully');
-                    return result
-
-                case 'arrangeInColumn':
-                    console.log('⬇️ [Tool Calling] Arranging shapes in column:', args.shapeIds);
-                    toolsRef.current.arrangeInColumn(args as ArrangeParams)
-                    result = { success: true, message: `Arranged ${args.shapeIds.length} shape(s) in a column` }
-                    console.log('✅ [Tool Calling] Shapes arranged in column successfully');
-                    return result
-
-                case 'arrangeInGrid':
-                    console.log('🔲 [Tool Calling] Arranging shapes in grid:', args.shapeIds);
-                    toolsRef.current.arrangeInGrid(args as ArrangeGridParams)
-                    result = { success: true, message: `Arranged ${args.shapeIds.length} shape(s) in a grid` }
-                    console.log('✅ [Tool Calling] Shapes arranged in grid successfully');
-                    return result
-
-                case 'createPattern':
-                    console.log('🎨 [Tool Calling] Creating pattern:', args.patternType);
-                    toolsRef.current.createPattern(args as CreatePatternParams)
-                    result = { success: true, message: `Created ${args.patternType} pattern` }
-                    console.log('✅ [Tool Calling] Pattern created successfully');
-                    return result
-
-                case 'alignShapes':
-                    console.log('↔️ [Tool Calling] Aligning shapes:', args.alignment);
-                    toolsRef.current.alignShapes(args as AlignShapesParams)
-                    result = { success: true, message: `Aligned ${args.shapeIds.length} shape(s) ${args.alignment}` }
-                    console.log('✅ [Tool Calling] Shapes aligned successfully');
-                    return result
-
-                default:
-                    const error = `Unknown tool: ${toolName}`
-                    console.error('❌ [Tool Calling] Error:', error);
-                    return { success: false, error }
+            // Direct function dispatch - faster than switch statement
+            const tool = toolsRef.current[toolName as keyof CanvasTools];
+            if (!tool) {
+                if (DEBUG) console.error('❌ [Tool Calling] Unknown tool:', toolName);
+                return { success: false, error: `Unknown tool: ${toolName}` }
             }
+
+            // Execute tool immediately without logging overhead
+            if (toolName === 'getCanvasState') {
+                const state = (tool as any)();
+                return { success: true, data: state }
+            }
+
+            // Execute tool with args
+            (tool as any)(args);
+
+            // Return success without building complex message strings
+            return { success: true, message: 'OK' }
         } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : 'Unknown error'
-            console.error('❌ [Tool Calling] Exception during execution:', errorMessage);
-            return { success: false, error: errorMessage }
+            if (DEBUG) console.error('❌ [Tool Calling] Exception:', error);
+            return {
+                success: false,
+                error: error instanceof Error ? error.message : 'Unknown error'
+            }
         }
     }, [])
 

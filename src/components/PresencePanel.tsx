@@ -1,5 +1,6 @@
-import React from 'react'
+import React, { memo } from 'react'
 import { LogOut } from 'lucide-react'
+import { usePerformanceMonitor } from '../hooks/usePerformanceMonitor'
 
 interface ActiveUser {
   userId: string
@@ -18,11 +19,10 @@ interface PresencePanelProps {
   reconnectAttempts: number
   maxReconnectAttempts: number
   queuedOperationsCount: number
-  fps: number
   onSignOut: () => void
 }
 
-export default function PresencePanel({
+function PresencePanel({
   currentUserEmail,
   currentUserColor,
   uniqueActiveUsers,
@@ -31,9 +31,10 @@ export default function PresencePanel({
   reconnectAttempts,
   maxReconnectAttempts,
   queuedOperationsCount,
-  fps,
   onSignOut,
 }: PresencePanelProps) {
+  // Move performance monitoring to this component to prevent canvas re-renders
+  const { fps } = usePerformanceMonitor()
   const [showSignOutTooltip, setShowSignOutTooltip] = React.useState(false)
   const tooltipRef = React.useRef<HTMLDivElement>(null)
   const emailRef = React.useRef<HTMLDivElement>(null)
@@ -249,4 +250,7 @@ export default function PresencePanel({
     </div>
   )
 }
+
+// Memoize to prevent unnecessary re-renders when FPS updates
+export default memo(PresencePanel)
 

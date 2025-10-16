@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import { Layer, Rect, Text as KonvaText, Circle as KonvaCircle } from 'react-konva'
 import CanvasShape from './CanvasShape'
 import CanvasCursor from './CanvasCursor'
@@ -41,7 +42,7 @@ interface CanvasLayersProps {
   getUserColor: (userId: string) => string
 }
 
-export default function CanvasLayers({
+function CanvasLayers({
   canvasWidth,
   canvasHeight,
   canvasBgHex,
@@ -196,4 +197,7 @@ export default function CanvasLayers({
     </>
   )
 }
+
+// Memoize to prevent unnecessary re-renders when cursors or other props change
+export default memo(CanvasLayers)
 

@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { memo } from 'react'
 
 interface UndoRedoPanelProps {
   canUndo: boolean
@@ -74,6 +74,7 @@ const UndoRedoPanel: React.FC<UndoRedoPanelProps> = ({ canUndo, canRedo, onUndo,
   )
 }
 
-export default UndoRedoPanel
+// Memoize to prevent unnecessary re-renders
+export default memo(UndoRedoPanel)
 
 
