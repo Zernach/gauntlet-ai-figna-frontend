@@ -71,7 +71,8 @@ export function useAgenticTools({
                   textContent: shape.textContent,
                   fontSize: shape.fontSize,
                   opacity: shape.opacity,
-                  rotation: shape.rotation
+                  rotation: shape.rotation,
+                  borderRadius: shape.borderRadius
                 }
               }))
             }

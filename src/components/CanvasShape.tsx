@@ -92,6 +92,8 @@ interface CanvasShapeProps {
         opacity?: number
         shadowColor?: string
         shadowStrength?: number
+        borderRadius?: number
+        border_radius?: number
         text_content?: string
         font_size?: number
         font_family?: string
@@ -499,6 +501,7 @@ const CanvasShapeComponent = ({
     }
 
     // Default to rectangle
+    const borderRadius = shape.borderRadius ?? shape.border_radius ?? 0
     return (
         <>
             <Rect
@@ -507,6 +510,7 @@ const CanvasShapeComponent = ({
                 y={shape.y}
                 width={shape.width || DEFAULT_SHAPE_SIZE}
                 height={shape.height || DEFAULT_SHAPE_SIZE}
+                cornerRadius={borderRadius}
                 fill={shape.color}
                 stroke={strokeColor}
                 strokeWidth={strokeWidth}

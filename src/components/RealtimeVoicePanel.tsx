@@ -449,8 +449,7 @@ When the user refers to objects by their content (like "the Hello World text" or
             style={{
                 position: 'fixed',
                 bottom: '24px',
-                left: '50%',
-                transform: 'translateX(-50%)',
+                left: '24px',
                 background: 'linear-gradient(135deg, rgba(10, 10, 35, 0.95) 0%, rgba(20, 10, 40, 0.95) 50%, rgba(10, 10, 35, 0.95) 100%)',
                 border: '2px solid transparent',
                 borderRadius: '20px',

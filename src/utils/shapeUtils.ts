@@ -12,6 +12,7 @@ export function normalizeShape(shape: any): Shape {
     font_family: shape.font_family ?? shape.fontFamily,
     font_weight: shape.font_weight ?? shape.fontWeight,
     text_align: shape.text_align ?? shape.textAlign,
+    borderRadius: shape.borderRadius ?? shape.border_radius,
   }
 }
 

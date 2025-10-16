@@ -52,6 +52,7 @@ export interface CreateShapeParams {
     fontFamily?: string
     opacity?: number
     rotation?: number
+    borderRadius?: number
 }
 
 export interface CreateShapesParams {
@@ -70,6 +71,7 @@ export interface UpdateShapeParams {
     fontSize?: number
     opacity?: number
     rotation?: number
+    borderRadius?: number
 }
 
 export interface UpdateShapesParams {
@@ -190,6 +192,10 @@ export const CANVAS_TOOLS = [
                             rotation: {
                                 type: 'number',
                                 description: 'Rotation in degrees. Default: 0'
+                            },
+                            borderRadius: {
+                                type: 'number',
+                                description: 'Border radius in pixels (for rectangles). Default: 0. Max: 100'
                             }
                         },
                         required: ['type']
@@ -255,6 +261,10 @@ export const CANVAS_TOOLS = [
                             rotation: {
                                 type: 'number',
                                 description: 'New rotation in degrees'
+                            },
+                            borderRadius: {
+                                type: 'number',
+                                description: 'New border radius in pixels (for rectangles)'
                             }
                         },
                         required: ['shapeId']

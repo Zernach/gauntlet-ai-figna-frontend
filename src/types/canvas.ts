@@ -11,6 +11,8 @@ export interface Shape {
     opacity?: number
     shadowColor?: string
     shadowStrength?: number
+    borderRadius?: number
+    border_radius?: number
     text_content?: string
     font_size?: number
     font_family?: string

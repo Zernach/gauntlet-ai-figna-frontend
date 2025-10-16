@@ -54,6 +54,7 @@ export function useCanvasUtils({
     const opacity = s.opacity !== undefined ? s.opacity : undefined
     const shadowColor = s.shadowColor !== undefined ? s.shadowColor : (s.shadow_color !== undefined ? s.shadow_color : undefined)
     const shadowStrength = s.shadowStrength !== undefined ? s.shadowStrength : (s.shadow_strength !== undefined ? s.shadow_strength : undefined)
+    const borderRadius = s.borderRadius !== undefined ? s.borderRadius : (s.border_radius !== undefined ? s.border_radius : undefined)
     return {
       ...s,
       locked_at,
@@ -63,6 +64,7 @@ export function useCanvasUtils({
       opacity,
       shadowColor,
       shadowStrength,
+      borderRadius,
     }
   }, [])
 

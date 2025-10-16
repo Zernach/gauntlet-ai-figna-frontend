@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState, memo } from 'react'
 
 interface ColorSliderProps {
     valueHex: string
@@ -159,6 +159,14 @@ const ColorSlider: React.FC<ColorSliderProps> = ({ valueHex, onChangeHex, label,
     )
 }
 
-export default ColorSlider
+export default memo(ColorSlider, (prevProps, nextProps) => {
+    // Only re-render if value or config changed
+    return (
+        prevProps.valueHex === nextProps.valueHex &&
+        prevProps.label === nextProps.label &&
+        prevProps.allowHexEdit === nextProps.allowHexEdit &&
+        prevProps.layout === nextProps.layout
+    )
+})
 
 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, memo } from 'react'
+import React, { useState, useEffect, memo, useMemo } from 'react'
 import ColorSlider from './ColorSlider'
 
 interface ShapeSelectionPanelProps {
@@ -10,6 +10,7 @@ interface ShapeSelectionPanelProps {
         opacity?: number
         shadowColor?: string
         shadowStrength?: number
+        borderRadius?: number
         fontFamily?: string
         fontWeight?: string
     }
@@ -18,6 +19,7 @@ interface ShapeSelectionPanelProps {
     onCommitRotation: (rotationDeg: number) => void
     onChangeShadowColor: (hex: string) => void
     onChangeShadowStrength: (strength: number) => void
+    onChangeBorderRadius?: (borderRadius: number) => void
     onChangeFontFamily: (family: string) => void
     onChangeFontWeight: (weight: string) => void
 }
@@ -29,35 +31,52 @@ const ShapeSelectionPanel: React.FC<ShapeSelectionPanelProps> = ({
     onCommitRotation,
     onChangeShadowColor,
     onChangeShadowStrength,
+    onChangeBorderRadius,
     onChangeFontFamily,
     onChangeFontWeight,
 }) => {
     const [rotationInput, setRotationInput] = useState<string>('0')
     const [opacityPct, setOpacityPct] = useState<number>(100)
     const [shadowStrength, setShadowStrength] = useState<number>(0)
+    const [borderRadius, setBorderRadius] = useState<number>(0)
+
+    // Memoize shape properties to avoid unnecessary updates
+    const shapeId = selectedShape.id
+    const shapeType = selectedShape.type
+    const shapeColor = selectedShape.color
+    const shapeRotation = selectedShape.rotation ?? 0
+    const shapeOpacity = selectedShape.opacity ?? 1
+    const shapeShadowColor = selectedShape.shadowColor ?? '#1c1c1c'
+    const shapeShadowStrength = selectedShape.shadowStrength ?? 0
+    const shapeBorderRadius = selectedShape.borderRadius ?? 0
+    const shapeFontFamily = selectedShape.fontFamily ?? 'Inter'
+    const shapeFontWeight = selectedShape.fontWeight ?? 'normal'
 
     useEffect(() => {
-        setRotationInput(String(Math.round(selectedShape.rotation ?? 0)))
-        setOpacityPct(Math.round(((selectedShape.opacity ?? 1) * 100)))
-        setShadowStrength(Math.max(0, Math.round(selectedShape.shadowStrength ?? 0)))
-    }, [selectedShape])
+        setRotationInput(String(Math.round(shapeRotation)))
+        setOpacityPct(Math.round(shapeOpacity * 100))
+        setShadowStrength(Math.max(0, Math.round(shapeShadowStrength)))
+        setBorderRadius(Math.max(0, Math.round(shapeBorderRadius)))
+    }, [shapeId, shapeRotation, shapeOpacity, shapeShadowStrength, shapeBorderRadius])
 
-    const isText = selectedShape.type === 'text'
+    const isText = useMemo(() => shapeType === 'text', [shapeType])
+    const isRectangle = useMemo(() => shapeType === 'rectangle', [shapeType])
 
     return (
-        <div style={{
-            position: 'absolute',
-            bottom: '20px',
-            right: '20px',
-            zIndex: 20,
-            backgroundColor: 'rgba(26, 26, 26, 0.95)',
-            border: '1px solid #404040',
-            borderRadius: '12px',
-            padding: '12px 14px',
-            boxShadow: '0 8px 32px #1c1c1c66',
-            minWidth: '260px',
-            color: '#fff',
-        }}>
+        <div
+            id="shape-selection-panel"
+            style={{
+                position: 'absolute',
+                right: '0px',
+                zIndex: 20,
+                backgroundColor: 'rgba(26, 26, 26, 0.95)',
+                border: '1px solid #404040',
+                borderRadius: '12px',
+                padding: '12px 14px',
+                boxShadow: '0 8px 32px #1c1c1c66',
+                minWidth: '260px',
+                color: '#fff',
+            }}>
             <div style={{ fontSize: '12px', fontWeight: 600, color: '#888', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>
                 Selection
             </div>
@@ -65,7 +84,7 @@ const ShapeSelectionPanel: React.FC<ShapeSelectionPanelProps> = ({
             {/* Color */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
                 <ColorSlider
-                    valueHex={selectedShape.color}
+                    valueHex={shapeColor}
                     onChangeHex={onChangeColor}
                     allowHexEdit={true}
                     label="Color"
@@ -121,7 +140,7 @@ const ShapeSelectionPanel: React.FC<ShapeSelectionPanelProps> = ({
                 <div style={{ fontSize: '12px', color: '#ccc', fontWeight: 600 }}>Shadow</div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                     <ColorSlider
-                        valueHex={selectedShape.shadowColor || '#1c1c1c'}
+                        valueHex={shapeShadowColor}
                         onChangeHex={onChangeShadowColor}
                         allowHexEdit={true}
                         label="Color"
@@ -147,13 +166,34 @@ const ShapeSelectionPanel: React.FC<ShapeSelectionPanelProps> = ({
                 </div>
             </div>
 
+            {/* Border Radius (only for rectangles) */}
+            {isRectangle && onChangeBorderRadius && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
+                    <div style={{ fontSize: '12px', color: '#ccc', fontWeight: 600, minWidth: '70px' }}>Radius</div>
+                    <input
+                        type="range"
+                        min={0}
+                        max={100}
+                        step={1}
+                        value={borderRadius}
+                        onChange={(e) => {
+                            const v = Number(e.target.value)
+                            setBorderRadius(v)
+                            onChangeBorderRadius(v)
+                        }}
+                        style={{ width: '160px' }}
+                    />
+                    <div style={{ fontFamily: 'monospace', fontSize: '12px', color: '#ddd', width: '36px', textAlign: 'right' }}>{borderRadius}</div>
+                </div>
+            )}
+
             {/* Font controls (only for text) */}
             {isText && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                         <div style={{ fontSize: '12px', color: '#ccc', fontWeight: 600, minWidth: '70px' }}>Font</div>
                         <select
-                            value={selectedShape.fontFamily ?? 'Inter'}
+                            value={shapeFontFamily}
                             onChange={(e) => onChangeFontFamily(e.target.value)}
                             style={{
                                 backgroundColor: '#333',
@@ -178,7 +218,7 @@ const ShapeSelectionPanel: React.FC<ShapeSelectionPanelProps> = ({
                     <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                         <div style={{ fontSize: '12px', color: '#ccc', fontWeight: 600, minWidth: '70px' }}>Weight</div>
                         <select
-                            value={selectedShape.fontWeight ?? 'normal'}
+                            value={shapeFontWeight}
                             onChange={(e) => onChangeFontWeight(e.target.value)}
                             style={{
                                 backgroundColor: '#333',
@@ -209,7 +249,21 @@ const ShapeSelectionPanel: React.FC<ShapeSelectionPanelProps> = ({
     )
 }
 
-// Memoize to prevent unnecessary re-renders
-export default memo(ShapeSelectionPanel)
+// Memoize to prevent unnecessary re-renders - compare props carefully
+export default memo(ShapeSelectionPanel, (prevProps, nextProps) => {
+    // Only re-render if the selected shape's relevant properties changed
+    return (
+        prevProps.selectedShape.id === nextProps.selectedShape.id &&
+        prevProps.selectedShape.type === nextProps.selectedShape.type &&
+        prevProps.selectedShape.color === nextProps.selectedShape.color &&
+        prevProps.selectedShape.rotation === nextProps.selectedShape.rotation &&
+        prevProps.selectedShape.opacity === nextProps.selectedShape.opacity &&
+        prevProps.selectedShape.shadowColor === nextProps.selectedShape.shadowColor &&
+        prevProps.selectedShape.shadowStrength === nextProps.selectedShape.shadowStrength &&
+        prevProps.selectedShape.borderRadius === nextProps.selectedShape.borderRadius &&
+        prevProps.selectedShape.fontFamily === nextProps.selectedShape.fontFamily &&
+        prevProps.selectedShape.fontWeight === nextProps.selectedShape.fontWeight
+    )
+})
 
 

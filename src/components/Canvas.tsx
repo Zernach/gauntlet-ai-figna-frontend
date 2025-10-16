@@ -160,6 +160,7 @@ export default function Canvas({ onToolsReady, onViewportCenterChange, onCanvasS
 
   // Undo/Redo state (via useCanvasHistory hook)
   const undoRedoPanelCleanupRef = useRef<(() => void) | null>(null)
+  const shapeSelectionPanelCleanupRef = useRef<(() => void) | null>(null)
   const {
     undoCount,
     redoCount,
@@ -681,6 +682,7 @@ export default function Canvas({ onToolsReady, onViewportCenterChange, onCanvasS
     handleCommitRotation,
     handleChangeShadowColor,
     handleChangeShadowStrength,
+    handleChangeBorderRadius,
     handleChangeFontFamily,
     handleChangeFontWeight,
   } = useShapePropertyHandlers({
@@ -853,6 +855,38 @@ export default function Canvas({ onToolsReady, onViewportCenterChange, onCanvasS
 
   const selectedShape = useMemo(() => selectedIds.length === 1 ? shapes.find(s => s.id === selectedIds[0]) || null : null, [shapes, selectedIds])
 
+  // Calculate Shape Selection Panel position with fallback
+  const [shapeSelectionPanelTop, setShapeSelectionPanelTop] = useState<number | null>(null)
+
+  // Trigger position recalculation when undo-redo panel appears/disappears
+  useEffect(() => {
+    if (selectedShape) {
+      // Delay to ensure DOM has updated
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          const container = containerRef.current
+          if (!container) return
+
+          const cRect = container.getBoundingClientRect()
+          const undoRedoPanel = document.getElementById('undo-redo-panel')
+          const presencePanel = document.getElementById('presence-panel')
+
+          let top = 20 // Default fallback: 20px from top
+
+          if (undoRedoPanel) {
+            const urRect = undoRedoPanel.getBoundingClientRect()
+            top = Math.max(0, Math.round(urRect.bottom - cRect.top + 20))
+          } else if (presencePanel) {
+            const pRect = presencePanel.getBoundingClientRect()
+            top = Math.max(0, Math.round(pRect.bottom - cRect.top + 20))
+          }
+
+          setShapeSelectionPanelTop(top)
+        })
+      })
+    }
+  }, [hasUserActed, selectedShape])
+
   const isLoading = !currentUserId || !canvasId || !wsRef.current
 
   return (
@@ -899,6 +933,7 @@ export default function Canvas({ onToolsReady, onViewportCenterChange, onCanvasS
       {/* Undo/Redo Panel - rendered 20px below Status Panel */}
       {hasUserActed && (
         <div
+          id="undo-redo-panel"
           style={{
             position: 'absolute',
             right: '20px',
@@ -1039,18 +1074,86 @@ export default function Canvas({ onToolsReady, onViewportCenterChange, onCanvasS
         />
       )}
 
-      {/* Shape Selection Panel (lower-right) */}
+      {/* Shape Selection Panel - positioned below Undo/Redo Panel or Presence Panel */}
       {selectedShape && (
-        <ShapeSelectionPanel
-          selectedShape={selectedShape as any}
-          onChangeColor={handleChangeColor}
-          onChangeOpacity={handleChangeOpacity}
-          onCommitRotation={handleCommitRotation}
-          onChangeShadowColor={handleChangeShadowColor}
-          onChangeShadowStrength={handleChangeShadowStrength}
-          onChangeFontFamily={handleChangeFontFamily}
-          onChangeFontWeight={handleChangeFontWeight}
-        />
+        <div
+          style={{
+            position: 'absolute',
+            right: '20px',
+            zIndex: 9,
+            top: shapeSelectionPanelTop !== null ? `${shapeSelectionPanelTop}px` : 'auto',
+          }}
+          ref={(el) => {
+            // Run cleanup if element is being removed or replaced
+            if (!el) {
+              if (shapeSelectionPanelCleanupRef.current) {
+                shapeSelectionPanelCleanupRef.current()
+                shapeSelectionPanelCleanupRef.current = null
+              }
+              return
+            }
+
+            // Cleanup any existing observers/listeners
+            if (shapeSelectionPanelCleanupRef.current) {
+              shapeSelectionPanelCleanupRef.current()
+            }
+
+            const container = containerRef.current
+            if (!container) return
+
+            const update = () => {
+              const cRect = container.getBoundingClientRect()
+              const undoRedoPanel = document.getElementById('undo-redo-panel')
+              const presencePanel = document.getElementById('presence-panel')
+
+              let top = 20 // Default fallback: 20px from top
+
+              if (undoRedoPanel) {
+                // Position below undo-redo panel if it exists
+                const urRect = undoRedoPanel.getBoundingClientRect()
+                top = Math.max(0, Math.round(urRect.bottom - cRect.top + 20))
+              } else if (presencePanel) {
+                // Position below presence panel if undo-redo doesn't exist
+                const pRect = presencePanel.getBoundingClientRect()
+                top = Math.max(0, Math.round(pRect.bottom - cRect.top + 20))
+              }
+
+              setShapeSelectionPanelTop(top)
+            }
+
+            // Initial update with a slight delay to ensure DOM is ready
+            requestAnimationFrame(() => {
+              requestAnimationFrame(update)
+            })
+
+            const ro = new ResizeObserver(update)
+            const undoRedoPanel = document.getElementById('undo-redo-panel')
+            const presencePanel = document.getElementById('presence-panel')
+
+            if (undoRedoPanel) ro.observe(undoRedoPanel)
+            if (presencePanel) ro.observe(presencePanel)
+
+            window.addEventListener('resize', update)
+
+            // Store cleanup function in ref
+            shapeSelectionPanelCleanupRef.current = () => {
+              ro.disconnect()
+              window.removeEventListener('resize', update)
+            }
+          }}
+        >
+          <ShapeSelectionPanel
+            selectedShape={selectedShape as any}
+            onChangeColor={handleChangeColor}
+            onChangeOpacity={handleChangeOpacity}
+            onCommitRotation={handleCommitRotation}
+            onChangeShadowColor={handleChangeShadowColor}
+            onChangeShadowStrength={handleChangeShadowStrength}
+            onChangeBorderRadius={handleChangeBorderRadius}
+            onChangeFontFamily={handleChangeFontFamily}
+            onChangeFontWeight={handleChangeFontWeight}
+          />
+        </div>
       )}
       {/* Color Tooltip removed in favor of ShapeSelectionPanel */}
 
@@ -1069,7 +1172,7 @@ export default function Canvas({ onToolsReady, onViewportCenterChange, onCanvasS
         }}
       />
 
-      {/* Minimap (lower-left) */}
+      {/* Minimap (lower-right) */}
       <Minimap
         shapes={shapes}
         canvasWidth={CANVAS_WIDTH}

@@ -22,7 +22,7 @@ export function useShapePropertyHandlers({
   recordPropChange,
   sendMessage,
 }: UseShapePropertyHandlersProps) {
-  
+
   const handleChangeColor = useCallback((hex: string) => {
     const selectedId = selectedIds[0]
     if (!selectedId || !wsRef.current) return
@@ -118,12 +118,26 @@ export function useShapePropertyHandlers({
     })
   }, [selectedIds, recordPropChange, sendMessage, setShapes, wsRef])
 
+  const handleChangeBorderRadius = useCallback((borderRadius: number) => {
+    const selectedId = selectedIds[0]
+    if (!selectedId || !wsRef.current) return
+    const v = Math.max(0, Math.min(100, Math.round(borderRadius)))
+    console.log('🔴 Frontend sending border radius update:', { shapeId: selectedId, borderRadius: v })
+    setShapes(prev => prev.map(s => s.id === selectedId ? { ...s, borderRadius: v } : s))
+    recordPropChange(selectedId, 'borderRadius', v)
+    sendMessage({
+      type: 'SHAPE_UPDATE',
+      payload: { shapeId: selectedId, updates: { borderRadius: v } },
+    })
+  }, [selectedIds, recordPropChange, sendMessage, setShapes, wsRef])
+
   return {
     handleChangeColor,
     handleChangeOpacity,
     handleCommitRotation,
     handleChangeShadowColor,
     handleChangeShadowStrength,
+    handleChangeBorderRadius,
     handleChangeFontFamily,
     handleChangeFontWeight,
   }

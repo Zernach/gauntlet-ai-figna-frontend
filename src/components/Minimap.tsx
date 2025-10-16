@@ -117,7 +117,7 @@ function Minimap({
         <div
             style={{
                 position: 'absolute',
-                left: `${MINIMAP_PADDING}px`,
+                right: `${MINIMAP_PADDING}px`,
                 bottom: `${MINIMAP_PADDING}px`,
                 zIndex: 10,
                 backgroundColor: '#1a1a1a',
