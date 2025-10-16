@@ -12,6 +12,7 @@ import ReconnectionOverlay from './ReconnectionOverlay'
 import PresencePanel from './PresencePanel'
 import CanvasBackgroundPanel from './CanvasBackgroundPanel'
 import CanvasLayers from './CanvasLayers'
+import Minimap from './Minimap'
 
 // Import types and constants
 import type { Shape, Cursor, ActiveUser } from '../types/canvas'
@@ -23,11 +24,16 @@ import {
   USER_COLORS
 } from '../types/canvas'
 
+// Import custom hooks
+import { useArrowKeyNavigation } from '../hooks/useArrowKeyNavigation'
+
 interface CanvasProps {
   onToolsReady?: (tools: any) => void
+  onViewportCenterChange?: (center: { x: number; y: number }) => void
+  onCanvasStateChange?: (shapes: Shape[]) => void
 }
 
-export default function Canvas({ onToolsReady }: CanvasProps = {}) {
+export default function Canvas({ onToolsReady, onViewportCenterChange, onCanvasStateChange }: CanvasProps = {}) {
   const stageRef = useRef<Konva.Stage>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const [shapes, setShapes] = useState<Shape[]>([])
@@ -59,7 +65,7 @@ export default function Canvas({ onToolsReady }: CanvasProps = {}) {
   const [lassoEnd, setLassoEnd] = useState<{ x: number; y: number } | null>(null)
 
   // Context menu state
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; shapeId: string } | null>(null)
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; mode: 'shape' | 'canvas'; shapeId?: string } | null>(null)
   const contextMenuShapeIdRef = useRef<string | null>(null)
 
   // Clipboard state
@@ -104,6 +110,10 @@ export default function Canvas({ onToolsReady }: CanvasProps = {}) {
   const dragRafRef = useRef<number | null>(null)
   const pendingDragUpdatesRef = useRef<Map<string, { x: number; y: number }>>(new Map())
   const dragFrameScheduledRef = useRef<boolean>(false)
+  // Tool function refs - keep stable references for agentic tool calling
+  const createShapesRef = useRef<((shapesData: any[]) => void) | null>(null)
+  const handleDeleteShapeRef = useRef<((shapeIds?: string[]) => void) | null>(null)
+  const unlockShapeRef = useRef<((shapeId: string) => void) | null>(null)
   // Track recently dragged shapes to prevent animation on position updates
   const recentlyDraggedRef = useRef<Map<string, { x: number; y: number; timestamp: number }>>(new Map())
 
@@ -130,7 +140,8 @@ export default function Canvas({ onToolsReady }: CanvasProps = {}) {
   const sendMessage = useCallback((msg: WSMessage) => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
       // Queue operation if disconnected
-      operationQueueRef.current.push({ ...msg, timestamp: Date.now() })
+      console.warn('⚠️ [Canvas] WebSocket not open, queuing message:', msg);
+      operationQueueRef.current.push(msg as any)
       return
     }
     wsRef.current.send(JSON.stringify(msg))
@@ -346,6 +357,42 @@ export default function Canvas({ onToolsReady }: CanvasProps = {}) {
     zoomAnimRafRef.current = requestAnimationFrame(step)
   }, [cancelZoomAnimation, computeAnchoredPosition, easeInOutCubic, stagePos, stageScale])
 
+  // Handle moving shapes with arrow keys
+  const handleMoveShapesWithKeys = useCallback((shapeIds: string[], deltaX: number, deltaY: number) => {
+    if (!wsRef.current) return
+
+    shapeIds.forEach(shapeId => {
+      const shape = shapesRef.current.find(s => s.id === shapeId)
+      if (!shape) return
+
+      const newX = shape.x + deltaX
+      const newY = shape.y + deltaY
+
+      // Update local state optimistically
+      setShapes(prev => prev.map(s =>
+        s.id === shapeId ? { ...s, x: newX, y: newY } : s
+      ))
+
+      // Send update to server
+      sendMessage({
+        type: 'SHAPE_UPDATE',
+        payload: {
+          shapeId,
+          updates: { x: newX, y: newY }
+        }
+      })
+    })
+  }, [sendMessage])
+
+  // Arrow key navigation for selected shapes
+  useArrowKeyNavigation({
+    selectedIds,
+    shapes,
+    onMoveShapes: handleMoveShapesWithKeys,
+    pushHistory,
+    enabled: connectionState === 'connected',
+  })
+
   // Keep stage position ref in sync for continuous zoom calculations
   useEffect(() => {
     stagePosRef.current = stagePos
@@ -424,6 +471,15 @@ export default function Canvas({ onToolsReady }: CanvasProps = {}) {
     window.addEventListener('resize', handleResize)
     return () => window.removeEventListener('resize', handleResize)
   }, [stageScale, stagePos, clampStagePosition])
+
+  // Track viewport center changes and notify callback
+  useEffect(() => {
+    if (onViewportCenterChange) {
+      const centerX = -stagePos.x / stageScale + (viewportWidth / 2) / stageScale
+      const centerY = -stagePos.y / stageScale + (viewportHeight / 2) / stageScale
+      onViewportCenterChange({ x: centerX, y: centerY })
+    }
+  }, [stagePos, stageScale, viewportWidth, viewportHeight, onViewportCenterChange])
 
   // Cleanup continuous zoom on unmount
   useEffect(() => {
@@ -684,11 +740,15 @@ export default function Canvas({ onToolsReady }: CanvasProps = {}) {
     }
 
     ws.onmessage = (event) => {
-      const message = JSON.parse(event.data)
-      handleWebSocketMessage(message)
+      try {
+        const message = JSON.parse(event.data)
+        handleWebSocketMessage(message)
+      } catch (error) {
+        console.error('❌ [Canvas] Error parsing WebSocket message:', error, event.data);
+      }
     }
 
-    ws.onerror = (error) => {
+    ws.onerror = () => {
       setConnectionState('disconnected')
     }
 
@@ -933,44 +993,85 @@ export default function Canvas({ onToolsReady }: CanvasProps = {}) {
     }
   }, [])
 
-  // Handle shape creation (generic version for voice and UI)
-  const createShape = useCallback((shapeData: any) => {
+  // Handle shape creation (generic version for voice and UI) - now supports arrays
+  const createShapes = useCallback((shapesData: any[]) => {
+    console.log('🎨 [Canvas] createShapes called with:', shapesData.length, 'shape(s)');
+
     if (!wsRef.current || !canvasId || !currentUserId) {
+      console.error('❌ [Canvas] Cannot create shapes - missing requirements:', {
+        hasWs: !!wsRef.current,
+        canvasId,
+        currentUserId
+      });
       return
     }
 
-    // Ensure coordinates are within canvas boundaries
-    let x = shapeData.x !== undefined ? shapeData.x : -stagePos.x / stageScale + (viewportWidth / 2) / stageScale
-    let y = shapeData.y !== undefined ? shapeData.y : -stagePos.y / stageScale + (viewportHeight / 2) / stageScale
+    console.log('✅ [Canvas] Prerequisites met, processing shapes data');
 
-    // Clamp to canvas
-    if (shapeData.type === 'circle') {
-      const radius = shapeData.radius || DEFAULT_SHAPE_SIZE / 2
-      x = Math.max(radius, Math.min(x, CANVAS_WIDTH - radius))
-      y = Math.max(radius, Math.min(y, CANVAS_HEIGHT - radius))
-    } else if (shapeData.type === 'text') {
-      x = Math.max(0, Math.min(x, CANVAS_WIDTH))
-      y = Math.max(0, Math.min(y, CANVAS_HEIGHT))
-    } else {
-      const width = shapeData.width || DEFAULT_SHAPE_SIZE
-      const height = shapeData.height || DEFAULT_SHAPE_SIZE
-      x = Math.max(0, Math.min(x, CANVAS_WIDTH - width))
-      y = Math.max(0, Math.min(y, CANVAS_HEIGHT - height))
-    }
+    // Process each shape in the array
+    shapesData.forEach((shapeData, index) => {
+      console.log(`🎨 [Canvas] Processing shape ${index + 1}/${shapesData.length}:`, shapeData);
 
-    const finalShapeData = {
-      ...shapeData,
-      x,
-      y,
-    }
+      // Ensure coordinates are within canvas boundaries
+      let x = shapeData.x !== undefined ? shapeData.x : -stagePos.x / stageScale + (viewportWidth / 2) / stageScale
+      let y = shapeData.y !== undefined ? shapeData.y : -stagePos.y / stageScale + (viewportHeight / 2) / stageScale
 
-    wsRef.current.send(JSON.stringify({
-      type: 'SHAPE_CREATE',
-      payload: finalShapeData,
-    }))
+      console.log('📍 [Canvas] Coordinates for shape', index + 1, ':', { x, y });
 
-    showToast(`${shapeData.type} created!`, 'success', 2000)
-  }, [stagePos, stageScale, canvasId, currentUserId, showToast, viewportWidth, viewportHeight])
+      // Set default values based on shape type
+      const defaults: any = {}
+
+      if (shapeData.type === 'circle') {
+        const radius = shapeData.radius || DEFAULT_SHAPE_SIZE / 2
+        defaults.radius = radius
+        defaults.color = shapeData.color || '#72fa41'
+        x = Math.max(radius, Math.min(x, CANVAS_WIDTH - radius))
+        y = Math.max(radius, Math.min(y, CANVAS_HEIGHT - radius))
+      } else if (shapeData.type === 'text') {
+        defaults.textContent = shapeData.textContent || 'Text'
+        defaults.fontSize = shapeData.fontSize || 24
+        defaults.fontFamily = shapeData.fontFamily || 'Inter'
+        defaults.fontWeight = shapeData.fontWeight || 'normal'
+        defaults.textAlign = shapeData.textAlign || 'left'
+        defaults.color = shapeData.color || '#ffffff'
+        x = Math.max(0, Math.min(x, CANVAS_WIDTH))
+        y = Math.max(0, Math.min(y, CANVAS_HEIGHT))
+      } else if (shapeData.type === 'rectangle') {
+        const width = shapeData.width || DEFAULT_SHAPE_SIZE
+        const height = shapeData.height || DEFAULT_SHAPE_SIZE
+        defaults.width = width
+        defaults.height = height
+        defaults.color = shapeData.color || '#72fa41'
+        x = Math.max(0, Math.min(x, CANVAS_WIDTH - width))
+        y = Math.max(0, Math.min(y, CANVAS_HEIGHT - height))
+      }
+
+      // Set common defaults
+      if (shapeData.opacity === undefined) defaults.opacity = 1
+      if (shapeData.rotation === undefined) defaults.rotation = 0
+
+      console.log(`📍 [Canvas] Clamped coordinates for shape ${index + 1}:`, { x, y });
+      console.log(`🎨 [Canvas] Applied defaults for shape ${index + 1}:`, defaults);
+
+      const finalShapeData = {
+        type: shapeData.type,
+        ...defaults,
+        ...shapeData,
+        x,
+        y,
+      }
+
+      console.log(`📦 [Canvas] Final shape data for shape ${index + 1}:`, finalShapeData);
+
+      sendMessage({
+        type: 'SHAPE_CREATE',
+        payload: finalShapeData,
+      })
+    })
+
+    showToast(`${shapesData.length} shape(s) created!`, 'success', 2000)
+    console.log(`✅ [Canvas] All ${shapesData.length} shape creation message(s) sent`);
+  }, [stagePos, stageScale, canvasId, currentUserId, showToast, viewportWidth, viewportHeight, sendMessage])
 
 
   // Handle shape creation from UI (rectangle button)
@@ -979,36 +1080,36 @@ export default function Canvas({ onToolsReady }: CanvasProps = {}) {
     const centerX = -stagePos.x / stageScale + (viewportWidth / 2) / stageScale
     const centerY = -stagePos.y / stageScale + (viewportHeight / 2) / stageScale
 
-    createShape({
+    createShapes([{
       type: 'rectangle',
       x: centerX - DEFAULT_SHAPE_SIZE / 2,
       y: centerY - DEFAULT_SHAPE_SIZE / 2,
       width: DEFAULT_SHAPE_SIZE,
       height: DEFAULT_SHAPE_SIZE,
       color: SHAPE_COLOR,
-    })
-  }, [stagePos, stageScale, createShape, viewportWidth, viewportHeight])
+    }])
+  }, [stagePos, stageScale, createShapes, viewportWidth, viewportHeight])
 
   // Handle circle creation from UI
   const handleAddCircle = useCallback(() => {
     const centerX = -stagePos.x / stageScale + (viewportWidth / 2) / stageScale
     const centerY = -stagePos.y / stageScale + (viewportHeight / 2) / stageScale
 
-    createShape({
+    createShapes([{
       type: 'circle',
       x: centerX,
       y: centerY,
       radius: DEFAULT_SHAPE_SIZE / 2,
       color: SHAPE_COLOR,
-    })
-  }, [stagePos, stageScale, createShape, viewportWidth, viewportHeight])
+    }])
+  }, [stagePos, stageScale, createShapes, viewportWidth, viewportHeight])
 
   // Handle text creation from UI
   const handleAddText = useCallback(() => {
     const centerX = -stagePos.x / stageScale + (viewportWidth / 2) / stageScale
     const centerY = -stagePos.y / stageScale + (viewportHeight / 2) / stageScale
 
-    createShape({
+    createShapes([{
       type: 'text',
       x: centerX,
       y: centerY,
@@ -1018,8 +1119,8 @@ export default function Canvas({ onToolsReady }: CanvasProps = {}) {
       fontFamily: 'Inter',
       fontWeight: 'normal',
       textAlign: 'left',
-    })
-  }, [stagePos, stageScale, createShape, viewportWidth, viewportHeight])
+    }])
+  }, [stagePos, stageScale, createShapes, viewportWidth, viewportHeight])
 
   // Handle text edit on double click
   const handleTextDoubleClick = useCallback((id: string) => {
@@ -1044,30 +1145,37 @@ export default function Canvas({ onToolsReady }: CanvasProps = {}) {
           label: 'Edit text',
         })
       }
-      wsRef.current.send(JSON.stringify({
+      sendMessage({
         type: 'SHAPE_UPDATE',
         payload: {
           shapeId: id,
           updates: { textContent: newText },
         },
-      }))
+      })
     }
   }, [])
 
   // Helper function to unlock a shape
   const unlockShape = useCallback((shapeId: string) => {
-    if (wsRef.current) {
-      wsRef.current.send(JSON.stringify({
-        type: 'SHAPE_UPDATE',
-        payload: {
-          shapeId,
-          updates: {
-            isLocked: false,
-          },
+    sendMessage({
+      type: 'SHAPE_UPDATE',
+      payload: {
+        shapeId,
+        updates: {
+          isLocked: false,
         },
-      }))
-    }
-  }, [])
+      },
+    })
+  }, [sendMessage])
+
+  // Keep tool function refs in sync with latest function versions
+  useEffect(() => {
+    createShapesRef.current = createShapes
+  }, [createShapes])
+
+  useEffect(() => {
+    unlockShapeRef.current = unlockShape
+  }, [unlockShape])
 
   // Handle shape selection
   const handleShapeClick = useCallback((id: string, event?: any) => {
@@ -1103,15 +1211,13 @@ export default function Canvas({ onToolsReady }: CanvasProps = {}) {
       } else {
         // Add to selection and lock
         setSelectedIds(prev => [...prev, id])
-        if (wsRef.current) {
-          wsRef.current.send(JSON.stringify({
-            type: 'SHAPE_UPDATE',
-            payload: {
-              shapeId: id,
-              updates: { isLocked: true },
-            },
-          }))
-        }
+        sendMessage({
+          type: 'SHAPE_UPDATE',
+          payload: {
+            shapeId: id,
+            updates: { isLocked: true },
+          },
+        })
       }
     } else {
       // Single selection - unlock all previously selected shapes
@@ -1125,15 +1231,13 @@ export default function Canvas({ onToolsReady }: CanvasProps = {}) {
       setSelectedIds([id])
 
       // Send lock message to server to notify other users
-      if (wsRef.current) {
-        wsRef.current.send(JSON.stringify({
-          type: 'SHAPE_UPDATE',
-          payload: {
-            shapeId: id,
-            updates: { isLocked: true },
-          },
-        }))
-      }
+      sendMessage({
+        type: 'SHAPE_UPDATE',
+        payload: {
+          shapeId: id,
+          updates: { isLocked: true },
+        },
+      })
     }
   }, [unlockShape, activeUsers, showToast])
 
@@ -1191,10 +1295,23 @@ export default function Canvas({ onToolsReady }: CanvasProps = {}) {
     rotationFrameScheduledRef.current = false
     const pending = pendingRotationUpdatesRef.current
     if (pending.size === 0) return
-    setShapes(prev => prev.map(s => {
-      const angle = pending.get(s.id)
-      return angle !== undefined ? { ...s, rotation: angle } : s
-    }))
+
+    // Only update the rotating shape to minimize re-renders
+    const rotatingId = rotatingShapeIdRef.current
+    if (!rotatingId) {
+      pending.clear()
+      return
+    }
+
+    const angle = pending.get(rotatingId)
+    if (angle === undefined) {
+      pending.clear()
+      return
+    }
+
+    setShapes(prev => prev.map(s =>
+      s.id === rotatingId ? { ...s, rotation: angle } : s
+    ))
     pending.clear()
   }, [])
 
@@ -1333,10 +1450,10 @@ export default function Canvas({ onToolsReady }: CanvasProps = {}) {
 
       // Throttle WebSocket updates to reduce network traffic (every 33ms for sub-100ms target)
       const now = Date.now()
-      if (wsRef.current && now - dragThrottleRef.current > 33) {
+      if (now - dragThrottleRef.current > 33) {
         dragThrottleRef.current = now
 
-        wsRef.current.send(JSON.stringify({
+        sendMessage({
           type: 'SHAPE_UPDATE',
           payload: {
             shapeId: id,
@@ -1345,8 +1462,7 @@ export default function Canvas({ onToolsReady }: CanvasProps = {}) {
               y: constrainedY,
             },
           },
-          timestamp: now,
-        }))
+        } as any)
       }
     }
   }, [])
@@ -1448,7 +1564,7 @@ export default function Canvas({ onToolsReady }: CanvasProps = {}) {
           timestamp: Date.now(),
         })
 
-        wsRef.current.send(JSON.stringify({
+        sendMessage({
           type: 'SHAPE_UPDATE',
           payload: {
             shapeId: id,
@@ -1457,7 +1573,7 @@ export default function Canvas({ onToolsReady }: CanvasProps = {}) {
               y: finalPos.y,
             },
           },
-        }))
+        })
         const base = dragBaselineRef.current.get(id)
         if (base && (base.x !== finalPos.x || base.y !== finalPos.y)) {
           pushHistory({
@@ -1513,14 +1629,14 @@ export default function Canvas({ onToolsReady }: CanvasProps = {}) {
         resizeBaselineRef.current.set(id, { x: s.x, y: s.y, width: s.width, height: s.height })
       }
     }
-    wsRef.current.send(JSON.stringify({
+    sendMessage({
       type: 'SHAPE_UPDATE',
       payload: {
         shapeId: id,
         updates: { isLocked: true },
       },
-    }))
-  }, [])
+    })
+  }, [sendMessage])
 
   const handleResizeMove = useCallback((id: string, updates: { x?: number; y?: number; width?: number; height?: number; radius?: number; fontSize?: number }) => {
     const shape = shapesRef.current.find(s => s.id === id)
@@ -1541,12 +1657,12 @@ export default function Canvas({ onToolsReady }: CanvasProps = {}) {
       setShapes(prev => prev.map(s => s.id === id ? { ...s, radius: newRadius } : s))
 
       const now = Date.now()
-      if (wsRef.current && now - resizeThrottleRef.current > 50) {
+      if (now - resizeThrottleRef.current > 50) {
         resizeThrottleRef.current = now
-        wsRef.current.send(JSON.stringify({
+        sendMessage({
           type: 'SHAPE_UPDATE',
           payload: { shapeId: id, updates: { radius: newRadius } },
-        }))
+        })
       }
       return
     }
@@ -1558,12 +1674,12 @@ export default function Canvas({ onToolsReady }: CanvasProps = {}) {
       setShapes(prev => prev.map(s => s.id === id ? { ...s, fontSize: newFontSize } : s))
 
       const now = Date.now()
-      if (wsRef.current && now - resizeThrottleRef.current > 50) {
+      if (now - resizeThrottleRef.current > 50) {
         resizeThrottleRef.current = now
-        wsRef.current.send(JSON.stringify({
+        sendMessage({
           type: 'SHAPE_UPDATE',
           payload: { shapeId: id, updates: { fontSize: newFontSize } },
-        }))
+        })
       }
       return
     }
@@ -1590,14 +1706,14 @@ export default function Canvas({ onToolsReady }: CanvasProps = {}) {
     setShapes(prev => prev.map(s => s.id === id ? { ...s, x: newX, y: newY, width: newW, height: newH } : s))
 
     const now = Date.now()
-    if (wsRef.current && now - resizeThrottleRef.current > 50) {
+    if (now - resizeThrottleRef.current > 50) {
       resizeThrottleRef.current = now
-      wsRef.current.send(JSON.stringify({
+      sendMessage({
         type: 'SHAPE_UPDATE',
         payload: { shapeId: id, updates: { x: newX, y: newY, width: newW, height: newH } },
-      }))
+      })
     }
-  }, [])
+  }, [sendMessage])
 
   const handleResizeEnd = useCallback((id: string) => {
     if (!wsRef.current) return
@@ -1616,7 +1732,7 @@ export default function Canvas({ onToolsReady }: CanvasProps = {}) {
         updates.width = s.width
         updates.height = s.height
       }
-      wsRef.current.send(JSON.stringify({ type: 'SHAPE_UPDATE', payload: { shapeId: id, updates } }))
+      sendMessage({ type: 'SHAPE_UPDATE', payload: { shapeId: id, updates } })
       const base = resizeBaselineRef.current.get(id)
       if (base) {
         let before: any = {}
@@ -1667,16 +1783,13 @@ export default function Canvas({ onToolsReady }: CanvasProps = {}) {
     if (s) {
       rotateBaselineRef.current.set(id, s.rotation ?? 0)
     }
-    wsRef.current.send(JSON.stringify({
+    sendMessage({
       type: 'SHAPE_UPDATE',
       payload: { shapeId: id, updates: { isLocked: true } },
-    }))
-  }, [])
+    })
+  }, [sendMessage, unlockShape])
 
   const handleRotateMove = useCallback((id: string, rotation: number) => {
-    const shape = shapesRef.current.find(s => s.id === id)
-    if (!shape) return
-
     // Queue local rotation update; flush at most once per frame
     pendingRotationUpdatesRef.current.set(id, rotation)
     if (!rotationFrameScheduledRef.current) {
@@ -1684,28 +1797,26 @@ export default function Canvas({ onToolsReady }: CanvasProps = {}) {
       rotationRafRef.current = requestAnimationFrame(flushPendingRotationUpdates)
     }
 
-    // Throttle WebSocket rotation updates (~20fps)
+    // Throttle WebSocket rotation updates to 30fps (33ms) to reduce network overhead
     const now = Date.now()
-    if (now - rotationThrottleRef.current < 50) return
+    if (now - rotationThrottleRef.current < 33) return
     rotationThrottleRef.current = now
 
-    if (wsRef.current) {
-      wsRef.current.send(JSON.stringify({
-        type: 'SHAPE_UPDATE',
-        payload: { shapeId: id, updates: { rotation } },
-      }))
-    }
-  }, [])
+    sendMessage({
+      type: 'SHAPE_UPDATE',
+      payload: { shapeId: id, updates: { rotation } },
+    })
+  }, [flushPendingRotationUpdates, sendMessage])
 
   const handleRotateEnd = useCallback((id: string) => {
     if (!wsRef.current) return
     // Send final rotation
     const s = shapesRef.current.find(sh => sh.id === id)
     if (s) {
-      wsRef.current.send(JSON.stringify({
+      sendMessage({
         type: 'SHAPE_UPDATE',
         payload: { shapeId: id, updates: { rotation: s.rotation } },
-      }))
+      })
       const base = rotateBaselineRef.current.get(id) ?? 0
       const finalRot = s.rotation ?? 0
       if (base !== finalRot) {
@@ -1734,15 +1845,33 @@ export default function Canvas({ onToolsReady }: CanvasProps = {}) {
 
   // Handle shape deletion
   const handleDeleteShape = useCallback((shapeIds?: string[]) => {
-    if (!wsRef.current) return
+    console.log('🗑️ [handleDeleteShape] Called with shapeIds:', shapeIds)
+    console.log('🗑️ [handleDeleteShape] wsRef.current:', !!wsRef.current)
+    console.log('🗑️ [handleDeleteShape] shapesRef.current length:', shapesRef.current.length)
+    console.log('🗑️ [handleDeleteShape] All shape IDs:', shapesRef.current.map(s => s.id))
+
+    if (!wsRef.current) {
+      console.error('❌ [handleDeleteShape] WebSocket not available')
+      return
+    }
 
     // Use passed shapeIds or fall back to selectedIds
     const idsToDelete = shapeIds || selectedIdsRef.current
-    if (idsToDelete.length === 0) return
+    console.log('🗑️ [handleDeleteShape] IDs to delete:', idsToDelete)
+
+    if (idsToDelete.length === 0) {
+      console.warn('⚠️ [handleDeleteShape] No IDs to delete')
+      return
+    }
 
     const deletableShapes = idsToDelete.map(id => {
       const shape = shapesRef.current.find(s => s.id === id)
-      if (!shape) return null
+      console.log(`🗑️ [handleDeleteShape] Looking for shape ${id}:`, shape ? 'FOUND' : 'NOT FOUND')
+
+      if (!shape) {
+        console.warn(`⚠️ [handleDeleteShape] Shape not found: ${id}`)
+        return null
+      }
 
       if (shape.locked_at && shape.locked_by !== currentUserIdRef.current) {
         // Check if lock is still valid
@@ -1750,13 +1879,19 @@ export default function Canvas({ onToolsReady }: CanvasProps = {}) {
         const elapsed = (Date.now() - lockTime) / 1000
         if (elapsed < 10) {
           // Cannot delete locked shapes
+          console.warn(`⚠️ [handleDeleteShape] Shape is locked: ${id}`)
           return null
         }
       }
       return shape
     }).filter(Boolean) as Shape[]
 
-    if (deletableShapes.length === 0) return
+    console.log('🗑️ [handleDeleteShape] Deletable shapes count:', deletableShapes.length)
+
+    if (deletableShapes.length === 0) {
+      console.warn('⚠️ [handleDeleteShape] No deletable shapes after filtering')
+      return
+    }
 
     // Create undo/redo history
     if (deletableShapes.length === 1) {
@@ -1775,29 +1910,49 @@ export default function Canvas({ onToolsReady }: CanvasProps = {}) {
     }
 
     // Send delete messages
+    console.log('🗑️ [handleDeleteShape] Sending delete messages for:', deletableShapes.map(s => s.id))
     deletableShapes.forEach(shape => {
-      wsRef.current!.send(JSON.stringify({
+      console.log(`📤 [handleDeleteShape] Sending SHAPE_DELETE for ${shape.id}`)
+      sendMessage({
         type: 'SHAPE_DELETE',
         payload: { shapeId: shape.id },
-      }))
+      })
     })
 
     setSelectedIds([])
-  }, [pushHistory])
+    console.log('✅ [handleDeleteShape] Delete operation completed')
+  }, [pushHistory, sendMessage])
+
+  // Keep handleDeleteShape ref in sync
+  useEffect(() => {
+    handleDeleteShapeRef.current = handleDeleteShape
+  }, [handleDeleteShape])
 
   // Provide tool implementations to voice agent
   useEffect(() => {
     if (onToolsReady && currentUserId && canvasId) {
       const tools = {
-        createShape: (params: any) => {
+        createShapes: (params: any) => {
+          console.log('🎯 [Canvas Tool] createShapes tool called from voice agent with params:', params);
           // Check if we can execute
           if (!wsRef.current || !canvasId || !currentUserId) {
-            const error = 'Cannot create shape: Canvas not ready'
+            const error = 'Cannot create shapes: Canvas not ready'
+            console.error('❌ [Canvas Tool]', error, {
+              hasWs: !!wsRef.current,
+              canvasId,
+              currentUserId
+            });
             showToast(error, 'error', 3000)
             throw new Error(error)
           }
 
-          createShape(params)
+          console.log('✅ [Canvas Tool] Calling createShapes function via ref');
+          if (createShapesRef.current) {
+            createShapesRef.current(params.shapes)
+            console.log('✅ [Canvas Tool] createShapes function returned');
+          } else {
+            console.error('❌ [Canvas Tool] createShapesRef.current is null');
+          }
         },
         updateShape: (params: any) => {
           if (!wsRef.current) {
@@ -1806,33 +1961,80 @@ export default function Canvas({ onToolsReady }: CanvasProps = {}) {
             throw new Error(error)
           }
 
-          wsRef.current.send(JSON.stringify({
+          sendMessage({
             type: 'SHAPE_UPDATE',
             payload: {
               shapeId: params.shapeId,
               updates: params
             }
-          }))
+          })
           showToast('Shape updated', 'success', 2000)
         },
         deleteShape: (params: any) => {
-          handleDeleteShape(params.shapeIds)
+          console.log('🗑️ [Canvas Tool] deleteShape called with params:', params);
+          console.log('🗑️ [Canvas Tool] params.shapeIds type:', typeof params.shapeIds);
+          console.log('🗑️ [Canvas Tool] params.shapeIds is array?', Array.isArray(params.shapeIds));
+          console.log('🗑️ [Canvas Tool] params.shapeIds:', params.shapeIds);
+
+          if (!wsRef.current) {
+            const error = 'Cannot delete shape: WebSocket not ready'
+            console.error('❌ [Canvas Tool]', error);
+            showToast(error, 'error', 3000)
+            throw new Error(error)
+          }
+
+          console.log('🗑️ [Canvas Tool] Calling handleDeleteShape via ref with:', params.shapeIds);
+          if (handleDeleteShapeRef.current) {
+            handleDeleteShapeRef.current(params.shapeIds)
+            showToast(`Deleted ${params.shapeIds.length} shape(s)`, 'success', 2000)
+            console.log('✅ [Canvas Tool] Shapes deleted successfully');
+          } else {
+            console.error('❌ [Canvas Tool] handleDeleteShapeRef.current is null');
+          }
+        },
+        deleteAllShapes: () => {
+          console.log('🧹 [Canvas Tool] deleteAllShapes called');
+          console.log('🧹 [Canvas Tool] Current shapes count:', shapesRef.current.length);
+
+          if (!wsRef.current) {
+            const error = 'Cannot delete shapes: WebSocket not ready'
+            console.error('❌ [Canvas Tool]', error);
+            showToast(error, 'error', 3000)
+            throw new Error(error)
+          }
+
+          const allShapeIds = shapesRef.current.map(s => s.id)
+          console.log('🧹 [Canvas Tool] Deleting all shapes with IDs:', allShapeIds);
+
+          if (allShapeIds.length === 0) {
+            showToast('No shapes to delete', 'info', 2000)
+            console.log('⚠️ [Canvas Tool] No shapes to delete');
+            return
+          }
+
+          if (handleDeleteShapeRef.current) {
+            handleDeleteShapeRef.current(allShapeIds)
+            showToast(`Deleted all ${allShapeIds.length} shape(s)`, 'success', 2000)
+            console.log('✅ [Canvas Tool] All shapes deleted successfully');
+          } else {
+            console.error('❌ [Canvas Tool] handleDeleteShapeRef.current is null');
+          }
         },
         selectShapes: (params: any) => {
           setSelectedIds(params.shapeIds)
           // Lock selected shapes
           params.shapeIds.forEach((id: string) => {
-            if (wsRef.current) {
-              wsRef.current.send(JSON.stringify({
-                type: 'SHAPE_UPDATE',
-                payload: { shapeId: id, updates: { isLocked: true } }
-              }))
-            }
+            sendMessage({
+              type: 'SHAPE_UPDATE',
+              payload: { shapeId: id, updates: { isLocked: true } }
+            })
           })
           showToast(`Selected ${params.shapeIds.length} shape(s)`, 'info', 2000)
         },
         clearSelection: () => {
-          selectedIdsRef.current.forEach(id => unlockShape(id))
+          if (unlockShapeRef.current) {
+            selectedIdsRef.current.forEach(id => unlockShapeRef.current!(id))
+          }
           setSelectedIds([])
           showToast('Selection cleared', 'info', 2000)
         },
@@ -1843,7 +2045,6 @@ export default function Canvas({ onToolsReady }: CanvasProps = {}) {
             throw new Error(error)
           }
 
-          const ws = wsRef.current
           const offsetX = params.offsetX || 50
           const offsetY = params.offsetY || 50
 
@@ -1861,10 +2062,10 @@ export default function Canvas({ onToolsReady }: CanvasProps = {}) {
               delete (newShape as any).created_at
               delete (newShape as any).updated_at
 
-              ws.send(JSON.stringify({
+              sendMessage({
                 type: 'SHAPE_CREATE',
                 payload: newShape
-              }))
+              })
             }
           })
           showToast(`Duplicated ${params.shapeIds.length} shape(s)`, 'success', 2000)
@@ -1872,28 +2073,405 @@ export default function Canvas({ onToolsReady }: CanvasProps = {}) {
         groupShapes: (params: any) => {
           // TODO: Implement grouping logic
           showToast(`Grouped ${params.shapeIds.length} shape(s)`, 'info', 2000)
+        },
+        getCanvasState: () => {
+          console.log('📊 [Canvas Tool] Getting canvas state');
+          console.log('📊 [Canvas Tool] shapesRef.current length:', shapesRef.current.length);
+          console.log('📊 [Canvas Tool] shapesRef.current:', shapesRef.current);
+
+          const state = {
+            shapes: shapesRef.current.map(shape => ({
+              id: shape.id,
+              type: shape.type,
+              x: shape.x,
+              y: shape.y,
+              width: shape.width,
+              height: shape.height,
+              radius: shape.radius,
+              color: shape.color,
+              textContent: shape.textContent || shape.text_content,
+            })),
+            selectedIds: selectedIdsRef.current
+          }
+
+          console.log('✅ [Canvas Tool] Canvas state retrieved:');
+          console.log('  - Shape count:', state.shapes.length);
+          console.log('  - Selected count:', state.selectedIds.length);
+          console.log('  - Shape IDs:', state.shapes.map(s => s.id));
+          console.log('  - Full state:', JSON.stringify(state, null, 2));
+
+          return state
+        },
+        bringToFront: (params: any) => {
+          if (!wsRef.current) {
+            const error = 'Cannot bring to front: WebSocket not ready'
+            showToast(error, 'error', 3000)
+            throw new Error(error)
+          }
+
+          const maxZ = Math.max(...shapesRef.current.map(s => s.z_index || s.zIndex || 0), 0)
+          params.shapeIds.forEach((shapeId: string, index: number) => {
+            sendMessage({
+              type: 'SHAPE_UPDATE',
+              payload: { shapeId, updates: { zIndex: maxZ + 1 + index } }
+            })
+          })
+          showToast(`Brought ${params.shapeIds.length} shape(s) to front`, 'success', 2000)
+        },
+        sendToBack: (params: any) => {
+          if (!wsRef.current) {
+            const error = 'Cannot send to back: WebSocket not ready'
+            showToast(error, 'error', 3000)
+            throw new Error(error)
+          }
+
+          const minZ = Math.min(...shapesRef.current.map(s => s.z_index || s.zIndex || 0), 0)
+          params.shapeIds.forEach((shapeId: string, index: number) => {
+            sendMessage({
+              type: 'SHAPE_UPDATE',
+              payload: { shapeId, updates: { zIndex: minZ - params.shapeIds.length + index } }
+            })
+          })
+          showToast(`Sent ${params.shapeIds.length} shape(s) to back`, 'success', 2000)
+        },
+        moveForward: (params: any) => {
+          if (!wsRef.current) {
+            const error = 'Cannot move forward: WebSocket not ready'
+            showToast(error, 'error', 3000)
+            throw new Error(error)
+          }
+
+          params.shapeIds.forEach((shapeId: string) => {
+            const shape = shapesRef.current.find(s => s.id === shapeId)
+            if (shape) {
+              const currentZ = shape.z_index || shape.zIndex || 0
+              sendMessage({
+                type: 'SHAPE_UPDATE',
+                payload: { shapeId, updates: { zIndex: currentZ + 1 } }
+              })
+            }
+          })
+          showToast(`Moved ${params.shapeIds.length} shape(s) forward`, 'success', 2000)
+        },
+        moveBackward: (params: any) => {
+          if (!wsRef.current) {
+            const error = 'Cannot move backward: WebSocket not ready'
+            showToast(error, 'error', 3000)
+            throw new Error(error)
+          }
+
+          params.shapeIds.forEach((shapeId: string) => {
+            const shape = shapesRef.current.find(s => s.id === shapeId)
+            if (shape) {
+              const currentZ = shape.z_index || shape.zIndex || 0
+              sendMessage({
+                type: 'SHAPE_UPDATE',
+                payload: { shapeId, updates: { zIndex: currentZ - 1 } }
+              })
+            }
+          })
+          showToast(`Moved ${params.shapeIds.length} shape(s) backward`, 'success', 2000)
+        },
+        arrangeInRow: (params: any) => {
+          if (!wsRef.current) {
+            const error = 'Cannot arrange shapes: WebSocket not ready'
+            showToast(error, 'error', 3000)
+            throw new Error(error)
+          }
+
+          const { arrangeInRow } = require('../utils/layoutUtils')
+          const shapes = params.shapeIds.map((id: string) =>
+            shapesRef.current.find(s => s.id === id)
+          ).filter((s: any) => s)
+
+          if (shapes.length === 0) {
+            showToast('No valid shapes to arrange', 'warning', 2000)
+            return
+          }
+
+          // Calculate viewport center if no start coordinates provided
+          const startX = params.startX ?? (stageRef.current ?
+            (-stageRef.current.x() + viewportWidth / 2) / stageRef.current.scaleX() : 25000)
+          const startY = params.startY ?? (stageRef.current ?
+            (-stageRef.current.y() + viewportHeight / 2) / stageRef.current.scaleY() : 25000)
+
+          const positions = arrangeInRow(shapes, startX, startY, params.spacing || 300)
+
+          params.shapeIds.forEach((shapeId: string, index: number) => {
+            if (positions[index]) {
+              sendMessage({
+                type: 'SHAPE_UPDATE',
+                payload: { shapeId, updates: { x: positions[index].x, y: positions[index].y } }
+              })
+            }
+          })
+
+          showToast(`Arranged ${shapes.length} shape(s) in a row`, 'success', 2000)
+        },
+        arrangeInColumn: (params: any) => {
+          if (!wsRef.current) {
+            const error = 'Cannot arrange shapes: WebSocket not ready'
+            showToast(error, 'error', 3000)
+            throw new Error(error)
+          }
+
+          const { arrangeInColumn } = require('../utils/layoutUtils')
+          const shapes = params.shapeIds.map((id: string) =>
+            shapesRef.current.find(s => s.id === id)
+          ).filter((s: any) => s)
+
+          if (shapes.length === 0) {
+            showToast('No valid shapes to arrange', 'warning', 2000)
+            return
+          }
+
+          // Calculate viewport center if no start coordinates provided
+          const startX = params.startX ?? (stageRef.current ?
+            (-stageRef.current.x() + viewportWidth / 2) / stageRef.current.scaleX() : 25000)
+          const startY = params.startY ?? (stageRef.current ?
+            (-stageRef.current.y() + viewportHeight / 2) / stageRef.current.scaleY() : 25000)
+
+          const positions = arrangeInColumn(shapes, startX, startY, params.spacing || 300)
+
+          params.shapeIds.forEach((shapeId: string, index: number) => {
+            if (positions[index]) {
+              sendMessage({
+                type: 'SHAPE_UPDATE',
+                payload: { shapeId, updates: { x: positions[index].x, y: positions[index].y } }
+              })
+            }
+          })
+
+          showToast(`Arranged ${shapes.length} shape(s) in a column`, 'success', 2000)
+        },
+        arrangeInGrid: (params: any) => {
+          if (!wsRef.current) {
+            const error = 'Cannot arrange shapes: WebSocket not ready'
+            showToast(error, 'error', 3000)
+            throw new Error(error)
+          }
+
+          const { arrangeInGrid } = require('../utils/layoutUtils')
+
+          // Calculate viewport center if no start coordinates provided
+          const startX = params.startX ?? (stageRef.current ?
+            (-stageRef.current.x() + viewportWidth / 2) / stageRef.current.scaleX() : 25000)
+          const startY = params.startY ?? (stageRef.current ?
+            (-stageRef.current.y() + viewportHeight / 2) / stageRef.current.scaleY() : 25000)
+
+          const spacing = params.spacing || 300
+          const positions = arrangeInGrid(
+            params.shapeIds.length,
+            startX,
+            startY,
+            spacing,
+            spacing,
+            params.columns
+          )
+
+          params.shapeIds.forEach((shapeId: string, index: number) => {
+            if (positions[index]) {
+              sendMessage({
+                type: 'SHAPE_UPDATE',
+                payload: { shapeId, updates: { x: positions[index].x, y: positions[index].y } }
+              })
+            }
+          })
+
+          showToast(`Arranged ${params.shapeIds.length} shape(s) in a grid`, 'success', 2000)
+        },
+        createPattern: (params: any) => {
+          if (!wsRef.current) {
+            const error = 'Cannot create pattern: WebSocket not ready'
+            showToast(error, 'error', 3000)
+            throw new Error(error)
+          }
+
+          const { PATTERN_REGISTRY } = require('../utils/patternTemplates')
+          const patternFunction = PATTERN_REGISTRY[params.patternType]
+
+          if (!patternFunction) {
+            const error = `Unknown pattern type: ${params.patternType}`
+            showToast(error, 'error', 3000)
+            throw new Error(error)
+          }
+
+          // Calculate viewport center if no coordinates provided
+          const x = params.x ?? (stageRef.current ?
+            (-stageRef.current.x() + viewportWidth / 2) / stageRef.current.scaleX() : 25000)
+          const y = params.y ?? (stageRef.current ?
+            (-stageRef.current.y() + viewportHeight / 2) / stageRef.current.scaleY() : 25000)
+
+          const shapes = patternFunction(x, y, params.options || {})
+
+          console.log(`🎨 [Pattern] Creating ${params.patternType} with ${shapes.length} shapes`)
+
+          // Create all shapes in the pattern
+          if (createShapesRef.current) {
+            createShapesRef.current(shapes)
+          }
+
+          showToast(`Created ${params.patternType} pattern`, 'success', 2000)
+        },
+        alignShapes: (params: any) => {
+          if (!wsRef.current) {
+            const error = 'Cannot align shapes: WebSocket not ready'
+            showToast(error, 'error', 3000)
+            throw new Error(error)
+          }
+
+          const { alignHorizontally, alignVertically } = require('../utils/layoutUtils')
+          const shapes = params.shapeIds.map((id: string) =>
+            shapesRef.current.find(s => s.id === id)
+          ).filter((s: any) => s)
+
+          if (shapes.length === 0) {
+            showToast('No valid shapes to align', 'warning', 2000)
+            return
+          }
+
+          const alignment = params.alignment
+          const isHorizontal = ['left', 'center', 'right'].includes(alignment)
+
+          if (isHorizontal) {
+            // Calculate reference X based on alignment and viewport
+            let referenceX: number
+            if (alignment === 'center') {
+              const avgX = shapes.reduce((sum, s) => sum + s.x + (s.width || s.radius || 100) / 2, 0) / shapes.length
+              referenceX = avgX
+            } else if (alignment === 'left') {
+              referenceX = Math.min(...shapes.map(s => s.x))
+            } else { // right
+              referenceX = Math.max(...shapes.map(s => s.x + (s.width || s.radius * 2 || 200)))
+            }
+
+            const newXPositions = alignHorizontally(shapes, alignment, referenceX)
+
+            params.shapeIds.forEach((shapeId: string, index: number) => {
+              sendMessage({
+                type: 'SHAPE_UPDATE',
+                payload: { shapeId, updates: { x: newXPositions[index] } }
+              })
+            })
+          } else {
+            // Vertical alignment
+            let referenceY: number
+            if (alignment === 'middle') {
+              const avgY = shapes.reduce((sum, s) => sum + s.y + (s.height || s.radius || 100) / 2, 0) / shapes.length
+              referenceY = avgY
+            } else if (alignment === 'top') {
+              referenceY = Math.min(...shapes.map(s => s.y))
+            } else { // bottom
+              referenceY = Math.max(...shapes.map(s => s.y + (s.height || s.radius * 2 || 150)))
+            }
+
+            const newYPositions = alignVertically(shapes, alignment, referenceY)
+
+            params.shapeIds.forEach((shapeId: string, index: number) => {
+              sendMessage({
+                type: 'SHAPE_UPDATE',
+                payload: { shapeId, updates: { y: newYPositions[index] } }
+              })
+            })
+          }
+
+          showToast(`Aligned ${shapes.length} shape(s) ${alignment}`, 'success', 2000)
         }
       }
 
       onToolsReady(tools)
+      console.log('🔧 [Canvas Tool] Tools registered with voice panel');
     }
-  }, [onToolsReady, currentUserId, canvasId, createShape, handleDeleteShape, unlockShape, showToast])
+  }, [onToolsReady, currentUserId, canvasId, showToast, viewportWidth, viewportHeight])
 
-  // Handle keyboard shortcuts (Undo/Redo/Delete/Escape)
+  // Notify voice agent when canvas state changes
+  useEffect(() => {
+    if (onCanvasStateChange) {
+      onCanvasStateChange(shapes)
+    }
+  }, [shapes, onCanvasStateChange])
+
+  // Handle keyboard shortcuts (Undo/Redo/Delete/Escape/Layering)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const isMac = navigator.platform.toUpperCase().includes('MAC')
       const ctrlOrMeta = isMac ? e.metaKey : e.ctrlKey
+
+      // Undo
       if (ctrlOrMeta && e.key.toLowerCase() === 'z' && !e.shiftKey) {
         e.preventDefault()
         performUndo()
         return
       }
+
+      // Redo
       if ((ctrlOrMeta && e.key.toLowerCase() === 'z' && e.shiftKey) || (!isMac && e.ctrlKey && e.key.toLowerCase() === 'y')) {
         e.preventDefault()
         performRedo()
         return
       }
+
+      // Layer shortcuts (Cmd/Ctrl + [ ] for layering)
+      if (ctrlOrMeta && selectedIdsRef.current.length > 0) {
+        // Bring to front: Cmd/Ctrl + Shift + ]
+        if (e.shiftKey && e.key === ']') {
+          e.preventDefault()
+          const maxZ = Math.max(...shapes.map(s => s.z_index || s.zIndex || 0), 0)
+          // Update all selected shapes, maintaining their relative order
+          selectedIdsRef.current.forEach((shapeId, index) => {
+            sendMessage({
+              type: 'SHAPE_UPDATE',
+              payload: { shapeId, updates: { zIndex: maxZ + 1 + index } },
+            })
+          })
+          return
+        }
+        // Send to back: Cmd/Ctrl + Shift + [
+        if (e.shiftKey && e.key === '[') {
+          e.preventDefault()
+          const minZ = Math.min(...shapes.map(s => s.z_index || s.zIndex || 0), 0)
+          // Update all selected shapes, maintaining their relative order
+          selectedIdsRef.current.forEach((shapeId, index) => {
+            sendMessage({
+              type: 'SHAPE_UPDATE',
+              payload: { shapeId, updates: { zIndex: minZ - selectedIdsRef.current.length + index } },
+            })
+          })
+          return
+        }
+        // Move forward: Cmd/Ctrl + ]
+        if (!e.shiftKey && e.key === ']') {
+          e.preventDefault()
+          selectedIdsRef.current.forEach(shapeId => {
+            const shape = shapes.find(s => s.id === shapeId)
+            if (shape) {
+              const currentZ = shape.z_index || shape.zIndex || 0
+              sendMessage({
+                type: 'SHAPE_UPDATE',
+                payload: { shapeId, updates: { zIndex: currentZ + 1 } },
+              })
+            }
+          })
+          return
+        }
+        // Move backward: Cmd/Ctrl + [
+        if (!e.shiftKey && e.key === '[') {
+          e.preventDefault()
+          selectedIdsRef.current.forEach(shapeId => {
+            const shape = shapes.find(s => s.id === shapeId)
+            if (shape) {
+              const currentZ = shape.z_index || shape.zIndex || 0
+              sendMessage({
+                type: 'SHAPE_UPDATE',
+                payload: { shapeId, updates: { zIndex: currentZ - 1 } },
+              })
+            }
+          })
+          return
+        }
+      }
+
+      // Delete
       if (e.key === 'Delete' || e.key === 'Backspace') {
         e.preventDefault()
         // Use the ref to get current selectedIds
@@ -1912,7 +2490,7 @@ export default function Canvas({ onToolsReady }: CanvasProps = {}) {
       window.removeEventListener('keydown', handleKeyDown)
       document.body.style.cursor = 'default'
     }
-  }, [handleDeleteShape, unlockShape, performUndo, performRedo])
+  }, [handleDeleteShape, unlockShape, performUndo, performRedo, shapes, sendMessage])
 
   // Handle stage click (deselect)
   const handleStageClick = useCallback((e: any) => {
@@ -1957,13 +2535,12 @@ export default function Canvas({ onToolsReady }: CanvasProps = {}) {
     if (now - cursorThrottleRef.current > 25) {
       cursorThrottleRef.current = now
 
-      wsRef.current.send(JSON.stringify({
+      sendMessage({
         type: 'CURSOR_MOVE',
         payload: { x, y },
-        timestamp: now,
-      }))
+      } as any)
     }
-  }, [])
+  }, [sendMessage])
 
   // Handle zoom (wheel) - center-anchored and animated
   const handleWheel = useCallback((e: any) => {
@@ -1996,9 +2573,55 @@ export default function Canvas({ onToolsReady }: CanvasProps = {}) {
   }, [animateZoomTo, stageScale, viewportWidth, viewportHeight])
 
   const handleResetView = useCallback(() => {
-    const anchor = { x: viewportWidth / 2, y: viewportHeight / 2 }
-    animateZoomTo(1, anchor, 250)
-  }, [animateZoomTo, viewportWidth, viewportHeight])
+    // Center the canvas at 100% zoom with animation
+    cancelZoomAnimation()
+    const targetScale = 1
+    const startScale = stageScale
+    const startPos = stagePos
+
+    // Calculate the centered position: canvas center at viewport center
+    const targetPos = {
+      x: viewportWidth / 2 - CANVAS_WIDTH / 2,
+      y: viewportHeight / 2 - CANVAS_HEIGHT / 2
+    }
+
+    zoomAnimStartRef.current = performance.now()
+    zoomFromScaleRef.current = startScale
+    zoomToScaleRef.current = targetScale
+    zoomFromPosRef.current = startPos
+    zoomToPosRef.current = targetPos
+
+    const step = () => {
+      const now = performance.now()
+      const t = Math.min(1, (now - zoomAnimStartRef.current) / 300) // 300ms duration
+      const k = easeInOutCubic(t)
+
+      const interpolatedScale = zoomFromScaleRef.current + k * (zoomToScaleRef.current - zoomFromScaleRef.current)
+      const interpolatedX = zoomFromPosRef.current.x + k * (zoomToPosRef.current.x - zoomFromPosRef.current.x)
+      const interpolatedY = zoomFromPosRef.current.y + k * (zoomToPosRef.current.y - zoomFromPosRef.current.y)
+
+      setStageScale(interpolatedScale)
+      setStagePos({ x: interpolatedX, y: interpolatedY })
+
+      if (t < 1) {
+        zoomAnimRafRef.current = requestAnimationFrame(step)
+      } else {
+        zoomAnimRafRef.current = null
+      }
+    }
+
+    zoomAnimRafRef.current = requestAnimationFrame(step)
+  }, [cancelZoomAnimation, stageScale, stagePos, viewportWidth, viewportHeight])
+
+  const handleMinimapNavigate = useCallback((canvasX: number, canvasY: number) => {
+    // Calculate new stage position to center the viewport on the clicked canvas coordinates
+    const newX = -(canvasX * stageScale) + (viewportWidth / 2)
+    const newY = -(canvasY * stageScale) + (viewportHeight / 2)
+
+    // Clamp to canvas boundaries
+    const clampedPos = clampStagePosition(stageScale, { x: newX, y: newY })
+    setStagePos(clampedPos)
+  }, [stageScale, viewportWidth, viewportHeight, clampStagePosition])
 
   const handleSignOut = useCallback(async () => {
     try {
@@ -2051,7 +2674,14 @@ export default function Canvas({ onToolsReady }: CanvasProps = {}) {
 
   // Memoize shape rendering props to avoid recalculating on every render
   const shapeRenderProps = useMemo(() => {
-    return visibleShapes.map(shape => {
+    // Sort shapes by zIndex for proper layering (ascending = back to front)
+    const sortedShapes = [...visibleShapes].sort((a, b) => {
+      const aZ = a.z_index ?? a.zIndex ?? 0
+      const bZ = b.z_index ?? b.zIndex ?? 0
+      return aZ - bZ
+    })
+
+    return sortedShapes.map(shape => {
       const isSelected = selectedIds.includes(shape.id)
       const remainingSeconds = getRemainingLockSeconds(shape.locked_at)
       // Treat as locked whenever locked_by exists; unlock will be delivered by server.
@@ -2092,12 +2722,12 @@ export default function Canvas({ onToolsReady }: CanvasProps = {}) {
     const now = Date.now()
     if (now - colorThrottleRef.current > 50) {
       colorThrottleRef.current = now
-      wsRef.current.send(JSON.stringify({
+      sendMessage({
         type: 'SHAPE_UPDATE',
         payload: { shapeId: selectedId, updates: { color: hex } },
-      }))
+      })
     }
-  }, [selectedIds, recordPropChange])
+  }, [selectedIds, recordPropChange, sendMessage])
 
   // Panel handlers
   const handleChangeOpacity = useCallback((opacity01: number) => {
@@ -2110,12 +2740,12 @@ export default function Canvas({ onToolsReady }: CanvasProps = {}) {
     const now = Date.now()
     if (now - opacityThrottleRef.current > 50) {
       opacityThrottleRef.current = now
-      wsRef.current.send(JSON.stringify({
+      sendMessage({
         type: 'SHAPE_UPDATE',
         payload: { shapeId: selectedId, updates: { opacity: clamped } },
-      }))
+      })
     }
-  }, [selectedIds, recordPropChange])
+  }, [selectedIds, recordPropChange, sendMessage])
 
   const handleCommitRotation = useCallback((rotationDeg: number) => {
     const selectedId = selectedIds[0]
@@ -2123,22 +2753,22 @@ export default function Canvas({ onToolsReady }: CanvasProps = {}) {
     const normalized = Math.round(rotationDeg)
     setShapes(prev => prev.map(s => s.id === selectedId ? { ...s, rotation: normalized } : s))
     recordPropChange(selectedId, 'rotation', normalized)
-    wsRef.current.send(JSON.stringify({
+    sendMessage({
       type: 'SHAPE_UPDATE',
       payload: { shapeId: selectedId, updates: { rotation: normalized } },
-    }))
-  }, [selectedIds, recordPropChange])
+    })
+  }, [selectedIds, recordPropChange, sendMessage])
 
   const handleChangeShadowColor = useCallback((hex: string) => {
     const selectedId = selectedIds[0]
     if (!selectedId || !wsRef.current) return
     setShapes(prev => prev.map(s => s.id === selectedId ? { ...s, shadowColor: hex } : s))
     recordPropChange(selectedId, 'shadowColor', hex)
-    wsRef.current.send(JSON.stringify({
+    sendMessage({
       type: 'SHAPE_UPDATE',
       payload: { shapeId: selectedId, updates: { shadowColor: hex } },
-    }))
-  }, [selectedIds, recordPropChange])
+    })
+  }, [selectedIds, recordPropChange, sendMessage])
 
   const handleChangeShadowStrength = useCallback((strength: number) => {
     const selectedId = selectedIds[0]
@@ -2149,34 +2779,34 @@ export default function Canvas({ onToolsReady }: CanvasProps = {}) {
     const now = Date.now()
     if (now - shadowThrottleRef.current > 50) {
       shadowThrottleRef.current = now
-      wsRef.current.send(JSON.stringify({
+      sendMessage({
         type: 'SHAPE_UPDATE',
         payload: { shapeId: selectedId, updates: { shadowStrength: v } },
-      }))
+      })
     }
-  }, [selectedIds, recordPropChange])
+  }, [selectedIds, recordPropChange, sendMessage])
 
   const handleChangeFontFamily = useCallback((family: string) => {
     const selectedId = selectedIds[0]
     if (!selectedId || !wsRef.current) return
     setShapes(prev => prev.map(s => s.id === selectedId ? { ...s, fontFamily: family } : s))
     recordPropChange(selectedId, 'fontFamily', family)
-    wsRef.current.send(JSON.stringify({
+    sendMessage({
       type: 'SHAPE_UPDATE',
       payload: { shapeId: selectedId, updates: { fontFamily: family } },
-    }))
-  }, [selectedIds, recordPropChange])
+    })
+  }, [selectedIds, recordPropChange, sendMessage])
 
   const handleChangeFontWeight = useCallback((weight: string) => {
     const selectedId = selectedIds[0]
     if (!selectedId || !wsRef.current) return
     setShapes(prev => prev.map(s => s.id === selectedId ? { ...s, fontWeight: weight } : s))
     recordPropChange(selectedId, 'fontWeight', weight)
-    wsRef.current.send(JSON.stringify({
+    sendMessage({
       type: 'SHAPE_UPDATE',
       payload: { shapeId: selectedId, updates: { fontWeight: weight } },
-    }))
-  }, [selectedIds, recordPropChange])
+    })
+  }, [selectedIds, recordPropChange, sendMessage])
 
   // Lasso selection handlers
   const handleStageMouseDown = useCallback((e: any) => {
@@ -2249,12 +2879,10 @@ export default function Canvas({ onToolsReady }: CanvasProps = {}) {
 
       // Lock all newly selected shapes
       newSelectedIds.forEach(id => {
-        if (wsRef.current) {
-          wsRef.current.send(JSON.stringify({
-            type: 'SHAPE_UPDATE',
-            payload: { shapeId: id, updates: { isLocked: true } },
-          }))
-        }
+        sendMessage({
+          type: 'SHAPE_UPDATE',
+          payload: { shapeId: id, updates: { isLocked: true } },
+        })
       })
     }
 
@@ -2262,7 +2890,7 @@ export default function Canvas({ onToolsReady }: CanvasProps = {}) {
     setIsDrawingLasso(false)
     setLassoStart(null)
     setLassoEnd(null)
-  }, [isDrawingLasso, lassoStart, lassoEnd, shapes, unlockShape])
+  }, [isDrawingLasso, lassoStart, lassoEnd, shapes, unlockShape, sendMessage])
 
   // Context menu handlers
   const handleShapeContextMenu = useCallback((e: any, shapeId: string) => {
@@ -2275,7 +2903,27 @@ export default function Canvas({ onToolsReady }: CanvasProps = {}) {
     if (!pos) return
 
     contextMenuShapeIdRef.current = shapeId
-    setContextMenu({ x: pos.x, y: pos.y, shapeId })
+    setContextMenu({ x: pos.x, y: pos.y, mode: 'shape', shapeId })
+  }, [])
+
+  // Canvas context menu handler
+  const handleCanvasContextMenu = useCallback((e: any) => {
+    // Only trigger if we right-clicked on the canvas (not on a shape)
+    const target = e.target
+
+    // Check if the target is the background layer or stage
+    if (target.getClassName() === 'Rect' && target.attrs.id === 'canvas-background') {
+      e.evt.preventDefault()
+      const stage = stageRef.current
+      if (!stage) return
+
+      // Get screen position
+      const pos = stage.getPointerPosition()
+      if (!pos) return
+
+      contextMenuShapeIdRef.current = null
+      setContextMenu({ x: pos.x, y: pos.y, mode: 'canvas' })
+    }
   }, [])
 
   // Layer management handlers
@@ -2283,75 +2931,87 @@ export default function Canvas({ onToolsReady }: CanvasProps = {}) {
     const shapeId = contextMenuShapeIdRef.current
     if (!shapeId || !wsRef.current) return
 
-    const shape = shapes.find(s => s.id === shapeId)
-    if (!shape) return
-
     // Get max z-index
     const maxZ = Math.max(...shapes.map(s => s.z_index || s.zIndex || 0), 0)
-    const newZIndex = maxZ + 1
 
-    wsRef.current.send(JSON.stringify({
-      type: 'SHAPE_UPDATE',
-      payload: { shapeId, updates: { zIndex: newZIndex } },
-    }))
+    // Check if the shape is in the current selection
+    const targetShapes = selectedIds.includes(shapeId) ? selectedIds : [shapeId]
+
+    // Update all target shapes, maintaining their relative order
+    targetShapes.forEach((id, index) => {
+      sendMessage({
+        type: 'SHAPE_UPDATE',
+        payload: { shapeId: id, updates: { zIndex: maxZ + 1 + index } },
+      })
+    })
 
     contextMenuShapeIdRef.current = null
-  }, [shapes])
+  }, [shapes, selectedIds, sendMessage])
 
   const handleSendToBack = useCallback(() => {
     const shapeId = contextMenuShapeIdRef.current
     if (!shapeId || !wsRef.current) return
 
-    const shape = shapes.find(s => s.id === shapeId)
-    if (!shape) return
-
     // Get min z-index
     const minZ = Math.min(...shapes.map(s => s.z_index || s.zIndex || 0), 0)
-    const newZIndex = minZ - 1
 
-    wsRef.current.send(JSON.stringify({
-      type: 'SHAPE_UPDATE',
-      payload: { shapeId, updates: { zIndex: newZIndex } },
-    }))
+    // Check if the shape is in the current selection
+    const targetShapes = selectedIds.includes(shapeId) ? selectedIds : [shapeId]
+
+    // Update all target shapes, maintaining their relative order
+    targetShapes.forEach((id, index) => {
+      sendMessage({
+        type: 'SHAPE_UPDATE',
+        payload: { shapeId: id, updates: { zIndex: minZ - targetShapes.length + index } },
+      })
+    })
 
     contextMenuShapeIdRef.current = null
-  }, [shapes])
+  }, [shapes, selectedIds, sendMessage])
 
   const handleMoveForward = useCallback(() => {
     const shapeId = contextMenuShapeIdRef.current
     if (!shapeId || !wsRef.current) return
 
-    const shape = shapes.find(s => s.id === shapeId)
-    if (!shape) return
+    // Check if the shape is in the current selection
+    const targetShapes = selectedIds.includes(shapeId) ? selectedIds : [shapeId]
 
-    const currentZ = shape.z_index || shape.zIndex || 0
-    const newZIndex = currentZ + 1
-
-    wsRef.current.send(JSON.stringify({
-      type: 'SHAPE_UPDATE',
-      payload: { shapeId, updates: { zIndex: newZIndex } },
-    }))
+    // Update all target shapes
+    targetShapes.forEach(id => {
+      const shape = shapes.find(s => s.id === id)
+      if (shape) {
+        const currentZ = shape.z_index || shape.zIndex || 0
+        sendMessage({
+          type: 'SHAPE_UPDATE',
+          payload: { shapeId: id, updates: { zIndex: currentZ + 1 } },
+        })
+      }
+    })
 
     contextMenuShapeIdRef.current = null
-  }, [shapes])
+  }, [shapes, selectedIds, sendMessage])
 
   const handleMoveBackward = useCallback(() => {
     const shapeId = contextMenuShapeIdRef.current
     if (!shapeId || !wsRef.current) return
 
-    const shape = shapes.find(s => s.id === shapeId)
-    if (!shape) return
+    // Check if the shape is in the current selection
+    const targetShapes = selectedIds.includes(shapeId) ? selectedIds : [shapeId]
 
-    const currentZ = shape.z_index || shape.zIndex || 0
-    const newZIndex = currentZ - 1
-
-    wsRef.current.send(JSON.stringify({
-      type: 'SHAPE_UPDATE',
-      payload: { shapeId, updates: { zIndex: newZIndex } },
-    }))
+    // Update all target shapes
+    targetShapes.forEach(id => {
+      const shape = shapes.find(s => s.id === id)
+      if (shape) {
+        const currentZ = shape.z_index || shape.zIndex || 0
+        sendMessage({
+          type: 'SHAPE_UPDATE',
+          payload: { shapeId: id, updates: { zIndex: currentZ - 1 } },
+        })
+      }
+    })
 
     contextMenuShapeIdRef.current = null
-  }, [shapes])
+  }, [shapes, selectedIds, sendMessage])
 
   // Clipboard handlers
   const handleCopy = useCallback(() => {
@@ -2375,10 +3035,10 @@ export default function Canvas({ onToolsReady }: CanvasProps = {}) {
     setClipboard([shape])
 
     // Delete the shape
-    wsRef.current.send(JSON.stringify({
+    sendMessage({
       type: 'SHAPE_DELETE',
       payload: { shapeId },
-    }))
+    })
 
     pushHistory({
       undo: { type: 'SHAPE_CREATE', payload: shape },
@@ -2387,7 +3047,7 @@ export default function Canvas({ onToolsReady }: CanvasProps = {}) {
     })
 
     contextMenuShapeIdRef.current = null
-  }, [shapes, pushHistory])
+  }, [shapes, pushHistory, sendMessage])
 
   const handlePaste = useCallback(() => {
     if (clipboard.length === 0 || !wsRef.current) return
@@ -2408,14 +3068,14 @@ export default function Canvas({ onToolsReady }: CanvasProps = {}) {
       delete (newShape as any).created_at
       delete (newShape as any).updated_at
 
-      wsRef.current!.send(JSON.stringify({
+      sendMessage({
         type: 'SHAPE_CREATE',
         payload: newShape,
-      }))
+      })
     })
 
     contextMenuShapeIdRef.current = null
-  }, [clipboard])
+  }, [clipboard, sendMessage])
 
   const handleDuplicate = useCallback(() => {
     const shapeId = contextMenuShapeIdRef.current
@@ -2439,13 +3099,13 @@ export default function Canvas({ onToolsReady }: CanvasProps = {}) {
     delete (newShape as any).created_at
     delete (newShape as any).updated_at
 
-    wsRef.current.send(JSON.stringify({
+    sendMessage({
       type: 'SHAPE_CREATE',
       payload: newShape,
-    }))
+    })
 
     contextMenuShapeIdRef.current = null
-  }, [shapes])
+  }, [shapes, sendMessage])
 
   // Show authentication prompt if not connected
   if (!currentUserId || !canvasId || !wsRef.current) {
@@ -2482,6 +3142,7 @@ export default function Canvas({ onToolsReady }: CanvasProps = {}) {
         onToggleCanvasBg={() => setIsCanvasBgOpen(v => !v)}
         lassoMode={lassoMode}
         onToggleLassoMode={() => setLassoMode(v => !v)}
+        onCollapse={() => setIsCanvasBgOpen(false)}
       />
 
       {/* Pan Mode Indicator removed */}
@@ -2497,7 +3158,6 @@ export default function Canvas({ onToolsReady }: CanvasProps = {}) {
         maxReconnectAttempts={maxReconnectAttempts}
         queuedOperationsCount={operationQueueRef.current.length}
         fps={fps}
-        shapesCount={shapes.length}
         onSignOut={handleSignOut}
       />
 
@@ -2617,6 +3277,7 @@ export default function Canvas({ onToolsReady }: CanvasProps = {}) {
           onRotateEnd={handleRotateEnd}
           onTextDoubleClick={handleTextDoubleClick}
           onContextMenu={handleShapeContextMenu}
+          onCanvasContextMenu={handleCanvasContextMenu}
           getUserColor={getUserColor}
         />
       </Stage>
@@ -2626,6 +3287,7 @@ export default function Canvas({ onToolsReady }: CanvasProps = {}) {
         <ContextMenu
           x={contextMenu.x}
           y={contextMenu.y}
+          mode={contextMenu.mode}
           onClose={() => {
             contextMenuShapeIdRef.current = null
             setContextMenu(null)
@@ -2638,6 +3300,9 @@ export default function Canvas({ onToolsReady }: CanvasProps = {}) {
           onCut={handleCut}
           onPaste={handlePaste}
           onDuplicate={handleDuplicate}
+          onChangeCanvasColor={() => {
+            setIsCanvasBgOpen(true)
+          }}
           hasPasteData={clipboard.length > 0}
         />
       )}
@@ -2664,14 +3329,25 @@ export default function Canvas({ onToolsReady }: CanvasProps = {}) {
         valueHex={canvasBgHex}
         onChangeHex={(hex) => {
           setCanvasBgHex(hex)
-          if (wsRef.current) {
-            wsRef.current.send(JSON.stringify({
-              type: 'CANVAS_UPDATE',
-              payload: { updates: { backgroundColor: hex } }
-            }))
-          }
+          sendMessage({
+            type: 'CANVAS_UPDATE',
+            payload: { updates: { backgroundColor: hex } }
+          })
           recordCanvasBgChange(hex)
         }}
+      />
+
+      {/* Minimap (lower-left) */}
+      <Minimap
+        shapes={shapes}
+        canvasWidth={CANVAS_WIDTH}
+        canvasHeight={CANVAS_HEIGHT}
+        viewportX={-stagePos.x / stageScale}
+        viewportY={-stagePos.y / stageScale}
+        viewportWidth={viewportWidth / stageScale}
+        viewportHeight={viewportHeight / stageScale}
+        stageScale={stageScale}
+        onNavigate={handleMinimapNavigate}
       />
     </div>
   )

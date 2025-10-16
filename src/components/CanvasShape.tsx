@@ -84,6 +84,9 @@ const CanvasShapeComponent = ({
     const handleStrokeThick = 2 / stageScale
     const ROTATION_OFFSET_PX = 28
     const rotationOffset = ROTATION_OFFSET_PX / stageScale
+    const shapeRef = useRef<any>(null)
+    const isRotatingRef = useRef(false)
+    const lastRotationRef = useRef(shape.rotation || 0)
 
     if (shape.type === 'text') {
         const textRef = useRef<any>(null)
@@ -109,7 +112,10 @@ const CanvasShapeComponent = ({
         return (
             <>
                 <KonvaText
-                    ref={textRef}
+                    ref={(node) => {
+                        textRef.current = node
+                        shapeRef.current = node
+                    }}
                     x={shape.x}
                     y={shape.y}
                     text={text}
@@ -139,6 +145,7 @@ const CanvasShapeComponent = ({
                         onDragEnd(shape.id)
                     }}
                     perfectDrawEnabled={false}
+                    listening={!isRotatingRef.current}
                 />
                 {isSelected && canResize && (
                     <Group>
@@ -200,6 +207,8 @@ const CanvasShapeComponent = ({
                             draggable
                             onDragStart={(e) => {
                                 e.cancelBubble = true
+                                isRotatingRef.current = true
+                                lastRotationRef.current = shape.rotation || 0
                                 _onRotateStart && _onRotateStart(shape.id)
                             }}
                             onDragMove={(e) => {
@@ -209,21 +218,30 @@ const CanvasShapeComponent = ({
                                 const pointer = stage.getPointerPosition()
                                 if (!pointer) return
                                 const scaleX = stage.scaleX()
-                                const scaleY = stage.scaleY()
                                 const stageX = stage.x()
                                 const stageY = stage.y()
                                 const canvasX = (pointer.x - stageX) / scaleX
-                                const canvasY = (pointer.y - stageY) / scaleY
+                                const canvasY = (pointer.y - stageY) / scaleX
 
-                                // Calculate rotation angle
+                                // Calculate rotation angle (optimized)
                                 const centerX = shape.x + textWidth / 2
                                 const centerY = shape.y + textHeight / 2
-                                const angle = Math.atan2(canvasY - centerY, canvasX - centerX) * (180 / Math.PI)
+                                const dx = canvasX - centerX
+                                const dy = canvasY - centerY
+                                const angle = Math.atan2(dy, dx) * 57.29577951308232
+
+                                // Apply rotation directly to Konva node for instant visual feedback
+                                if (shapeRef.current && Math.abs(angle - lastRotationRef.current) > 0.5) {
+                                    shapeRef.current.rotation(angle)
+                                    lastRotationRef.current = angle
+                                    shapeRef.current.getLayer()?.batchDraw()
+                                }
 
                                 _onRotateMove && _onRotateMove(shape.id, angle)
                             }}
                             onDragEnd={(e) => {
                                 e.cancelBubble = true
+                                isRotatingRef.current = false
                                 _onRotateEnd && _onRotateEnd(shape.id)
                             }}
                             perfectDrawEnabled={false}
@@ -250,6 +268,7 @@ const CanvasShapeComponent = ({
         return (
             <>
                 <Circle
+                    ref={shapeRef}
                     x={shape.x}
                     y={shape.y}
                     radius={shape.radius || DEFAULT_SHAPE_SIZE / 2}
@@ -275,6 +294,7 @@ const CanvasShapeComponent = ({
                         onDragEnd(shape.id)
                     }}
                     perfectDrawEnabled={false}
+                    listening={!isRotatingRef.current}
                 />
                 {isSelected && canResize && (
                     <Group>
@@ -327,6 +347,8 @@ const CanvasShapeComponent = ({
                             draggable
                             onDragStart={(e) => {
                                 e.cancelBubble = true
+                                isRotatingRef.current = true
+                                lastRotationRef.current = shape.rotation || 0
                                 _onRotateStart && _onRotateStart(shape.id)
                             }}
                             onDragMove={(e) => {
@@ -336,19 +358,28 @@ const CanvasShapeComponent = ({
                                 const pointer = stage.getPointerPosition()
                                 if (!pointer) return
                                 const scaleX = stage.scaleX()
-                                const scaleY = stage.scaleY()
                                 const stageX = stage.x()
                                 const stageY = stage.y()
                                 const canvasX = (pointer.x - stageX) / scaleX
-                                const canvasY = (pointer.y - stageY) / scaleY
+                                const canvasY = (pointer.y - stageY) / scaleX
 
-                                // Calculate rotation angle
-                                const angle = Math.atan2(canvasY - shape.y, canvasX - shape.x) * (180 / Math.PI)
+                                // Calculate rotation angle (optimized)
+                                const dx = canvasX - shape.x
+                                const dy = canvasY - shape.y
+                                const angle = Math.atan2(dy, dx) * 57.29577951308232
+
+                                // Apply rotation directly to Konva node for instant visual feedback
+                                if (shapeRef.current && Math.abs(angle - lastRotationRef.current) > 0.5) {
+                                    shapeRef.current.rotation(angle)
+                                    lastRotationRef.current = angle
+                                    shapeRef.current.getLayer()?.batchDraw()
+                                }
 
                                 _onRotateMove && _onRotateMove(shape.id, angle)
                             }}
                             onDragEnd={(e) => {
                                 e.cancelBubble = true
+                                isRotatingRef.current = false
                                 _onRotateEnd && _onRotateEnd(shape.id)
                             }}
                             perfectDrawEnabled={false}
@@ -375,6 +406,7 @@ const CanvasShapeComponent = ({
     return (
         <>
             <Rect
+                ref={shapeRef}
                 x={shape.x}
                 y={shape.y}
                 width={shape.width || DEFAULT_SHAPE_SIZE}
@@ -401,6 +433,7 @@ const CanvasShapeComponent = ({
                     onDragEnd(shape.id)
                 }}
                 perfectDrawEnabled={false}
+                listening={!isRotatingRef.current}
             />
             {isSelected && canResize && (
                 <Group>
@@ -572,6 +605,8 @@ const CanvasShapeComponent = ({
                         draggable
                         onDragStart={(e) => {
                             e.cancelBubble = true
+                            isRotatingRef.current = true
+                            lastRotationRef.current = shape.rotation || 0
                             _onRotateStart && _onRotateStart(shape.id)
                         }}
                         onDragMove={(e) => {
@@ -581,21 +616,30 @@ const CanvasShapeComponent = ({
                             const pointer = stage.getPointerPosition()
                             if (!pointer) return
                             const scaleX = stage.scaleX()
-                            const scaleY = stage.scaleY()
                             const stageX = stage.x()
                             const stageY = stage.y()
                             const canvasX = (pointer.x - stageX) / scaleX
-                            const canvasY = (pointer.y - stageY) / scaleY
+                            const canvasY = (pointer.y - stageY) / scaleX
 
-                            // Calculate rotation angle
+                            // Calculate rotation angle (optimized)
                             const centerX = shape.x + (shape.width || DEFAULT_SHAPE_SIZE) / 2
                             const centerY = shape.y + (shape.height || DEFAULT_SHAPE_SIZE) / 2
-                            const angle = Math.atan2(canvasY - centerY, canvasX - centerX) * (180 / Math.PI)
+                            const dx = canvasX - centerX
+                            const dy = canvasY - centerY
+                            const angle = Math.atan2(dy, dx) * 57.29577951308232
+
+                            // Apply rotation directly to Konva node for instant visual feedback
+                            if (shapeRef.current && Math.abs(angle - lastRotationRef.current) > 0.5) {
+                                shapeRef.current.rotation(angle)
+                                lastRotationRef.current = angle
+                                shapeRef.current.getLayer()?.batchDraw()
+                            }
 
                             _onRotateMove && _onRotateMove(shape.id, angle)
                         }}
                         onDragEnd={(e) => {
                             e.cancelBubble = true
+                            isRotatingRef.current = false
                             _onRotateEnd && _onRotateEnd(shape.id)
                         }}
                         perfectDrawEnabled={false}

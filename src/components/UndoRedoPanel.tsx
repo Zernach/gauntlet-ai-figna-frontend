@@ -18,13 +18,27 @@ const buttonBase: React.CSSProperties = {
   backgroundColor: '#2a2a2a',
   color: '#ffffff',
   cursor: 'pointer',
-  fontSize: '12px',
+  fontSize: '13px',
   fontWeight: 600,
 }
 
 const buttonDisabled: React.CSSProperties = {
   opacity: 0.4,
   cursor: 'not-allowed',
+}
+
+const iconStyle: React.CSSProperties = {
+  fontSize: '22px',
+  lineHeight: 1,
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+}
+
+const textStyle: React.CSSProperties = {
+  lineHeight: 1,
+  display: 'flex',
+  alignItems: 'center',
 }
 
 const UndoRedoPanel: React.FC<UndoRedoPanelProps> = ({ canUndo, canRedo, onUndo, onRedo }) => {
@@ -43,7 +57,8 @@ const UndoRedoPanel: React.FC<UndoRedoPanelProps> = ({ canUndo, canRedo, onUndo,
           title={canUndo ? 'Undo (⌘Z / Ctrl+Z)' : 'Nothing to undo'}
           style={{ ...buttonBase, ...(canUndo ? {} : buttonDisabled) }}
         >
-          ⟲ Undo
+          <span style={iconStyle}>⟲</span>
+          <span style={textStyle}>Undo</span>
         </button>
         <button
           onClick={onRedo}
@@ -51,7 +66,8 @@ const UndoRedoPanel: React.FC<UndoRedoPanelProps> = ({ canUndo, canRedo, onUndo,
           title={canRedo ? 'Redo (⇧⌘Z / Ctrl+Y)' : 'Nothing to redo'}
           style={{ ...buttonBase, ...(canRedo ? {} : buttonDisabled) }}
         >
-          ⟳ Redo
+          <span style={iconStyle}>⟳</span>
+          <span style={textStyle}>Redo</span>
         </button>
       </div>
     </div>

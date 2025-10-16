@@ -49,7 +49,7 @@ const Toast: React.FC<ToastProps> = ({ toast, onDismiss }) => {
                 minWidth: '250px',
                 maxWidth: '400px',
                 opacity: isExiting ? 0 : 1,
-                transform: isExiting ? 'translateY(-10px)' : 'translateY(0)',
+                transform: isExiting ? 'translateY(10px)' : 'translateY(0)',
                 transition: 'opacity 0.3s ease, transform 0.3s ease',
             }}
         >
@@ -103,7 +103,7 @@ export const ToastContainer: React.FC<ToastContainerProps> = ({ toasts, onDismis
         <div
             style={{
                 position: 'fixed',
-                top: '80px',
+                bottom: '140px',
                 left: '50%',
                 transform: 'translateX(-50%)',
                 zIndex: 9999,

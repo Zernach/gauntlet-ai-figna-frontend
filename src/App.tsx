@@ -11,6 +11,8 @@ function App() {
   const [session, setSession] = useState<Session | null>(null)
   const [showAuthModal, setShowAuthModal] = useState(false)
   const registerToolsCallbackRef = useRef<((tools: CanvasTools) => void) | null>(null)
+  const [viewportCenter, setViewportCenter] = useState<{ x: number; y: number }>({ x: 25000, y: 25000 })
+  const [canvasShapes, setCanvasShapes] = useState<any[]>([])
 
   useEffect(() => {
     // Get initial session
@@ -54,9 +56,17 @@ function App() {
     }
   }, [])
 
+  const handleViewportCenterChange = useCallback((center: { x: number; y: number }) => {
+    setViewportCenter(center)
+  }, [])
+
+  const handleCanvasStateChange = useCallback((shapes: any[]) => {
+    setCanvasShapes(shapes)
+  }, [])
+
   return (
     <div style={{ width: '100%', height: '100%', position: 'relative', backgroundColor: '#0a0a0a' }}>
-      {session ? <Canvas onToolsReady={handleCanvasReady} /> : (
+      {session ? <Canvas onToolsReady={handleCanvasReady} onViewportCenterChange={handleViewportCenterChange} onCanvasStateChange={handleCanvasStateChange} /> : (
         <div
           style={{
             position: 'absolute',
@@ -162,7 +172,7 @@ function App() {
         <AuthModal onClose={handleCloseModal} />
       )}
 
-      {session && <RealtimeVoicePanel session={session} onRegisterTools={handleRegisterTools} />}
+      {session && <RealtimeVoicePanel session={session} onRegisterTools={handleRegisterTools} viewportCenter={viewportCenter} canvasShapes={canvasShapes} />}
     </div>
   )
 }

@@ -1,13 +1,16 @@
 import { useState, useRef, useEffect } from 'react'
 import { getVoiceRelayUrl } from '../lib/api'
 import { useAgenticToolCalling } from '../hooks/useAgenticToolCalling'
+import AudioVisualizer from './AudioVisualizer'
 
 interface RealtimeVoicePanelProps {
     session: any
     onRegisterTools?: (registerFn: (tools: any) => void) => void
+    viewportCenter?: { x: number; y: number }
+    canvasShapes?: any[]
 }
 
-export default function RealtimeVoicePanel({ session, onRegisterTools }: RealtimeVoicePanelProps) {
+export default function RealtimeVoicePanel({ session, onRegisterTools, viewportCenter, canvasShapes = [] }: RealtimeVoicePanelProps) {
     const [isLoading, setIsLoading] = useState(false)
     const [isConnected, setIsConnected] = useState(false)
     const [error, setError] = useState<string | null>(null)
@@ -16,9 +19,15 @@ export default function RealtimeVoicePanel({ session, onRegisterTools }: Realtim
     const audioElementRef = useRef<HTMLAudioElement | null>(null)
     const dataChannelRef = useRef<RTCDataChannel | null>(null)
 
+    // Audio visualization state
+    const [audioContext, setAudioContext] = useState<AudioContext | null>(null)
+    const [userAnalyser, setUserAnalyser] = useState<AnalyserNode | null>(null)
+    const [agentAnalyser, setAgentAnalyser] = useState<AnalyserNode | null>(null)
+
     // Agentic tool calling
     const { tools, registerTools, executeTool } = useAgenticToolCalling()
     const pendingToolCallRef = useRef<{ call_id: string; name: string; arguments: string } | null>(null)
+    const executedCallIdsRef = useRef<Set<string>>(new Set())
 
     useEffect(() => {
         // Create audio element for playback
@@ -37,12 +46,90 @@ export default function RealtimeVoicePanel({ session, onRegisterTools }: Realtim
         }
     }, [onRegisterTools, registerTools])
 
+    // Helper function to generate shape context description
+    const generateShapeContext = (shapes: any[]) => {
+        if (shapes.length === 0) {
+            return 'The canvas is currently empty.'
+        }
+
+        const shapeDescriptions = shapes.map(shape => {
+            let desc = `- Shape ID "${shape.id}": ${shape.type}`
+
+            if (shape.type === 'text' && (shape.textContent || shape.text_content)) {
+                desc += ` with text "${shape.textContent || shape.text_content}"`
+            }
+
+            if (shape.x !== undefined && shape.y !== undefined) {
+                desc += ` at position (${Math.round(shape.x)}, ${Math.round(shape.y)})`
+            }
+
+            if (shape.color) {
+                desc += `, color ${shape.color}`
+            }
+
+            if (shape.width && shape.height) {
+                desc += `, size ${Math.round(shape.width)}x${Math.round(shape.height)}`
+            } else if (shape.radius) {
+                desc += `, radius ${Math.round(shape.radius)}`
+            }
+
+            return desc
+        }).join('\n')
+
+        return `Current objects on canvas (${shapes.length} total):\n${shapeDescriptions}`
+    }
+
+    // Update session with viewport center and canvas shapes when they change
+    useEffect(() => {
+        if (isConnected && dataChannelRef.current && dataChannelRef.current.readyState === 'open') {
+            const centerX = viewportCenter ? Math.round(viewportCenter.x) : 25000
+            const centerY = viewportCenter ? Math.round(viewportCenter.y) : 25000
+            const shapeContext = generateShapeContext(canvasShapes)
+
+            const instructions = `You are a helpful AI assistant that can manipulate shapes on a collaborative canvas. The canvas is 50000x50000 pixels (coordinates from 0 to 50000). The user's current viewport is centered at (${centerX}, ${centerY}).
+
+IMPORTANT SHAPE CREATION GUIDELINES:
+- When creating a SINGLE shape without explicit coordinates, place it at the viewport center (${centerX}, ${centerY}) for best visibility.
+- When creating MULTIPLE shapes (e.g., "three circles", "five rectangles", "create 3 shapes"):
+  * ALWAYS calculate specific x and y coordinates for each shape to space them properly
+  * NEVER place multiple shapes at the same coordinates - they will stack and be invisible
+  * For horizontal spacing: Use 300-400 pixel spacing between shapes (e.g., x positions: ${centerX - 400}, ${centerX}, ${centerX + 400})
+  * For vertical spacing: Use 300-400 pixel spacing between shapes (e.g., y positions: ${centerY - 400}, ${centerY}, ${centerY + 400})
+  * For grid layouts: Arrange shapes in rows and columns with appropriate spacing
+  * Always specify explicit x and y coordinates for each shape in the shapes array
+- When asked to space shapes "evenly" or "horizontally" or "vertically", distribute them with consistent spacing relative to the viewport center
+- Default to horizontal arrangement unless the user specifies otherwise
+
+${shapeContext}
+
+When the user refers to objects by their content (like "the Hello World text" or "the red circle"), use the shape IDs from the list above to identify and modify them. You can use updateShape with the appropriate shape ID to modify existing objects.`
+
+            const sessionUpdatePayload = {
+                type: 'session.update',
+                session: {
+                    instructions
+                }
+            }
+
+            console.log('📍 [Voice Panel] Updating session with viewport and canvas context:', {
+                x: centerX,
+                y: centerY,
+                shapeCount: canvasShapes.length
+            })
+            dataChannelRef.current.send(JSON.stringify(sessionUpdatePayload))
+        }
+    }, [viewportCenter, canvasShapes, isConnected])
+
     // Handle function call from OpenAI
     const handleFunctionCall = (callId: string, name: string, args: string) => {
+        console.log('📞 [Voice Panel] Function call received:', { callId, name, args });
+
         try {
             const parsedArgs = JSON.parse(args)
+            console.log('📦 [Voice Panel] Parsed arguments:', parsedArgs);
 
             const result = executeTool(name, parsedArgs)
+            console.log('📤 [Voice Panel] Tool execution result:', result);
 
             // Send function result back to OpenAI
             if (dataChannelRef.current && dataChannelRef.current.readyState === 'open') {
@@ -55,14 +142,18 @@ export default function RealtimeVoicePanel({ session, onRegisterTools }: Realtim
                     }
                 }
 
+                console.log('📨 [Voice Panel] Sending function result to OpenAI:', responsePayload);
                 dataChannelRef.current.send(JSON.stringify(responsePayload))
 
-                // Request a response after function execution
-                dataChannelRef.current.send(JSON.stringify({
-                    type: 'response.create'
-                }))
+                console.log('✅ [Voice Panel] Function result sent - OpenAI will automatically continue the response');
+                // Note: We don't need to call response.create here - OpenAI automatically continues
+                // the response after receiving function outputs. Calling response.create would cause
+                // "conversation_already_has_active_response" error.
+            } else {
+                console.warn('⚠️ [Voice Panel] Data channel not open, cannot send function result');
             }
         } catch (error) {
+            console.error('❌ [Voice Panel] Error handling function call:', error);
 
             // Send error back to OpenAI
             if (dataChannelRef.current && dataChannelRef.current.readyState === 'open') {
@@ -78,12 +169,12 @@ export default function RealtimeVoicePanel({ session, onRegisterTools }: Realtim
                     }
                 }
 
+                console.log('📨 [Voice Panel] Sending error result to OpenAI:', errorPayload);
                 dataChannelRef.current.send(JSON.stringify(errorPayload))
 
-                // Request a response so AI can acknowledge the error
-                dataChannelRef.current.send(JSON.stringify({
-                    type: 'response.create'
-                }))
+                console.log('✅ [Voice Panel] Error result sent - OpenAI will automatically continue the response');
+                // Note: We don't need to call response.create here - OpenAI automatically continues
+                // the response after receiving function outputs, even error outputs.
             }
         }
     }
@@ -97,6 +188,15 @@ export default function RealtimeVoicePanel({ session, onRegisterTools }: Realtim
             dataChannelRef.current.close()
             dataChannelRef.current = null
         }
+        if (audioContext) {
+            audioContext.close()
+            setAudioContext(null)
+        }
+        setUserAnalyser(null)
+        setAgentAnalyser(null)
+        // Clear executed call IDs to prevent memory leaks
+        executedCallIdsRef.current.clear()
+        pendingToolCallRef.current = null
         setIsConnected(false)
         setIsSpeaking(false)
     }
@@ -108,18 +208,27 @@ export default function RealtimeVoicePanel({ session, onRegisterTools }: Realtim
         }
 
         if (isConnected) {
+            console.log('🛑 [Voice Panel] Disconnecting...');
             handleDisconnect()
             return
         }
 
+        console.log('🚀 [Voice Panel] Starting voice assistant...');
         setIsLoading(true)
         setError(null)
 
         try {
             // Get the relay URL/ephemeral token from backend
+            console.log('🔑 [Voice Panel] Fetching relay URL from backend...');
             const { relayUrl } = await getVoiceRelayUrl()
+            console.log('✅ [Voice Panel] Relay URL obtained');
+
+            // Create audio context for visualization
+            const ctx = new AudioContext()
+            setAudioContext(ctx)
 
             // Create RTCPeerConnection
+            console.log('🔗 [Voice Panel] Creating peer connection...');
             const pc = new RTCPeerConnection()
             peerConnectionRef.current = pc
 
@@ -127,11 +236,20 @@ export default function RealtimeVoicePanel({ session, onRegisterTools }: Realtim
             const audioEl = audioElementRef.current
             if (audioEl) {
                 pc.ontrack = (e) => {
+                    console.log('🎵 [Voice Panel] Received remote audio track');
                     audioEl.srcObject = e.streams[0]
+
+                    // Set up agent audio analyser
+                    const agentSource = ctx.createMediaStreamSource(e.streams[0])
+                    const agentAnalyserNode = ctx.createAnalyser()
+                    agentAnalyserNode.smoothingTimeConstant = 0.8
+                    agentSource.connect(agentAnalyserNode)
+                    setAgentAnalyser(agentAnalyserNode)
                 }
             }
 
             // Add local audio track from microphone
+            console.log('🎤 [Voice Panel] Requesting microphone access...');
             const ms = await navigator.mediaDevices.getUserMedia({
                 audio: {
                     echoCancellation: true,
@@ -141,29 +259,72 @@ export default function RealtimeVoicePanel({ session, onRegisterTools }: Realtim
             })
             pc.addTrack(ms.getTracks()[0])
 
+            // Set up user audio analyser
+            const userSource = ctx.createMediaStreamSource(ms)
+            const userAnalyserNode = ctx.createAnalyser()
+            userAnalyserNode.smoothingTimeConstant = 0.8
+            userSource.connect(userAnalyserNode)
+            setUserAnalyser(userAnalyserNode)
+
             // Set up data channel for sending/receiving events
             const dc = pc.createDataChannel('oai-events')
             dataChannelRef.current = dc
 
             dc.addEventListener('open', () => {
+                console.log('🔌 [Voice Panel] Data channel opened');
                 setIsConnected(true)
                 setIsLoading(false)
 
                 // Send session update to configure the session with tools
-                dc.send(JSON.stringify({
+                const centerX = viewportCenter?.x ?? 25000
+                const centerY = viewportCenter?.y ?? 25000
+                const shapeContext = generateShapeContext(canvasShapes)
+
+                const instructions = `You are a helpful AI assistant that can manipulate shapes on a collaborative canvas. The canvas is 50000x50000 pixels (coordinates from 0 to 50000). The user's current viewport is centered at (${Math.round(centerX)}, ${Math.round(centerY)}).
+
+IMPORTANT SHAPE CREATION GUIDELINES:
+- When creating a SINGLE shape without explicit coordinates, place it at the viewport center (${Math.round(centerX)}, ${Math.round(centerY)}) for best visibility.
+- When creating MULTIPLE shapes (e.g., "three circles", "five rectangles", "create 3 shapes"):
+  * ALWAYS calculate specific x and y coordinates for each shape to space them properly
+  * NEVER place multiple shapes at the same coordinates - they will stack and be invisible
+  * For horizontal spacing: Use 300-400 pixel spacing between shapes (e.g., x positions: ${Math.round(centerX) - 400}, ${Math.round(centerX)}, ${Math.round(centerX) + 400})
+  * For vertical spacing: Use 300-400 pixel spacing between shapes (e.g., y positions: ${Math.round(centerY) - 400}, ${Math.round(centerY)}, ${Math.round(centerY) + 400})
+  * For grid layouts: Arrange shapes in rows and columns with appropriate spacing
+  * Always specify explicit x and y coordinates for each shape in the shapes array
+- When asked to space shapes "evenly" or "horizontally" or "vertically", distribute them with consistent spacing relative to the viewport center
+- Default to horizontal arrangement unless the user specifies otherwise
+
+${shapeContext}
+
+When the user refers to objects by their content (like "the Hello World text" or "the red circle"), use the shape IDs from the list above to identify and modify them. You can use updateShape with the appropriate shape ID to modify existing objects.`
+
+                const sessionUpdatePayload = {
                     type: 'session.update',
                     session: {
                         turn_detection: { type: 'server_vad' },
                         input_audio_transcription: { model: 'whisper-1' },
                         tools: tools,
-                        tool_choice: 'auto'
+                        tool_choice: 'auto',
+                        instructions
                     }
-                }))
+                };
+                console.log('📨 [Voice Panel] Sending session update with tools, viewport, and canvas context:', {
+                    toolCount: tools.length,
+                    toolNames: tools.map((t: any) => t.name),
+                    viewportCenter: { x: Math.round(centerX), y: Math.round(centerY) },
+                    shapeCount: canvasShapes.length
+                });
+                dc.send(JSON.stringify(sessionUpdatePayload))
             })
 
             dc.addEventListener('message', (e) => {
                 try {
                     const event = JSON.parse(e.data)
+
+                    // Log all events for debugging (filter out very noisy ones)
+                    if (!['response.audio.delta', 'input_audio_buffer.speech_started', 'input_audio_buffer.speech_stopped'].includes(event.type)) {
+                        console.log('📥 [Voice Panel] Received event:', event.type, event);
+                    }
 
                     // Track when AI is speaking
                     if (event.type === 'response.audio.delta' || event.type === 'response.audio_transcript.delta') {
@@ -172,45 +333,96 @@ export default function RealtimeVoicePanel({ session, onRegisterTools }: Realtim
                         setIsSpeaking(false)
                     }
 
-                    // Handle function calls from OpenAI
+                    // Log session updates
+                    if (event.type === 'session.updated') {
+                        console.log('✅ [Voice Panel] Session updated successfully:', {
+                            tools: event.session?.tools?.length || 0,
+                            toolChoice: event.session?.tool_choice
+                        });
+                    }
+
+                    // Handle function calls from OpenAI - capture the function name when it's added
+                    if (event.type === 'response.output_item.added' && event.item?.type === 'function_call') {
+                        console.log('🆕 [Voice Panel] Function call started:', event.item);
+                        pendingToolCallRef.current = {
+                            call_id: event.item.call_id || '',
+                            name: event.item.name || '',
+                            arguments: ''
+                        }
+                        console.log('📝 [Voice Panel] Initialized function call:', event.item.name);
+                    }
+
                     if (event.type === 'response.function_call_arguments.delta') {
+                        console.log('🔄 [Voice Panel] Function call arguments delta:', event);
                         // Accumulate function call arguments
                         if (!pendingToolCallRef.current) {
+                            console.warn('⚠️ [Voice Panel] Received delta without function call initialization');
                             pendingToolCallRef.current = {
                                 call_id: event.call_id,
                                 name: event.name || '',
                                 arguments: ''
                             }
                         }
+                        // Update call_id and name if provided
+                        if (event.call_id) pendingToolCallRef.current.call_id = event.call_id
+                        if (event.name) pendingToolCallRef.current.name = event.name
+
                         pendingToolCallRef.current.arguments += event.delta
                     }
 
                     if (event.type === 'response.function_call_arguments.done') {
+                        console.log('✔️ [Voice Panel] Function call arguments complete');
                         // Execute the complete function call
                         const toolCall = pendingToolCallRef.current
-                        if (toolCall) {
-                            handleFunctionCall(toolCall.call_id, toolCall.name, toolCall.arguments)
+                        if (toolCall && toolCall.name && toolCall.call_id) {
+                            // Check if we've already executed this call_id
+                            if (!executedCallIdsRef.current.has(toolCall.call_id)) {
+                                console.log('🎯 [Voice Panel] Executing accumulated function call:', toolCall);
+                                handleFunctionCall(toolCall.call_id, toolCall.name, toolCall.arguments)
+                                executedCallIdsRef.current.add(toolCall.call_id)
+                            } else {
+                                console.log('⏭️ [Voice Panel] Skipping duplicate execution (call_id already executed)');
+                            }
                             pendingToolCallRef.current = null
+                        } else {
+                            console.warn('⚠️ [Voice Panel] Function call done but missing name or call_id:', toolCall);
                         }
                     }
 
-                    // Also handle the newer event format
+                    // Also handle the newer event format (fallback only if arguments.done didn't fire)
                     if (event.type === 'response.output_item.done' && event.item?.type === 'function_call') {
+                        console.log('🎯 [Voice Panel] Received complete function call (output_item.done):', event.item);
                         const { call_id, name, arguments: args } = event.item
-                        if (call_id && name && args) {
+
+                        // Only execute if we haven't already handled this call_id
+                        if (call_id && !executedCallIdsRef.current.has(call_id) && name && args) {
+                            console.log('📞 [Voice Panel] Executing function call from output_item.done (arguments.done did not fire)');
                             handleFunctionCall(call_id, name, args)
+                            executedCallIdsRef.current.add(call_id)
+                            pendingToolCallRef.current = null
+                        } else if (call_id && executedCallIdsRef.current.has(call_id)) {
+                            console.log('⏭️ [Voice Panel] Skipping duplicate function call execution (already handled by arguments.done)');
+                        } else {
+                            console.warn('⚠️ [Voice Panel] Incomplete function call data:', { call_id, name, hasArgs: !!args });
                         }
                     }
+
+                    // Log errors
+                    if (event.type === 'error') {
+                        console.error('❌ [Voice Panel] OpenAI error event:', event);
+                    }
                 } catch (err) {
-                    // Handle parse error silently
+                    console.error('❌ [Voice Panel] Error parsing message:', err, 'Raw data:', e.data);
                 }
             })
 
             dc.addEventListener('close', () => {
+                console.log('🔌 [Voice Panel] Data channel closed');
                 handleDisconnect()
             })
 
             dc.addEventListener('error', (e) => {
+                console.error('❌ [Voice Panel] Data channel error:', e);
                 setError('Connection error occurred')
                 handleDisconnect()
             })
@@ -222,6 +434,7 @@ export default function RealtimeVoicePanel({ session, onRegisterTools }: Realtim
             // Send the offer to OpenAI and get back the answer
             const baseUrl = 'https://api.openai.com/v1/realtime'
             const model = 'gpt-4o-realtime-preview-2024-12-17'
+            console.log('🌐 [Voice Panel] Connecting to OpenAI realtime API...');
             const sdpResponse = await fetch(`${baseUrl}?model=${model}`, {
                 method: 'POST',
                 body: offer.sdp,
@@ -232,15 +445,20 @@ export default function RealtimeVoicePanel({ session, onRegisterTools }: Realtim
             })
 
             if (!sdpResponse.ok) {
+                const errorText = await sdpResponse.text();
+                console.error('❌ [Voice Panel] Failed to connect to OpenAI:', sdpResponse.status, errorText);
                 throw new Error(`Failed to connect to OpenAI: ${sdpResponse.statusText}`)
             }
 
             const answerSdp = await sdpResponse.text()
+            console.log('✅ [Voice Panel] Received SDP answer, setting remote description...');
             await pc.setRemoteDescription({
                 type: 'answer',
                 sdp: answerSdp,
             })
+            console.log('🎉 [Voice Panel] Voice assistant setup complete!');
         } catch (err) {
+            console.error('❌ [Voice Panel] Error starting voice assistant:', err);
             setError(err instanceof Error ? err.message : 'Failed to start voice assistant')
             handleDisconnect()
             setIsLoading(false)
@@ -252,83 +470,162 @@ export default function RealtimeVoicePanel({ session, onRegisterTools }: Realtim
             style={{
                 position: 'fixed',
                 bottom: '24px',
-                left: '24px',
-                backgroundColor: 'rgba(20, 20, 20, 0.95)',
-                border: '1px solid #404040',
-                borderRadius: '16px',
-                padding: '24px',
-                boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4)',
-                backdropFilter: 'blur(10px)',
+                left: '50%',
+                transform: 'translateX(-50%)',
+                background: 'linear-gradient(135deg, rgba(10, 10, 35, 0.95) 0%, rgba(20, 10, 40, 0.95) 50%, rgba(10, 10, 35, 0.95) 100%)',
+                border: '2px solid transparent',
+                borderRadius: '20px',
+                padding: '20px 32px',
+                boxShadow: '0 0 60px rgba(100, 50, 200, 0.4), 0 0 120px rgba(50, 100, 255, 0.2), inset 0 0 40px rgba(100, 50, 200, 0.1)',
+                backdropFilter: 'blur(20px)',
                 zIndex: 1000,
-                minWidth: '240px',
+                display: 'flex',
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: '24px',
+                overflow: 'hidden',
             }}
+            className="voice-panel-space"
         >
-            <h3
+            {/* Animated background stars */}
+            <div
                 style={{
-                    margin: '0 0 16px 0',
-                    fontSize: '18px',
-                    fontWeight: 700,
-                    color: '#ffffff',
-                    textAlign: 'center',
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    background: 'radial-gradient(circle at 20% 50%, rgba(100, 50, 200, 0.1) 0%, transparent 50%), radial-gradient(circle at 80% 50%, rgba(50, 100, 255, 0.1) 0%, transparent 50%)',
+                    animation: 'pulse 4s ease-in-out infinite',
+                    pointerEvents: 'none',
+                    zIndex: -1,
+                }}
+            />
+
+            {/* Border glow effect */}
+            <div
+                style={{
+                    position: 'absolute',
+                    top: '-2px',
+                    left: '-2px',
+                    right: '-2px',
+                    bottom: '-2px',
+                    background: 'linear-gradient(90deg, #6432c8 0%, #3264ff 25%, #c832c8 50%, #3264ff 75%, #6432c8 100%)',
+                    backgroundSize: '300% 100%',
+                    animation: 'borderFlow 6s linear infinite',
+                    borderRadius: '20px',
+                    zIndex: -2,
+                    opacity: 0.6,
+                }}
+            />
+
+            {/* Title Section */}
+            <div
+                style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    gap: '8px',
+                    minWidth: '140px',
                 }}
             >
-                Voice Assistant
-            </h3>
-
-            {isConnected && (
-                <div
+                <h3
                     style={{
-                        marginBottom: '16px',
-                        padding: '12px',
-                        backgroundColor: 'rgba(114, 250, 65, 0.1)',
-                        border: '1px solid #72fa41',
-                        borderRadius: '8px',
+                        margin: 0,
+                        fontSize: '16px',
+                        fontWeight: 700,
+                        background: 'linear-gradient(135deg, #a0f0ff 0%, #c8a0ff 100%)',
+                        WebkitBackgroundClip: 'text',
+                        WebkitTextFillColor: 'transparent',
                         textAlign: 'center',
+                        textTransform: 'uppercase',
+                        letterSpacing: '2px',
+                        textShadow: '0 0 20px rgba(160, 240, 255, 0.5)',
                     }}
                 >
+                    Voice Assistant
+                </h3>
+                {isConnected && (
                     <div
                         style={{
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
-                            gap: '8px',
+                            gap: '6px',
+                            padding: '4px 12px',
+                            backgroundColor: isSpeaking ? 'rgba(200, 100, 255, 0.15)' : 'rgba(100, 200, 255, 0.15)',
+                            border: `1px solid ${isSpeaking ? '#c864ff' : '#64c8ff'}`,
+                            borderRadius: '20px',
+                            boxShadow: isSpeaking ? '0 0 20px rgba(200, 100, 255, 0.4)' : '0 0 20px rgba(100, 200, 255, 0.4)',
                         }}
                     >
                         <div
                             style={{
-                                width: '8px',
-                                height: '8px',
+                                width: '6px',
+                                height: '6px',
                                 borderRadius: '50%',
-                                backgroundColor: '#72fa41',
-                                animation: isSpeaking ? 'blink 1s ease-in-out infinite' : 'none',
+                                backgroundColor: isSpeaking ? '#c864ff' : '#64c8ff',
+                                animation: 'pulse 1.5s ease-in-out infinite',
+                                boxShadow: isSpeaking ? '0 0 10px #c864ff' : '0 0 10px #64c8ff',
                             }}
                         />
-                        <span style={{ color: '#72fa41', fontSize: '14px', fontWeight: 600 }}>
-                            {isSpeaking ? 'AI Speaking...' : 'Listening...'}
+                        <span style={{
+                            color: isSpeaking ? '#c864ff' : '#64c8ff',
+                            fontSize: '11px',
+                            fontWeight: 700,
+                            textTransform: 'uppercase',
+                            letterSpacing: '1px',
+                        }}>
+                            {isSpeaking ? 'AI Active' : 'Listening'}
                         </span>
                     </div>
+                )}
+            </div>
+
+            {/* Audio Visualizers */}
+            {isConnected && (
+                <div
+                    style={{
+                        display: 'flex',
+                        flexDirection: 'row',
+                        gap: '16px',
+                        flex: 1,
+                    }}
+                >
+                    <AudioVisualizer
+                        audioContext={audioContext}
+                        analyserNode={userAnalyser}
+                        label="Your Voice"
+                        color="#64c8ff"
+                    />
+                    <AudioVisualizer
+                        audioContext={audioContext}
+                        analyserNode={agentAnalyser}
+                        label="Agent Voice"
+                        color="#c864ff"
+                    />
                 </div>
             )}
 
+            {/* Control Button */}
             <button
                 onClick={handleStartVoice}
                 disabled={isLoading}
                 style={{
-                    width: '100%',
-                    padding: '24px',
-                    fontSize: '24px',
+                    padding: '16px 32px',
+                    fontSize: '16px',
                     fontWeight: 800,
                     color: '#ffffff',
                     background: isLoading
-                        ? 'linear-gradient(135deg, #666666, #888888)'
+                        ? 'linear-gradient(135deg, rgba(100, 100, 100, 0.5), rgba(150, 150, 150, 0.5))'
                         : isConnected
-                            ? 'linear-gradient(135deg, #ff4444, #cc0000)'
-                            : 'linear-gradient(135deg, #1a1a2e, #16213e)',
+                            ? 'linear-gradient(135deg, rgba(255, 50, 100, 0.8), rgba(200, 0, 50, 0.8))'
+                            : 'linear-gradient(135deg, rgba(100, 50, 200, 0.6), rgba(50, 100, 255, 0.6))',
                     border: isLoading
-                        ? 'none'
+                        ? '2px solid rgba(150, 150, 150, 0.5)'
                         : isConnected
-                            ? '2px solid #ff4444'
-                            : '2px solid transparent',
+                            ? '2px solid #ff3264'
+                            : '2px solid #6432c8',
                     borderRadius: '12px',
                     cursor: isLoading ? 'not-allowed' : 'pointer',
                     position: 'relative',
@@ -336,17 +633,33 @@ export default function RealtimeVoicePanel({ session, onRegisterTools }: Realtim
                     transition: 'all 0.3s ease',
                     textTransform: 'uppercase',
                     letterSpacing: '2px',
-                    textShadow: isLoading || isConnected ? 'none' : '0 0 10px rgba(114, 250, 65, 0.5)',
+                    textShadow: isLoading
+                        ? 'none'
+                        : isConnected
+                            ? '0 0 10px rgba(255, 50, 100, 0.8)'
+                            : '0 0 20px rgba(100, 200, 255, 0.8)',
+                    boxShadow: isLoading
+                        ? 'none'
+                        : isConnected
+                            ? '0 0 30px rgba(255, 50, 100, 0.4)'
+                            : '0 0 30px rgba(100, 50, 200, 0.4)',
+                    minWidth: '120px',
                 }}
-                className={!isLoading && !isConnected ? 'shimmer-button' : ''}
+                className={!isLoading && !isConnected ? 'space-button' : ''}
                 onMouseEnter={(e) => {
                     if (!isLoading) {
                         e.currentTarget.style.transform = 'scale(1.05)'
+                        e.currentTarget.style.boxShadow = isConnected
+                            ? '0 0 40px rgba(255, 50, 100, 0.6)'
+                            : '0 0 40px rgba(100, 50, 200, 0.6)'
                     }
                 }}
                 onMouseLeave={(e) => {
                     if (!isLoading) {
                         e.currentTarget.style.transform = 'scale(1)'
+                        e.currentTarget.style.boxShadow = isConnected
+                            ? '0 0 30px rgba(255, 50, 100, 0.4)'
+                            : '0 0 30px rgba(100, 50, 200, 0.4)'
                     }
                 }}
             >
@@ -358,28 +671,38 @@ export default function RealtimeVoicePanel({ session, onRegisterTools }: Realtim
                             left: '-50%',
                             width: '200%',
                             height: '200%',
-                            background: 'linear-gradient(45deg, transparent 30%, rgba(114, 250, 65, 0.3) 50%, rgba(36, 204, 255, 0.3) 55%, transparent 70%)',
+                            background: 'linear-gradient(45deg, transparent 30%, rgba(100, 200, 255, 0.4) 50%, rgba(200, 100, 255, 0.4) 55%, transparent 70%)',
                             animation: 'shimmer 3s infinite',
                             pointerEvents: 'none',
                         }}
                     />
                 )}
                 <span style={{ position: 'relative', zIndex: 1 }}>
-                    {isLoading ? 'Connecting...' : isConnected ? 'STOP' : 'START'}
+                    {isLoading ? 'Connecting...' : isConnected ? 'Disconnect' : 'Connect'}
                 </span>
             </button>
 
             {error && (
-                <p
+                <div
                     style={{
-                        marginTop: '12px',
-                        color: '#ff4444',
+                        position: 'absolute',
+                        bottom: '-40px',
+                        left: '50%',
+                        transform: 'translateX(-50%)',
+                        padding: '8px 16px',
+                        backgroundColor: 'rgba(255, 50, 100, 0.2)',
+                        border: '1px solid #ff3264',
+                        borderRadius: '8px',
+                        color: '#ff6496',
                         fontSize: '12px',
+                        fontWeight: 600,
                         textAlign: 'center',
+                        boxShadow: '0 0 20px rgba(255, 50, 100, 0.3)',
+                        whiteSpace: 'nowrap',
                     }}
                 >
                     {error}
-                </p>
+                </div>
             )}
 
             <style>
@@ -393,46 +716,27 @@ export default function RealtimeVoicePanel({ session, onRegisterTools }: Realtim
             }
           }
           
-          @keyframes blink {
+          @keyframes pulse {
             0%, 100% {
               opacity: 1;
+              transform: scale(1);
             }
             50% {
-              opacity: 0.3;
+              opacity: 0.6;
+              transform: scale(0.95);
             }
           }
           
-          .shimmer-button::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: 
-              linear-gradient(90deg, 
-                rgba(114, 250, 65, 0.1) 0%, 
-                rgba(114, 250, 65, 0.4) 20%,
-                rgba(36, 204, 255, 0.4) 40%,
-                rgba(114, 250, 65, 0.4) 60%,
-                rgba(114, 250, 65, 0.1) 100%
-              );
-            background-size: 200% 100%;
-            animation: shimmer-border 2s linear infinite;
-            border-radius: 12px;
-            pointer-events: none;
-          }
-          
-          @keyframes shimmer-border {
+          @keyframes borderFlow {
             0% {
-              background-position: -200% 0;
+              background-position: 0% 0;
             }
             100% {
-              background-position: 200% 0;
+              background-position: 300% 0;
             }
           }
           
-          .shimmer-button::after {
+          .space-button::before {
             content: '';
             position: absolute;
             top: -2px;
@@ -440,28 +744,20 @@ export default function RealtimeVoicePanel({ session, onRegisterTools }: Realtim
             right: -2px;
             bottom: -2px;
             background: linear-gradient(
-              45deg,
-              #72fa41 0%,
-              #24ccff 25%,
-              #72fa41 50%,
-              #24ccff 75%,
-              #72fa41 100%
+              90deg,
+              #6432c8 0%,
+              #3264ff 25%,
+              #c832c8 50%,
+              #3264ff 75%,
+              #6432c8 100%
             );
-            background-size: 300% 300%;
-            animation: shimmer-gradient 4s linear infinite;
+            background-size: 300% 100%;
+            animation: borderFlow 4s linear infinite;
             border-radius: 14px;
             z-index: -1;
-            opacity: 0.6;
+            opacity: 0.4;
           }
           
-          @keyframes shimmer-gradient {
-            0% {
-              background-position: 0% 50%;
-            }
-            100% {
-              background-position: 300% 50%;
-            }
-          }
         `}
             </style>
         </div>

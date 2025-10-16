@@ -1,3 +1,6 @@
+import React from 'react'
+import { LogOut } from 'lucide-react'
+
 interface ActiveUser {
   userId: string
   username: string
@@ -16,7 +19,6 @@ interface PresencePanelProps {
   maxReconnectAttempts: number
   queuedOperationsCount: number
   fps: number
-  shapesCount: number
   onSignOut: () => void
 }
 
@@ -30,9 +32,56 @@ export default function PresencePanel({
   maxReconnectAttempts,
   queuedOperationsCount,
   fps,
-  shapesCount,
   onSignOut,
 }: PresencePanelProps) {
+  const [showSignOutTooltip, setShowSignOutTooltip] = React.useState(false)
+  const tooltipRef = React.useRef<HTMLDivElement>(null)
+  const emailRef = React.useRef<HTMLDivElement>(null)
+
+  // Close tooltip when clicking outside
+  React.useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (
+        showSignOutTooltip &&
+        tooltipRef.current &&
+        emailRef.current &&
+        !tooltipRef.current.contains(e.target as Node) &&
+        !emailRef.current.contains(e.target as Node)
+      ) {
+        setShowSignOutTooltip(false)
+      }
+    }
+
+    if (showSignOutTooltip) {
+      // Add a small delay to prevent immediate closing from the triggering click
+      const timeout = setTimeout(() => {
+        document.addEventListener('mousedown', handleClickOutside)
+      }, 10)
+
+      return () => {
+        clearTimeout(timeout)
+        document.removeEventListener('mousedown', handleClickOutside)
+      }
+    }
+  }, [showSignOutTooltip])
+
+  // Close on escape
+  React.useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && showSignOutTooltip) {
+        setShowSignOutTooltip(false)
+      }
+    }
+
+    document.addEventListener('keydown', handleEscape)
+    return () => document.removeEventListener('keydown', handleEscape)
+  }, [showSignOutTooltip])
+
+  const handleSignOutClick = () => {
+    setShowSignOutTooltip(false)
+    onSignOut()
+  }
+
   return (
     <div id="presence-panel" style={{
       position: 'absolute',
@@ -46,37 +95,30 @@ export default function PresencePanel({
       border: '1px solid #404040',
       minWidth: '200px',
     }}>
-      <button
-        onClick={onSignOut}
-        title="Sign out"
-        style={{
-          position: 'absolute',
-          top: '8px',
-          right: '8px',
-          width: '22px',
-          height: '22px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          backgroundColor: '#2a2a2a',
-          color: '#ffffff',
-          border: '1px solid #404040',
-          borderRadius: '4px',
-          cursor: 'pointer',
-          fontSize: '12px',
-          lineHeight: 1,
-        }}
-      >
-        ⎋
-      </button>
-
       {/* Active Users Section */}
-      <div style={{ fontWeight: '600', marginBottom: '8px', fontSize: '14px', color: '#ffffff' }}>
-        Online ({onlineUsersCount})
-      </div>
+      {onlineUsersCount > 1 && (
+        <div style={{ fontWeight: '600', marginBottom: '8px', fontSize: '14px', color: '#ffffff' }}>
+          Active users ({onlineUsersCount})
+        </div>
+      )}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '12px' }}>
-        {/* Current user */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        {/* Current user - clickable */}
+        <div
+          ref={emailRef}
+          onClick={() => setShowSignOutTooltip(!showSignOutTooltip)}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            cursor: 'pointer',
+            padding: '4px',
+            margin: '-4px',
+            borderRadius: '4px',
+            transition: 'background-color 0.15s ease',
+          }}
+          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#2a2a2a'}
+          onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+        >
           <div style={{
             width: '8px',
             height: '8px',
@@ -115,7 +157,6 @@ export default function PresencePanel({
         display: 'flex',
         alignItems: 'center',
         gap: '8px',
-        marginBottom: '8px',
       }}>
         <div style={{
           width: '8px',
@@ -134,7 +175,14 @@ export default function PresencePanel({
           animation: connectionState === 'reconnecting' || connectionState === 'connecting' ? 'pulse 1.5s ease-in-out infinite' : 'none',
         }} />
         <span style={{ fontSize: '12px', color: '#ffffff', fontWeight: 500 }}>
-          {connectionState === 'connected' ? 'Connected' :
+          {connectionState === 'connected' ? (
+            <>
+              Connected{' '}
+              <span style={{ fontSize: '11px', color: '#888', fontWeight: 400 }}>
+                ({fps} FPS)
+              </span>
+            </>
+          ) :
             connectionState === 'reconnecting' ? `Reconnecting... (${reconnectAttempts}/${maxReconnectAttempts})` :
               connectionState === 'connecting' ? 'Connecting...' :
                 'Disconnected'}
@@ -146,22 +194,58 @@ export default function PresencePanel({
         )}
       </div>
 
-      {/* Performance Stats Section */}
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: '12px',
-        fontSize: '11px',
-        color: '#888',
-      }}>
-        <span style={{ minWidth: '45px', display: 'inline-block' }}>
-          {fps} FPS
-        </span>
-        <span>|</span>
-        <span>
-          {shapesCount} shapes
-        </span>
-      </div>
+      {/* Sign Out Tooltip */}
+      {showSignOutTooltip && (
+        <div
+          ref={tooltipRef}
+          style={{
+            position: 'absolute',
+            top: '0',
+            right: '100%',
+            marginRight: '8px',
+            zIndex: 1000,
+            backgroundColor: '#1a1a1a',
+            border: '1px solid #404040',
+            borderRadius: '8px',
+            boxShadow: '0 8px 32px #1c1c1c99',
+            minWidth: '160px',
+            padding: '6px 0',
+            backdropFilter: 'blur(10px)',
+          }}
+        >
+          <button
+            onClick={handleSignOutClick}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '12px',
+              padding: '10px 16px',
+              width: '100%',
+              backgroundColor: 'transparent',
+              border: 'none',
+              color: '#ffffff',
+              fontSize: '13px',
+              fontWeight: '500',
+              cursor: 'pointer',
+              transition: 'background-color 0.15s ease',
+              textAlign: 'left',
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#2a2a2a'}
+            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+          >
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: '16px',
+              height: '16px'
+            }}>
+              <LogOut size={16} />
+            </div>
+            <span>Sign out?</span>
+          </button>
+        </div>
+      )}
     </div>
   )
 }

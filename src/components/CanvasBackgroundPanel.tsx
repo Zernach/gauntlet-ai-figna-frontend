@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import ColorSlider from './ColorSlider'
 
 interface CanvasBackgroundPanelProps {
@@ -13,7 +14,28 @@ export default function CanvasBackgroundPanel({
   valueHex,
   onChangeHex,
 }: CanvasBackgroundPanelProps) {
-  if (!isOpen) return null
+  const [isVisible, setIsVisible] = useState(false)
+  const [shouldRender, setShouldRender] = useState(false)
+
+  useEffect(() => {
+    if (isOpen) {
+      // When opening, render immediately and then trigger fade-in
+      setShouldRender(true)
+      requestAnimationFrame(() => {
+        setIsVisible(true)
+      })
+    } else {
+      // When closing, trigger fade-out first
+      setIsVisible(false)
+      // Wait for transition to complete before unrendering
+      const timer = setTimeout(() => {
+        setShouldRender(false)
+      }, 300) // Match transition duration
+      return () => clearTimeout(timer)
+    }
+  }, [isOpen])
+
+  if (!shouldRender) return null
 
   return (
     <div
@@ -26,7 +48,10 @@ export default function CanvasBackgroundPanel({
         border: '1px solid #404040',
         borderRadius: '12px',
         padding: '12px 14px',
-        boxShadow: '0 8px 32px #1c1c1c66'
+        boxShadow: '0 8px 32px #1c1c1c66',
+        opacity: isVisible ? 1 : 0,
+        transition: 'opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+        pointerEvents: isVisible ? 'auto' : 'none'
       }}
     >
       <div style={{ fontSize: '12px', fontWeight: 600, color: '#888', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>

@@ -7,21 +7,24 @@ import {
     Copy,
     Scissors,
     Clipboard,
-    CopyPlus
+    CopyPlus,
+    Palette
 } from 'lucide-react'
 
 interface ContextMenuProps {
     x: number
     y: number
+    mode: 'shape' | 'canvas'
     onClose: () => void
-    onSendToFront: () => void
-    onSendToBack: () => void
-    onMoveForward: () => void
-    onMoveBackward: () => void
-    onCopy: () => void
-    onCut: () => void
+    onSendToFront?: () => void
+    onSendToBack?: () => void
+    onMoveForward?: () => void
+    onMoveBackward?: () => void
+    onCopy?: () => void
+    onCut?: () => void
     onPaste: () => void
-    onDuplicate: () => void
+    onDuplicate?: () => void
+    onChangeCanvasColor?: () => void
     hasPasteData: boolean
 }
 
@@ -87,6 +90,7 @@ Divider.displayName = 'Divider'
 const ContextMenu: React.FC<ContextMenuProps> = ({
     x,
     y,
+    mode,
     onClose,
     onSendToFront,
     onSendToBack,
@@ -96,6 +100,7 @@ const ContextMenu: React.FC<ContextMenuProps> = ({
     onCut,
     onPaste,
     onDuplicate,
+    onChangeCanvasColor,
     hasPasteData
 }) => {
     const menuRef = React.useRef<HTMLDivElement>(null)
@@ -156,70 +161,112 @@ const ContextMenu: React.FC<ContextMenuProps> = ({
                 backdropFilter: 'blur(10px)',
             }}
         >
-            <div style={{
-                fontSize: '11px',
-                fontWeight: '600',
-                color: '#888',
-                textTransform: 'uppercase',
-                letterSpacing: '0.5px',
-                padding: '8px 16px 6px',
-            }}>
-                Layer
-            </div>
-            <MenuItem
-                icon={<ArrowUpToLine size={16} />}
-                label="Send to Front"
-                onClick={handleAction(onSendToFront)}
-            />
-            <MenuItem
-                icon={<ArrowUp size={16} />}
-                label="Move Forward"
-                onClick={handleAction(onMoveForward)}
-            />
-            <MenuItem
-                icon={<ArrowDown size={16} />}
-                label="Move Backward"
-                onClick={handleAction(onMoveBackward)}
-            />
-            <MenuItem
-                icon={<ArrowDownToLine size={16} />}
-                label="Send to Back"
-                onClick={handleAction(onSendToBack)}
-            />
+            {mode === 'shape' ? (
+                <>
+                    <div style={{
+                        fontSize: '11px',
+                        fontWeight: '600',
+                        color: '#888',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.5px',
+                        padding: '8px 16px 6px',
+                    }}>
+                        Layer
+                    </div>
+                    <MenuItem
+                        icon={<ArrowUpToLine size={16} />}
+                        label="Send to Front"
+                        onClick={handleAction(onSendToFront!)}
+                    />
+                    <MenuItem
+                        icon={<ArrowUp size={16} />}
+                        label="Move Forward"
+                        onClick={handleAction(onMoveForward!)}
+                    />
+                    <MenuItem
+                        icon={<ArrowDown size={16} />}
+                        label="Move Backward"
+                        onClick={handleAction(onMoveBackward!)}
+                    />
+                    <MenuItem
+                        icon={<ArrowDownToLine size={16} />}
+                        label="Send to Back"
+                        onClick={handleAction(onSendToBack!)}
+                    />
 
-            <Divider />
+                    <Divider />
 
-            <div style={{
-                fontSize: '11px',
-                fontWeight: '600',
-                color: '#888',
-                textTransform: 'uppercase',
-                letterSpacing: '0.5px',
-                padding: '8px 16px 6px',
-            }}>
-                Clipboard
-            </div>
-            <MenuItem
-                icon={<Scissors size={16} />}
-                label="Cut"
-                onClick={handleAction(onCut)}
-            />
-            <MenuItem
-                icon={<Copy size={16} />}
-                label="Copy"
-                onClick={handleAction(onCopy)}
-            />
-            <MenuItem
-                icon={<Clipboard size={16} />}
-                label="Paste"
-                onClick={handleAction(onPaste)}
-                disabled={!hasPasteData}
-            />
-            <MenuItem
-                icon={<CopyPlus size={16} />}
-                label="Duplicate"
-                onClick={handleAction(onDuplicate)}
-            />
+                    <div style={{
+                        fontSize: '11px',
+                        fontWeight: '600',
+                        color: '#888',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.5px',
+                        padding: '8px 16px 6px',
+                    }}>
+                        Clipboard
+                    </div>
+                    <MenuItem
+                        icon={<Scissors size={16} />}
+                        label="Cut"
+                        onClick={handleAction(onCut!)}
+                    />
+                    <MenuItem
+                        icon={<Copy size={16} />}
+                        label="Copy"
+                        onClick={handleAction(onCopy!)}
+                    />
+                    <MenuItem
+                        icon={<Clipboard size={16} />}
+                        label="Paste"
+                        onClick={handleAction(onPaste)}
+                        disabled={!hasPasteData}
+                    />
+                    <MenuItem
+                        icon={<CopyPlus size={16} />}
+                        label="Duplicate"
+                        onClick={handleAction(onDuplicate!)}
+                    />
+                </>
+            ) : (
+                <>
+                    {hasPasteData && (
+                        <>
+                            <div style={{
+                                fontSize: '11px',
+                                fontWeight: '600',
+                                color: '#888',
+                                textTransform: 'uppercase',
+                                letterSpacing: '0.5px',
+                                padding: '8px 16px 6px',
+                            }}>
+                                Clipboard
+                            </div>
+                            <MenuItem
+                                icon={<Clipboard size={16} />}
+                                label="Paste"
+                                onClick={handleAction(onPaste)}
+                            />
+                            <Divider />
+                        </>
+                    )}
+                    <div style={{
+                        fontSize: '11px',
+                        fontWeight: '600',
+                        color: '#888',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.5px',
+                        padding: '8px 16px 6px',
+                    }}>
+                        Canvas
+                    </div>
+                    <MenuItem
+                        icon={<Palette size={16} />}
+                        label="Change Canvas Color"
+                        onClick={handleAction(onChangeCanvasColor!)}
+                    />
+                </>
+            )}
         </div>
     )
 }

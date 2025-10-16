@@ -37,6 +37,7 @@ interface CanvasLayersProps {
   onRotateEnd: (id: string, rotation: number) => void
   onTextDoubleClick: (id: string, currentText: string) => void
   onContextMenu: (e: any, shapeId: string) => void
+  onCanvasContextMenu: (e: any) => void
   getUserColor: (userId: string) => string
 }
 
@@ -65,20 +66,22 @@ export default function CanvasLayers({
   onRotateEnd,
   onTextDoubleClick,
   onContextMenu,
+  onCanvasContextMenu,
   getUserColor,
 }: CanvasLayersProps) {
   return (
     <>
-      {/* Background Layer - separate layer prevents re-renders */}
-      <Layer listening={false}>
+      {/* Background Layer - listens for canvas context menu */}
+      <Layer>
         {/* Canvas Background */}
         <Rect
+          id="canvas-background"
           x={0}
           y={0}
           width={canvasWidth}
           height={canvasHeight}
           fill={canvasBgHex}
-          listening={false}
+          onContextMenu={onCanvasContextMenu}
         />
 
         {/* Canvas Border */}

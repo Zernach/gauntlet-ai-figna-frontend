@@ -24,6 +24,7 @@ interface ControlPanelProps {
     onToggleCanvasBg: () => void
     lassoMode: boolean
     onToggleLassoMode: () => void
+    onCollapse?: () => void
 }
 
 const ControlButton: React.FC<{
@@ -58,16 +59,16 @@ const ControlButton: React.FC<{
             alignItems: 'center',
             justifyContent: 'center',
             gap: '8px',
-            padding: isExpanded ? '12px 16px' : '12px 8px',
+            padding: isExpanded ? '12px 16px' : '10px',
             border: 'none',
             borderRadius: '8px',
             cursor: 'pointer',
             fontSize: '14px',
             fontWeight: '600',
             transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-            minWidth: isExpanded ? '120px' : '44px',
-            width: isExpanded ? 'auto' : '44px',
-            height: '44px',
+            minWidth: isExpanded ? '120px' : '40px',
+            width: isExpanded ? 'auto' : '40px',
+            height: isExpanded ? '44px' : '40px',
             position: 'relative',
             overflow: 'hidden',
         }
@@ -81,7 +82,9 @@ const ControlButton: React.FC<{
             secondary: {
                 backgroundColor: '#2a2a2a',
                 color: '#ffffff',
-                border: '1px solid #404040',
+                borderWidth: '1px',
+                borderStyle: 'solid',
+                borderColor: '#404040',
                 boxShadow: '0 2px 8px #1c1c1c4d',
             },
             accent: {
@@ -92,12 +95,18 @@ const ControlButton: React.FC<{
         }
 
         const hoverStyles: React.CSSProperties = {
-            transform: 'translateY(-1px)',
+            transform: 'translateY(-2px) scale(1.02)',
             boxShadow: variant === 'primary'
-                ? '0 4px 12px rgba(114, 250, 65, 0.4)'
+                ? '0 6px 20px rgba(114, 250, 65, 0.5), 0 0 20px rgba(114, 250, 65, 0.2)'
                 : variant === 'accent'
-                    ? '0 4px 12px rgba(36, 204, 255, 0.4)'
-                    : '0 4px 12px #1c1c1c66',
+                    ? '0 6px 20px rgba(36, 204, 255, 0.5), 0 0 20px rgba(36, 204, 255, 0.2)'
+                    : '0 6px 16px rgba(255, 255, 255, 0.15), 0 0 15px rgba(255, 255, 255, 0.05)',
+            backgroundColor: variant === 'primary'
+                ? '#8cff5e'
+                : variant === 'accent'
+                    ? '#3dd9ff'
+                    : '#353535',
+            borderColor: variant === 'secondary' ? '#505050' : undefined,
         }
 
         const [isHovered, setIsHovered] = React.useState(false)
@@ -158,9 +167,15 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
     stageScale,
     onToggleCanvasBg,
     lassoMode,
-    onToggleLassoMode
+    onToggleLassoMode,
+    onCollapse
 }) => {
     const [isExpanded, setIsExpanded] = React.useState(false)
+
+    const handleMouseLeave = React.useCallback(() => {
+        setIsExpanded(false)
+        onCollapse?.()
+    }, [onCollapse])
 
     return (
         <div style={{
@@ -176,22 +191,24 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
             <div
                 id="main-control-panel"
                 onMouseEnter={() => setIsExpanded(true)}
-                onMouseLeave={() => setIsExpanded(false)}
+                onMouseLeave={handleMouseLeave}
                 style={{
                     backgroundColor: 'rgba(26, 26, 26, 0.95)',
                     backdropFilter: 'blur(10px)',
-                    padding: '16px',
+                    padding: isExpanded ? '16px' : '8px',
                     borderRadius: '12px',
                     boxShadow: '0 8px 32px #1c1c1c66',
                     border: '1px solid rgba(255, 255, 255, 0.1)',
                     display: 'flex',
                     flexDirection: 'column',
-                    gap: '12px',
+                    gap: isExpanded ? '12px' : '8px',
+                    width: 'fit-content',
                     minWidth: isExpanded ? '200px' : 'auto',
+                    maxWidth: isExpanded ? 'auto' : '56px',
                     transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
                 }}>
                 {/* Shape Tools Section */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: isExpanded ? '8px' : '6px' }}>
                     <div style={{
                         fontSize: '12px',
                         fontWeight: '600',
@@ -199,8 +216,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                         textTransform: 'uppercase',
                         letterSpacing: '0.5px',
                         marginBottom: '4px',
-                        opacity: isExpanded ? 1 : 0,
-                        pointerEvents: isExpanded ? 'auto' : 'none',
+                        display: isExpanded ? 'block' : 'none',
                         transition: 'opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
                     }}>
                         Shapes
@@ -260,7 +276,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                 }} />
 
                 {/* Navigation Tools Section */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: isExpanded ? '8px' : '6px' }}>
                     <div style={{
                         fontSize: '12px',
                         fontWeight: '600',
@@ -268,8 +284,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                         textTransform: 'uppercase',
                         letterSpacing: '0.5px',
                         marginBottom: '4px',
-                        opacity: isExpanded ? 1 : 0,
-                        pointerEvents: isExpanded ? 'auto' : 'none',
+                        display: isExpanded ? 'block' : 'none',
                         transition: 'opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
                     }}>
                         Navigation
@@ -304,7 +319,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                     <ControlButton
                         onClick={onResetView}
                         icon={<RotateCcw size={18} />}
-                        label="Reset View"
+                        label="Re-center"
                         variant="secondary"
                         isExpanded={isExpanded}
                     />
