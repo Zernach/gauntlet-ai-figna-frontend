@@ -11,20 +11,19 @@ export class WebSocketClient {
     this.ws = new WebSocket(wsUrl);
 
     this.ws.onopen = () => {
-      console.log('WebSocket connected');
       this.ws?.send(JSON.stringify({ type: 'auth', token: this.token }));
     };
 
     this.ws.onmessage = (event) => {
-      console.log('WebSocket message:', event.data);
+      // Handle message
     };
 
     this.ws.onerror = (error) => {
-      console.error('WebSocket error:', error);
+      // Handle error silently
     };
 
     this.ws.onclose = () => {
-      console.log('WebSocket disconnected');
+      // Handle close
     };
   }
 

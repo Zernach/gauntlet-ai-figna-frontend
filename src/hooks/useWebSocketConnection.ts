@@ -90,7 +90,6 @@ export function useWebSocketConnection({
 
   const sendMessage = useCallback((msg: WSMessage) => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
-      console.log('📦 Queueing operation:', msg.type)
       operationQueueRef.current.push({ ...msg, timestamp: Date.now() })
       return
     }
@@ -100,7 +99,6 @@ export function useWebSocketConnection({
   const flushOperationQueue = useCallback(() => {
     if (operationQueueRef.current.length === 0) return
 
-    console.log(`📤 Flushing ${operationQueueRef.current.length} queued operations`)
     const queue = [...operationQueueRef.current]
     operationQueueRef.current = []
 
@@ -112,8 +110,6 @@ export function useWebSocketConnection({
   }, [])
 
   const handleWebSocketMessage = useCallback((message: any) => {
-    console.log('📨 WebSocket message:', message.type)
-
     switch (message.type) {
       case 'CANVAS_SYNC':
         if (onCanvasSync) onCanvasSync(message.payload)
@@ -180,7 +176,6 @@ export function useWebSocketConnection({
         break
 
       case 'ERROR':
-        console.error('WebSocket error:', message.payload.message)
         if (onError) onError(message.payload.message)
         break
     }
@@ -203,12 +198,10 @@ export function useWebSocketConnection({
     const ws = new WebSocket(`${WS_URL}?token=${token}&canvasId=${canvasId}`)
 
     ws.onopen = () => {
-      console.log('✅ WebSocket connected')
       setConnectionState('connected')
       setReconnectAttempts(0)
 
       if (isReconnect) {
-        console.log('🔄 Requesting state sync after reconnection')
         ws.send(JSON.stringify({ type: 'RECONNECT_REQUEST' }))
 
         setTimeout(() => {
@@ -223,17 +216,14 @@ export function useWebSocketConnection({
     }
 
     ws.onerror = (error) => {
-      console.error('❌ WebSocket error:', error)
       setConnectionState('disconnected')
     }
 
     ws.onclose = () => {
-      console.log('🔌 WebSocket disconnected')
       setConnectionState('disconnected')
 
       if (reconnectAttempts < maxReconnectAttempts) {
         const delay = Math.min(baseReconnectDelay * Math.pow(2, reconnectAttempts), 30000)
-        console.log(`🔄 Reconnecting in ${delay}ms (attempt ${reconnectAttempts + 1}/${maxReconnectAttempts})`)
         setConnectionState('reconnecting')
         setReconnectAttempts(prev => prev + 1)
 
@@ -241,7 +231,6 @@ export function useWebSocketConnection({
           connectWebSocket(canvasId, token, true)
         }, delay)
       } else {
-        console.error('❌ Max reconnection attempts reached')
         setConnectionState('disconnected')
       }
     }

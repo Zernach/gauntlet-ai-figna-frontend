@@ -1,11 +1,13 @@
 import { useState, useRef, useEffect } from 'react'
 import { getVoiceRelayUrl } from '../lib/api'
+import { useAgenticToolCalling } from '../hooks/useAgenticToolCalling'
 
 interface RealtimeVoicePanelProps {
     session: any
+    onRegisterTools?: (registerFn: (tools: any) => void) => void
 }
 
-export default function RealtimeVoicePanel({ session }: RealtimeVoicePanelProps) {
+export default function RealtimeVoicePanel({ session, onRegisterTools }: RealtimeVoicePanelProps) {
     const [isLoading, setIsLoading] = useState(false)
     const [isConnected, setIsConnected] = useState(false)
     const [error, setError] = useState<string | null>(null)
@@ -14,6 +16,10 @@ export default function RealtimeVoicePanel({ session }: RealtimeVoicePanelProps)
     const audioElementRef = useRef<HTMLAudioElement | null>(null)
     const dataChannelRef = useRef<RTCDataChannel | null>(null)
 
+    // Agentic tool calling
+    const { tools, registerTools, executeTool } = useAgenticToolCalling()
+    const pendingToolCallRef = useRef<{ call_id: string; name: string; arguments: string } | null>(null)
+
     useEffect(() => {
         // Create audio element for playback
         if (!audioElementRef.current) {
@@ -21,10 +27,66 @@ export default function RealtimeVoicePanel({ session }: RealtimeVoicePanelProps)
             audioElementRef.current.autoplay = true
         }
 
+        // Register tools with parent
+        if (onRegisterTools) {
+            onRegisterTools(registerTools)
+        }
+
         return () => {
             handleDisconnect()
         }
-    }, [])
+    }, [onRegisterTools, registerTools])
+
+    // Handle function call from OpenAI
+    const handleFunctionCall = (callId: string, name: string, args: string) => {
+        try {
+            const parsedArgs = JSON.parse(args)
+
+            const result = executeTool(name, parsedArgs)
+
+            // Send function result back to OpenAI
+            if (dataChannelRef.current && dataChannelRef.current.readyState === 'open') {
+                const responsePayload = {
+                    type: 'conversation.item.create',
+                    item: {
+                        type: 'function_call_output',
+                        call_id: callId,
+                        output: JSON.stringify(result)
+                    }
+                }
+
+                dataChannelRef.current.send(JSON.stringify(responsePayload))
+
+                // Request a response after function execution
+                dataChannelRef.current.send(JSON.stringify({
+                    type: 'response.create'
+                }))
+            }
+        } catch (error) {
+
+            // Send error back to OpenAI
+            if (dataChannelRef.current && dataChannelRef.current.readyState === 'open') {
+                const errorPayload = {
+                    type: 'conversation.item.create',
+                    item: {
+                        type: 'function_call_output',
+                        call_id: callId,
+                        output: JSON.stringify({
+                            success: false,
+                            error: error instanceof Error ? error.message : 'Function call failed'
+                        })
+                    }
+                }
+
+                dataChannelRef.current.send(JSON.stringify(errorPayload))
+
+                // Request a response so AI can acknowledge the error
+                dataChannelRef.current.send(JSON.stringify({
+                    type: 'response.create'
+                }))
+            }
+        }
+    }
 
     const handleDisconnect = () => {
         if (peerConnectionRef.current) {
@@ -56,7 +118,6 @@ export default function RealtimeVoicePanel({ session }: RealtimeVoicePanelProps)
         try {
             // Get the relay URL/ephemeral token from backend
             const { relayUrl } = await getVoiceRelayUrl()
-            console.log('OpenAI Relay URL received')
 
             // Create RTCPeerConnection
             const pc = new RTCPeerConnection()
@@ -66,7 +127,6 @@ export default function RealtimeVoicePanel({ session }: RealtimeVoicePanelProps)
             const audioEl = audioElementRef.current
             if (audioEl) {
                 pc.ontrack = (e) => {
-                    console.log('Received remote audio track')
                     audioEl.srcObject = e.streams[0]
                 }
             }
@@ -86,16 +146,17 @@ export default function RealtimeVoicePanel({ session }: RealtimeVoicePanelProps)
             dataChannelRef.current = dc
 
             dc.addEventListener('open', () => {
-                console.log('Data channel opened')
                 setIsConnected(true)
                 setIsLoading(false)
 
-                // Send session update to configure the session
+                // Send session update to configure the session with tools
                 dc.send(JSON.stringify({
                     type: 'session.update',
                     session: {
                         turn_detection: { type: 'server_vad' },
-                        input_audio_transcription: { model: 'whisper-1' }
+                        input_audio_transcription: { model: 'whisper-1' },
+                        tools: tools,
+                        tool_choice: 'auto'
                     }
                 }))
             })
@@ -103,7 +164,6 @@ export default function RealtimeVoicePanel({ session }: RealtimeVoicePanelProps)
             dc.addEventListener('message', (e) => {
                 try {
                     const event = JSON.parse(e.data)
-                    console.log('Received event:', event.type)
 
                     // Track when AI is speaking
                     if (event.type === 'response.audio.delta' || event.type === 'response.audio_transcript.delta') {
@@ -112,25 +172,45 @@ export default function RealtimeVoicePanel({ session }: RealtimeVoicePanelProps)
                         setIsSpeaking(false)
                     }
 
-                    // Handle transcripts
-                    if (event.type === 'conversation.item.input_audio_transcription.completed') {
-                        console.log('User said:', event.transcript)
+                    // Handle function calls from OpenAI
+                    if (event.type === 'response.function_call_arguments.delta') {
+                        // Accumulate function call arguments
+                        if (!pendingToolCallRef.current) {
+                            pendingToolCallRef.current = {
+                                call_id: event.call_id,
+                                name: event.name || '',
+                                arguments: ''
+                            }
+                        }
+                        pendingToolCallRef.current.arguments += event.delta
                     }
-                    if (event.type === 'response.audio_transcript.delta') {
-                        console.log('AI response:', event.delta)
+
+                    if (event.type === 'response.function_call_arguments.done') {
+                        // Execute the complete function call
+                        const toolCall = pendingToolCallRef.current
+                        if (toolCall) {
+                            handleFunctionCall(toolCall.call_id, toolCall.name, toolCall.arguments)
+                            pendingToolCallRef.current = null
+                        }
+                    }
+
+                    // Also handle the newer event format
+                    if (event.type === 'response.output_item.done' && event.item?.type === 'function_call') {
+                        const { call_id, name, arguments: args } = event.item
+                        if (call_id && name && args) {
+                            handleFunctionCall(call_id, name, args)
+                        }
                     }
                 } catch (err) {
-                    console.error('Failed to parse message:', err)
+                    // Handle parse error silently
                 }
             })
 
             dc.addEventListener('close', () => {
-                console.log('Data channel closed')
                 handleDisconnect()
             })
 
             dc.addEventListener('error', (e) => {
-                console.error('Data channel error:', e)
                 setError('Connection error occurred')
                 handleDisconnect()
             })
@@ -160,10 +240,7 @@ export default function RealtimeVoicePanel({ session }: RealtimeVoicePanelProps)
                 type: 'answer',
                 sdp: answerSdp,
             })
-
-            console.log('WebRTC connection established')
         } catch (err) {
-            console.error('Failed to start voice:', err)
             setError(err instanceof Error ? err.message : 'Failed to start voice assistant')
             handleDisconnect()
             setIsLoading(false)

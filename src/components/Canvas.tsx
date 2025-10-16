@@ -15,17 +15,19 @@ import CanvasLayers from './CanvasLayers'
 
 // Import types and constants
 import type { Shape, Cursor, ActiveUser } from '../types/canvas'
-import { 
-  CANVAS_WIDTH, 
-  CANVAS_HEIGHT, 
-  VIEWPORT_WIDTH, 
-  VIEWPORT_HEIGHT, 
-  DEFAULT_SHAPE_SIZE, 
+import {
+  CANVAS_WIDTH,
+  CANVAS_HEIGHT,
+  DEFAULT_SHAPE_SIZE,
   SHAPE_COLOR,
-  USER_COLORS 
+  USER_COLORS
 } from '../types/canvas'
 
-export default function Canvas() {
+interface CanvasProps {
+  onToolsReady?: (tools: any) => void
+}
+
+export default function Canvas({ onToolsReady }: CanvasProps = {}) {
   const stageRef = useRef<Konva.Stage>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const [shapes, setShapes] = useState<Shape[]>([])
@@ -36,9 +38,12 @@ export default function Canvas() {
   const [canvasBgHex, setCanvasBgHex] = useState<string>('#1a1a1a')
   const [isCanvasBgOpen, setIsCanvasBgOpen] = useState<boolean>(false)
   const [canvasBgPanelPos, setCanvasBgPanelPos] = useState<{ top: number; left: number } | null>(null)
+  // Dynamic viewport dimensions - update on resize
+  const [viewportWidth, setViewportWidth] = useState(window.innerWidth)
+  const [viewportHeight, setViewportHeight] = useState(window.innerHeight)
   const [stagePos, setStagePos] = useState({
-    x: VIEWPORT_WIDTH / 2 - CANVAS_WIDTH / 2,
-    y: VIEWPORT_HEIGHT / 2 - CANVAS_HEIGHT / 2
+    x: viewportWidth / 2 - CANVAS_WIDTH / 2,
+    y: viewportHeight / 2 - CANVAS_HEIGHT / 2
   })
   const [canvasId, setCanvasId] = useState<string | null>(null)
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
@@ -110,6 +115,7 @@ export default function Canvas() {
   const [undoCount, setUndoCount] = useState<number>(0)
   const [redoCount, setRedoCount] = useState<number>(0)
   const [hasUserActed, setHasUserActed] = useState<boolean>(false)
+  const undoRedoPanelCleanupRef = useRef<(() => void) | null>(null)
 
   // Toast helper function
   const showToast = useCallback((message: string, type: 'info' | 'warning' | 'error' | 'success' = 'info', duration = 3000) => {
@@ -124,7 +130,6 @@ export default function Canvas() {
   const sendMessage = useCallback((msg: WSMessage) => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
       // Queue operation if disconnected
-      console.log('📦 Queueing operation:', msg.type)
       operationQueueRef.current.push({ ...msg, timestamp: Date.now() })
       return
     }
@@ -135,7 +140,6 @@ export default function Canvas() {
   const flushOperationQueue = useCallback(() => {
     if (operationQueueRef.current.length === 0) return
 
-    console.log(`📤 Flushing ${operationQueueRef.current.length} queued operations`)
     const queue = [...operationQueueRef.current]
     operationQueueRef.current = []
 
@@ -271,25 +275,25 @@ export default function Canvas() {
 
     // If content smaller than viewport, center it on that axis
     let x: number
-    if (scaledWidth <= VIEWPORT_WIDTH) {
-      x = (VIEWPORT_WIDTH - scaledWidth) / 2
+    if (scaledWidth <= viewportWidth) {
+      x = (viewportWidth - scaledWidth) / 2
     } else {
-      const minX = VIEWPORT_WIDTH - scaledWidth
+      const minX = viewportWidth - scaledWidth
       const maxX = 0
       x = Math.max(minX, Math.min(desired.x, maxX))
     }
 
     let y: number
-    if (scaledHeight <= VIEWPORT_HEIGHT) {
-      y = (VIEWPORT_HEIGHT - scaledHeight) / 2
+    if (scaledHeight <= viewportHeight) {
+      y = (viewportHeight - scaledHeight) / 2
     } else {
-      const minY = VIEWPORT_HEIGHT - scaledHeight
+      const minY = viewportHeight - scaledHeight
       const maxY = 0
       y = Math.max(minY, Math.min(desired.y, maxY))
     }
 
     return { x, y }
-  }, [])
+  }, [viewportWidth, viewportHeight])
 
   const computeAnchoredPosition = useCallback((oldScale: number, newScale: number, currentPos: { x: number; y: number }, anchorScreen: { x: number; y: number }) => {
     // Convert anchor screen point to canvas coordinates using old scale/pos
@@ -382,7 +386,7 @@ export default function Canvas() {
       let newScale = zoomHoldDirectionRef.current > 0 ? oldScale * factor : oldScale / factor
       newScale = Math.max(0.1, Math.min(3, newScale))
 
-      const anchor = { x: VIEWPORT_WIDTH / 2, y: VIEWPORT_HEIGHT / 2 }
+      const anchor = { x: viewportWidth / 2, y: viewportHeight / 2 }
       const newPos = computeAnchoredPosition(oldScale, newScale, stagePosRef.current, anchor)
 
       setStageScale(newScale)
@@ -392,7 +396,7 @@ export default function Canvas() {
     }
 
     zoomHoldRafRef.current = requestAnimationFrame(step)
-  }, [cancelZoomAnimation, computeAnchoredPosition])
+  }, [cancelZoomAnimation, computeAnchoredPosition, viewportWidth, viewportHeight])
 
   const stopZoomHold = useCallback(() => {
     zoomHoldActiveRef.current = false
@@ -402,6 +406,24 @@ export default function Canvas() {
       zoomHoldRafRef.current = null
     }
   }, [])
+
+  // Handle window resize to update viewport dimensions
+  useEffect(() => {
+    const handleResize = () => {
+      const newWidth = window.innerWidth
+      const newHeight = window.innerHeight
+
+      setViewportWidth(newWidth)
+      setViewportHeight(newHeight)
+
+      // Recalculate stage position to keep canvas centered
+      const newPos = clampStagePosition(stageScale, stagePos)
+      setStagePos(newPos)
+    }
+
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [stageScale, stagePos, clampStagePosition])
 
   // Cleanup continuous zoom on unmount
   useEffect(() => {
@@ -418,6 +440,11 @@ export default function Canvas() {
       }
       pendingDragUpdatesRef.current.clear()
       dragFrameScheduledRef.current = false
+      // Cleanup undo/redo panel observers
+      if (undoRedoPanelCleanupRef.current) {
+        undoRedoPanelCleanupRef.current()
+        undoRedoPanelCleanupRef.current = null
+      }
     }
   }, [])
 
@@ -500,12 +527,6 @@ export default function Canvas() {
   useEffect(() => {
     const lockedShapes = shapes.filter(s => s.locked_at && s.locked_by)
     if (lockedShapes.length > 0) {
-      lockedShapes.forEach(shape => {
-        const isLockedByOther = shape.locked_by && shape.locked_by !== currentUserId
-        if (isLockedByOther && shape.locked_by) {
-          console.log(`🔒 DEBUG: Shape ${shape.id.slice(0, 8)} is LOCKED by user ${shape.locked_by.slice(0, 8)}`)
-        }
-      })
     }
     // Note: getUserColor intentionally not in deps to avoid re-render loop
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -583,11 +604,9 @@ export default function Canvas() {
       try {
         const { data: { session } } = await supabase.auth.getSession()
         if (!session) {
-          console.warn('⚠️ No active session. Please sign in to use the canvas.')
           return
         }
 
-        console.log('✅ User authenticated:', session.user.email)
         setCurrentUserId(session.user.id)
         setCurrentUserEmail(session.user.email || '')
         currentUserIdRef.current = session.user.id
@@ -621,7 +640,6 @@ export default function Canvas() {
         const result = await response.json()
         const canvas = result.data
 
-        console.log('✅ Connected to global canvas:', canvas.name)
         // Hydrate canvas background immediately from API response (before WS sync)
         const initialBg = canvas.background_color ?? canvas.backgroundColor
         if (initialBg) {
@@ -630,7 +648,7 @@ export default function Canvas() {
         setCanvasId(canvas.id)
         connectWebSocket(canvas.id, session.access_token)
       } catch (error) {
-        console.error('Failed to initialize canvas:', error)
+        // Handle error silently
       }
     }
 
@@ -651,13 +669,11 @@ export default function Canvas() {
     const ws = new WebSocket(`${WS_URL}?token=${token}&canvasId=${canvasId}`)
 
     ws.onopen = () => {
-      console.log('✅ WebSocket connected')
       setConnectionState('connected')
       setReconnectAttempts(0)
 
       if (isReconnect) {
         // Request full state sync on reconnect
-        console.log('🔄 Requesting state sync after reconnection')
         ws.send(JSON.stringify({ type: 'RECONNECT_REQUEST' }))
 
         // Flush any queued operations after a short delay (to allow sync first)
@@ -673,18 +689,15 @@ export default function Canvas() {
     }
 
     ws.onerror = (error) => {
-      console.error('❌ WebSocket error:', error)
       setConnectionState('disconnected')
     }
 
     ws.onclose = () => {
-      console.log('🔌 WebSocket disconnected')
       setConnectionState('disconnected')
 
       // Attempt to reconnect with exponential backoff
       if (reconnectAttempts < maxReconnectAttempts) {
         const delay = Math.min(baseReconnectDelay * Math.pow(2, reconnectAttempts), 30000) // Max 30 seconds
-        console.log(`🔄 Reconnecting in ${delay}ms (attempt ${reconnectAttempts + 1}/${maxReconnectAttempts})`)
         setConnectionState('reconnecting')
         setReconnectAttempts(prev => prev + 1)
 
@@ -692,7 +705,6 @@ export default function Canvas() {
           connectWebSocket(canvasId, token, true)
         }, delay)
       } else {
-        console.error('❌ Max reconnection attempts reached')
         setConnectionState('disconnected')
       }
     }
@@ -701,12 +713,9 @@ export default function Canvas() {
   }, [reconnectAttempts, maxReconnectAttempts, baseReconnectDelay, flushOperationQueue])
 
   const handleWebSocketMessage = useCallback((message: any) => {
-    console.log('📨 WebSocket message:', message.type)
-
     switch (message.type) {
       case 'CANVAS_SYNC':
         // Initial sync with all shapes and users
-        console.log('CANVAS_SYNC received:', message.payload)
         if (message.payload.shapes) {
           setShapes((message.payload.shapes as any[]).map(normalizeShape))
         }
@@ -715,7 +724,6 @@ export default function Canvas() {
           if (bg) setCanvasBgHex(bg)
         }
         if (message.payload.activeUsers) {
-          console.log('Active users from server:', message.payload.activeUsers)
           // Filter out current user from active users list and deduplicate
           const otherUsers = message.payload.activeUsers.filter((u: ActiveUser) => u.userId !== currentUserIdRef.current)
 
@@ -724,7 +732,6 @@ export default function Canvas() {
             index === self.findIndex((u: ActiveUser) => u.email === user.email)
           )
 
-          console.log('Other users after filtering and deduplication:', uniqueUsers)
           setActiveUsers(uniqueUsers)
 
           // Update current user's color from server if present
@@ -784,13 +791,6 @@ export default function Canvas() {
             shape.last_modified_at = message.payload.lastModifiedAt
           }
 
-          if (shape.locked_at || shape.locked_by) {
-            const isOtherUser = shape.locked_by && shape.locked_by !== currentUserIdRef.current
-            if (isOtherUser && shape.locked_by) {
-              console.log(`📨 SHAPE_UPDATE: Shape ${shape.id.slice(0, 8)} LOCKED by ${shape.locked_by.slice(0, 8)}`)
-            }
-          }
-          console.log('🧩 SHAPE: ', shape)
           setShapes(prev => prev.map(s => {
             if (s.id === shape.id) {
               // If we're currently dragging this shape OR it has pending drag updates (multi-shape drag),
@@ -877,7 +877,6 @@ export default function Canvas() {
 
       case 'USER_JOIN':
         // User joined
-        console.log('USER_JOIN received:', message.payload)
         // Don't add current user to activeUsers list
         if (message.payload.userId === currentUserIdRef.current) {
           // Update current user's color if it's the current user joining
@@ -888,7 +887,6 @@ export default function Canvas() {
           setActiveUsers(prev => {
             // Check if user with same email already exists
             if (prev.find(u => u.email === message.payload.email)) {
-              console.log('User with this email already exists in activeUsers, skipping')
               return prev
             }
             const newUser = {
@@ -898,7 +896,6 @@ export default function Canvas() {
               email: message.payload.email,
               color: message.payload.color,
             }
-            console.log('Adding new user to activeUsers:', newUser)
 
             // Add new user and deduplicate by email (extra safety check)
             const updatedUsers = [...prev, newUser]
@@ -912,7 +909,6 @@ export default function Canvas() {
 
       case 'USER_LEAVE':
         // User left
-        console.log('User left:', message.payload.username)
         setActiveUsers(prev => prev.filter(u => u.userId !== message.payload.userId))
         setCursors(prev => {
           const newCursors = new Map(prev)
@@ -933,91 +929,97 @@ export default function Canvas() {
         break
 
       case 'ERROR':
-        console.error('WebSocket error:', message.payload.message)
         break
     }
   }, [])
 
-  // Handle shape creation
-  const handleAddShape = useCallback(() => {
-    if (!wsRef.current || !canvasId || !currentUserId) return
+  // Handle shape creation (generic version for voice and UI)
+  const createShape = useCallback((shapeData: any) => {
+    if (!wsRef.current || !canvasId || !currentUserId) {
+      return
+    }
 
-    // Calculate center of current viewport
-    const centerX = -stagePos.x / stageScale + (VIEWPORT_WIDTH / 2) / stageScale
-    const centerY = -stagePos.y / stageScale + (VIEWPORT_HEIGHT / 2) / stageScale
+    // Ensure coordinates are within canvas boundaries
+    let x = shapeData.x !== undefined ? shapeData.x : -stagePos.x / stageScale + (viewportWidth / 2) / stageScale
+    let y = shapeData.y !== undefined ? shapeData.y : -stagePos.y / stageScale + (viewportHeight / 2) / stageScale
 
-    // Ensure shape stays within canvas boundaries
-    const x = Math.max(0, Math.min(centerX - DEFAULT_SHAPE_SIZE / 2, CANVAS_WIDTH - DEFAULT_SHAPE_SIZE))
-    const y = Math.max(0, Math.min(centerY - DEFAULT_SHAPE_SIZE / 2, CANVAS_HEIGHT - DEFAULT_SHAPE_SIZE))
+    // Clamp to canvas
+    if (shapeData.type === 'circle') {
+      const radius = shapeData.radius || DEFAULT_SHAPE_SIZE / 2
+      x = Math.max(radius, Math.min(x, CANVAS_WIDTH - radius))
+      y = Math.max(radius, Math.min(y, CANVAS_HEIGHT - radius))
+    } else if (shapeData.type === 'text') {
+      x = Math.max(0, Math.min(x, CANVAS_WIDTH))
+      y = Math.max(0, Math.min(y, CANVAS_HEIGHT))
+    } else {
+      const width = shapeData.width || DEFAULT_SHAPE_SIZE
+      const height = shapeData.height || DEFAULT_SHAPE_SIZE
+      x = Math.max(0, Math.min(x, CANVAS_WIDTH - width))
+      y = Math.max(0, Math.min(y, CANVAS_HEIGHT - height))
+    }
 
-    const shapeData = {
-      type: 'rectangle',
+    const finalShapeData = {
+      ...shapeData,
       x,
       y,
+    }
+
+    wsRef.current.send(JSON.stringify({
+      type: 'SHAPE_CREATE',
+      payload: finalShapeData,
+    }))
+
+    showToast(`${shapeData.type} created!`, 'success', 2000)
+  }, [stagePos, stageScale, canvasId, currentUserId, showToast, viewportWidth, viewportHeight])
+
+
+  // Handle shape creation from UI (rectangle button)
+  const handleAddShape = useCallback(() => {
+    // Calculate center of current viewport
+    const centerX = -stagePos.x / stageScale + (viewportWidth / 2) / stageScale
+    const centerY = -stagePos.y / stageScale + (viewportHeight / 2) / stageScale
+
+    createShape({
+      type: 'rectangle',
+      x: centerX - DEFAULT_SHAPE_SIZE / 2,
+      y: centerY - DEFAULT_SHAPE_SIZE / 2,
       width: DEFAULT_SHAPE_SIZE,
       height: DEFAULT_SHAPE_SIZE,
       color: SHAPE_COLOR,
-    }
+    })
+  }, [stagePos, stageScale, createShape, viewportWidth, viewportHeight])
 
-    wsRef.current.send(JSON.stringify({
-      type: 'SHAPE_CREATE',
-      payload: shapeData,
-    }))
-  }, [stagePos, stageScale, canvasId, currentUserId])
-
-  // Handle circle creation
+  // Handle circle creation from UI
   const handleAddCircle = useCallback(() => {
-    if (!wsRef.current || !canvasId || !currentUserId) return
+    const centerX = -stagePos.x / stageScale + (viewportWidth / 2) / stageScale
+    const centerY = -stagePos.y / stageScale + (viewportHeight / 2) / stageScale
 
-    // Calculate center of current viewport
-    const centerX = -stagePos.x / stageScale + (VIEWPORT_WIDTH / 2) / stageScale
-    const centerY = -stagePos.y / stageScale + (VIEWPORT_HEIGHT / 2) / stageScale
-
-    // Ensure shape stays within canvas boundaries
-    const x = Math.max(DEFAULT_SHAPE_SIZE / 2, Math.min(centerX, CANVAS_WIDTH - DEFAULT_SHAPE_SIZE / 2))
-    const y = Math.max(DEFAULT_SHAPE_SIZE / 2, Math.min(centerY, CANVAS_HEIGHT - DEFAULT_SHAPE_SIZE / 2))
-
-    const shapeData = {
+    createShape({
       type: 'circle',
-      x,
-      y,
+      x: centerX,
+      y: centerY,
       radius: DEFAULT_SHAPE_SIZE / 2,
       color: SHAPE_COLOR,
-    }
+    })
+  }, [stagePos, stageScale, createShape, viewportWidth, viewportHeight])
 
-    wsRef.current.send(JSON.stringify({
-      type: 'SHAPE_CREATE',
-      payload: shapeData,
-    }))
-  }, [stagePos, stageScale, canvasId, currentUserId])
-
-  // Handle text creation
+  // Handle text creation from UI
   const handleAddText = useCallback(() => {
-    if (!wsRef.current || !canvasId || !currentUserId) return
+    const centerX = -stagePos.x / stageScale + (viewportWidth / 2) / stageScale
+    const centerY = -stagePos.y / stageScale + (viewportHeight / 2) / stageScale
 
-    const centerX = -stagePos.x / stageScale + (VIEWPORT_WIDTH / 2) / stageScale
-    const centerY = -stagePos.y / stageScale + (VIEWPORT_HEIGHT / 2) / stageScale
-
-    const x = Math.max(0, Math.min(centerX, CANVAS_WIDTH))
-    const y = Math.max(0, Math.min(centerY, CANVAS_HEIGHT))
-
-    const shapeData = {
+    createShape({
       type: 'text',
-      x,
-      y,
+      x: centerX,
+      y: centerY,
       color: '#ffffff',
       textContent: 'Text',
       fontSize: 24,
       fontFamily: 'Inter',
       fontWeight: 'normal',
       textAlign: 'left',
-    }
-
-    wsRef.current.send(JSON.stringify({
-      type: 'SHAPE_CREATE',
-      payload: shapeData,
-    }))
-  }, [stagePos, stageScale, canvasId, currentUserId])
+    })
+  }, [stagePos, stageScale, createShape, viewportWidth, viewportHeight])
 
   // Handle text edit on double click
   const handleTextDoubleClick = useCallback((id: string) => {
@@ -1055,7 +1057,6 @@ export default function Canvas() {
   // Helper function to unlock a shape
   const unlockShape = useCallback((shapeId: string) => {
     if (wsRef.current) {
-      console.log('🔓 Unlocking shape:', shapeId)
       wsRef.current.send(JSON.stringify({
         type: 'SHAPE_UPDATE',
         payload: {
@@ -1082,7 +1083,6 @@ export default function Canvas() {
       const elapsed = (Date.now() - lockTime) / 1000
       if (elapsed < 10) {
         // Shape is still locked by another user
-        console.log('⛔ Shape is locked by another user')
         // Show toast notification with user info
         const lockedByUser = activeUsers.find(u => u.userId === shape.locked_by)
         const userName = lockedByUser?.email?.split('@')[0] || lockedByUser?.username || 'another user'
@@ -1126,7 +1126,6 @@ export default function Canvas() {
 
       // Send lock message to server to notify other users
       if (wsRef.current) {
-        console.log('🔒 Locking shape on selection:', id)
         wsRef.current.send(JSON.stringify({
           type: 'SHAPE_UPDATE',
           payload: {
@@ -1751,7 +1750,6 @@ export default function Canvas() {
         const elapsed = (Date.now() - lockTime) / 1000
         if (elapsed < 10) {
           // Cannot delete locked shapes
-          console.log('Cannot delete shape locked by another user')
           return null
         }
       }
@@ -1786,6 +1784,100 @@ export default function Canvas() {
 
     setSelectedIds([])
   }, [pushHistory])
+
+  // Provide tool implementations to voice agent
+  useEffect(() => {
+    if (onToolsReady && currentUserId && canvasId) {
+      const tools = {
+        createShape: (params: any) => {
+          // Check if we can execute
+          if (!wsRef.current || !canvasId || !currentUserId) {
+            const error = 'Cannot create shape: Canvas not ready'
+            showToast(error, 'error', 3000)
+            throw new Error(error)
+          }
+
+          createShape(params)
+        },
+        updateShape: (params: any) => {
+          if (!wsRef.current) {
+            const error = 'Cannot update shape: WebSocket not ready'
+            showToast(error, 'error', 3000)
+            throw new Error(error)
+          }
+
+          wsRef.current.send(JSON.stringify({
+            type: 'SHAPE_UPDATE',
+            payload: {
+              shapeId: params.shapeId,
+              updates: params
+            }
+          }))
+          showToast('Shape updated', 'success', 2000)
+        },
+        deleteShape: (params: any) => {
+          handleDeleteShape(params.shapeIds)
+        },
+        selectShapes: (params: any) => {
+          setSelectedIds(params.shapeIds)
+          // Lock selected shapes
+          params.shapeIds.forEach((id: string) => {
+            if (wsRef.current) {
+              wsRef.current.send(JSON.stringify({
+                type: 'SHAPE_UPDATE',
+                payload: { shapeId: id, updates: { isLocked: true } }
+              }))
+            }
+          })
+          showToast(`Selected ${params.shapeIds.length} shape(s)`, 'info', 2000)
+        },
+        clearSelection: () => {
+          selectedIdsRef.current.forEach(id => unlockShape(id))
+          setSelectedIds([])
+          showToast('Selection cleared', 'info', 2000)
+        },
+        duplicateShapes: (params: any) => {
+          if (!wsRef.current) {
+            const error = 'Cannot duplicate shape: WebSocket not ready'
+            showToast(error, 'error', 3000)
+            throw new Error(error)
+          }
+
+          const ws = wsRef.current
+          const offsetX = params.offsetX || 50
+          const offsetY = params.offsetY || 50
+
+          params.shapeIds.forEach((shapeId: string) => {
+            const shape = shapesRef.current.find(s => s.id === shapeId)
+            if (shape) {
+              const newShape = {
+                ...shape,
+                x: shape.x + offsetX,
+                y: shape.y + offsetY
+              }
+              delete (newShape as any).id
+              delete (newShape as any).locked_at
+              delete (newShape as any).locked_by
+              delete (newShape as any).created_at
+              delete (newShape as any).updated_at
+
+              ws.send(JSON.stringify({
+                type: 'SHAPE_CREATE',
+                payload: newShape
+              }))
+            }
+          })
+          showToast(`Duplicated ${params.shapeIds.length} shape(s)`, 'success', 2000)
+        },
+        groupShapes: (params: any) => {
+          // TODO: Implement grouping logic
+          showToast(`Grouped ${params.shapeIds.length} shape(s)`, 'info', 2000)
+        }
+      }
+
+      onToolsReady(tools)
+    }
+  }, [onToolsReady, currentUserId, canvasId, createShape, handleDeleteShape, unlockShape, showToast])
 
   // Handle keyboard shortcuts (Undo/Redo/Delete/Escape)
   useEffect(() => {
@@ -1886,33 +1978,33 @@ export default function Canvas() {
     let newScale = direction > 0 ? oldScale * scaleBy : oldScale / scaleBy
     newScale = Math.max(0.1, Math.min(3, newScale))
 
-    const anchor = { x: VIEWPORT_WIDTH / 2, y: VIEWPORT_HEIGHT / 2 }
+    const anchor = { x: viewportWidth / 2, y: viewportHeight / 2 }
     animateZoomTo(newScale, anchor, 150)
-  }, [animateZoomTo])
+  }, [animateZoomTo, viewportWidth, viewportHeight])
 
   // Handle zoom controls
   const handleZoomIn = useCallback(() => {
     const newScale = Math.min(stageScale * 1.2, 3)
-    const anchor = { x: VIEWPORT_WIDTH / 2, y: VIEWPORT_HEIGHT / 2 }
+    const anchor = { x: viewportWidth / 2, y: viewportHeight / 2 }
     animateZoomTo(newScale, anchor, 200)
-  }, [animateZoomTo, stageScale])
+  }, [animateZoomTo, stageScale, viewportWidth, viewportHeight])
 
   const handleZoomOut = useCallback(() => {
     const newScale = Math.max(stageScale / 1.2, 0.1)
-    const anchor = { x: VIEWPORT_WIDTH / 2, y: VIEWPORT_HEIGHT / 2 }
+    const anchor = { x: viewportWidth / 2, y: viewportHeight / 2 }
     animateZoomTo(newScale, anchor, 200)
-  }, [animateZoomTo, stageScale])
+  }, [animateZoomTo, stageScale, viewportWidth, viewportHeight])
 
   const handleResetView = useCallback(() => {
-    const anchor = { x: VIEWPORT_WIDTH / 2, y: VIEWPORT_HEIGHT / 2 }
+    const anchor = { x: viewportWidth / 2, y: viewportHeight / 2 }
     animateZoomTo(1, anchor, 250)
-  }, [animateZoomTo])
+  }, [animateZoomTo, viewportWidth, viewportHeight])
 
   const handleSignOut = useCallback(async () => {
     try {
       await supabase.auth.signOut()
     } catch (error) {
-      console.error('Failed to sign out:', error)
+      // Handle error silently
     }
   }, [])
 
@@ -1921,9 +2013,9 @@ export default function Canvas() {
     // Calculate viewport bounds in canvas coordinates with generous padding for smooth scrolling
     const padding = 500 // Extra padding to render shapes slightly outside viewport
     const viewportMinX = (-stagePos.x / stageScale) - padding
-    const viewportMaxX = (VIEWPORT_WIDTH - stagePos.x) / stageScale + padding
+    const viewportMaxX = (viewportWidth - stagePos.x) / stageScale + padding
     const viewportMinY = (-stagePos.y / stageScale) - padding
-    const viewportMaxY = (VIEWPORT_HEIGHT - stagePos.y) / stageScale + padding
+    const viewportMaxY = (viewportHeight - stagePos.y) / stageScale + padding
 
     // Filter shapes that intersect with viewport
     return shapes.filter(shape => {
@@ -1955,7 +2047,7 @@ export default function Canvas() {
       return !(shapeMaxX < viewportMinX || shapeMinX > viewportMaxX ||
         shapeMaxY < viewportMinY || shapeMinY > viewportMaxY)
     })
-  }, [shapes, stagePos, stageScale])
+  }, [shapes, stagePos, stageScale, viewportWidth, viewportHeight])
 
   // Memoize shape rendering props to avoid recalculating on every render
   const shapeRenderProps = useMemo(() => {
@@ -2419,10 +2511,25 @@ export default function Canvas() {
             // top computed dynamically via inline script below
           }}
           ref={(el) => {
-            if (!el) return
+            // Run cleanup if element is being removed or replaced
+            if (!el) {
+              // Call cleanup function if it exists
+              if (undoRedoPanelCleanupRef.current) {
+                undoRedoPanelCleanupRef.current()
+                undoRedoPanelCleanupRef.current = null
+              }
+              return
+            }
+
+            // Cleanup any existing observers/listeners
+            if (undoRedoPanelCleanupRef.current) {
+              undoRedoPanelCleanupRef.current()
+            }
+
             const statusPanel = document.getElementById('presence-panel')
             const container = containerRef.current
             if (!statusPanel || !container) return
+
             const update = () => {
               const cRect = container.getBoundingClientRect()
               const spRect = statusPanel.getBoundingClientRect()
@@ -2430,10 +2537,13 @@ export default function Canvas() {
               el.style.top = `${top}px`
             }
             update()
+
             const ro = new ResizeObserver(update)
             ro.observe(statusPanel)
             window.addEventListener('resize', update)
-            return () => {
+
+            // Store cleanup function in ref
+            undoRedoPanelCleanupRef.current = () => {
               ro.disconnect()
               window.removeEventListener('resize', update)
             }
@@ -2453,8 +2563,8 @@ export default function Canvas() {
       {/* Konva Stage */}
       <Stage
         ref={stageRef}
-        width={VIEWPORT_WIDTH}
-        height={VIEWPORT_HEIGHT}
+        width={viewportWidth}
+        height={viewportHeight}
         scaleX={stageScale}
         scaleY={stageScale}
         x={stagePos.x}
@@ -2477,8 +2587,8 @@ export default function Canvas() {
         }}
         dragBoundFunc={(pos) => {
           // Constrain stage dragging to canvas boundaries
-          const newX = Math.min(0, Math.max(pos.x, VIEWPORT_WIDTH - CANVAS_WIDTH * stageScale))
-          const newY = Math.min(0, Math.max(pos.y, VIEWPORT_HEIGHT - CANVAS_HEIGHT * stageScale))
+          const newX = Math.min(0, Math.max(pos.x, viewportWidth - CANVAS_WIDTH * stageScale))
+          const newY = Math.min(0, Math.max(pos.y, viewportHeight - CANVAS_HEIGHT * stageScale))
           return { x: newX, y: newY }
         }}
       >

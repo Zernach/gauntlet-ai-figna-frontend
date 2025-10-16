@@ -154,7 +154,7 @@ export default function PresencePanel({
         fontSize: '11px',
         color: '#888',
       }}>
-        <span style={{ color: fps >= 50 ? '#00ff00' : fps >= 30 ? '#ffaa00' : '#ff0000', fontWeight: 600, fontFamily: 'monospace', minWidth: '55px', display: 'inline-block' }}>
+        <span style={{ minWidth: '45px', display: 'inline-block' }}>
           {fps} FPS
         </span>
         <span>|</span>

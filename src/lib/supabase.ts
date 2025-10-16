@@ -3,10 +3,6 @@ import { createClient } from '@supabase/supabase-js'
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || ''
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || ''
 
-if (!supabaseUrl || !supabaseAnonKey) {
-  console.warn('Missing Supabase environment variables')
-}
-
 // Determine the redirect URL for Supabase auth flows.
 // Priority: explicit VITE_AUTH_REDIRECT_URL > window.location.origin (browser) > default localhost
 export function getAuthRedirectUrl(): string {

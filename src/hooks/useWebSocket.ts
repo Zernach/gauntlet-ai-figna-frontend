@@ -20,7 +20,6 @@ export function useWebSocket() {
     const { data: { session } } = await supabase.auth.getSession()
 
     if (!session?.access_token) {
-      console.warn('No session token available')
       return
     }
 
@@ -30,44 +29,35 @@ export function useWebSocket() {
     // Build WebSocket URL with auth token and canvasId
     const wsUrl = `${WS_URL}?token=${session.access_token}&canvasId=${canvasId}`
 
-    console.log('🔌 Connecting to WebSocket:', wsUrl.replace(session.access_token, '***'))
-
     const ws = new WebSocket(wsUrl)
 
     ws.onopen = () => {
-      console.log('✅ WebSocket connected')
       setConnected(true)
     }
 
     ws.onmessage = (event) => {
       const message = JSON.parse(event.data)
-      console.log('📨 WebSocket message:', message.type)
 
       // Handle different message types
       switch (message.type) {
         case 'CANVAS_SYNC':
-          console.log('Canvas synced:', message.payload)
           break
         case 'USER_JOIN':
-          console.log('User joined:', message.payload)
           break
         case 'USER_LEAVE':
-          console.log('User left:', message.payload)
           break
         case 'ERROR':
-          console.error('WebSocket error:', message.payload)
           break
         default:
-          console.log('Unhandled message:', message)
+          break
       }
     }
 
     ws.onerror = (error) => {
-      console.error('❌ WebSocket error:', error)
+      // Handle error silently
     }
 
     ws.onclose = () => {
-      console.log('🔌 WebSocket disconnected')
       setConnected(false)
     }
 

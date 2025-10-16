@@ -1,14 +1,16 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from './lib/supabase'
 import { Session } from '@supabase/supabase-js'
 import Canvas from './components/Canvas'
 import AuthButton from './components/AuthButton'
 import AuthModal from './components/AuthModal'
 import RealtimeVoicePanel from './components/RealtimeVoicePanel'
+import type { CanvasTools } from './hooks/useAgenticToolCalling'
 
 function App() {
   const [session, setSession] = useState<Session | null>(null)
   const [showAuthModal, setShowAuthModal] = useState(false)
+  const registerToolsCallbackRef = useRef<((tools: CanvasTools) => void) | null>(null)
 
   useEffect(() => {
     // Get initial session
@@ -42,9 +44,19 @@ function App() {
     setShowAuthModal(false)
   }, [])
 
+  const handleRegisterTools = useCallback((registerFn: (tools: CanvasTools) => void) => {
+    registerToolsCallbackRef.current = registerFn
+  }, [])
+
+  const handleCanvasReady = useCallback((tools: CanvasTools) => {
+    if (registerToolsCallbackRef.current) {
+      registerToolsCallbackRef.current(tools)
+    }
+  }, [])
+
   return (
-    <div style={{ width: '100vw', height: '100vh', position: 'relative', backgroundColor: '#0a0a0a' }}>
-      {session ? <Canvas /> : (
+    <div style={{ width: '100%', height: '100%', position: 'relative', backgroundColor: '#0a0a0a' }}>
+      {session ? <Canvas onToolsReady={handleCanvasReady} /> : (
         <div
           style={{
             position: 'absolute',
@@ -150,7 +162,7 @@ function App() {
         <AuthModal onClose={handleCloseModal} />
       )}
 
-      {session && <RealtimeVoicePanel session={session} />}
+      {session && <RealtimeVoicePanel session={session} onRegisterTools={handleRegisterTools} />}
     </div>
   )
 }

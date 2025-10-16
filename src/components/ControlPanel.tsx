@@ -38,6 +38,7 @@ const ControlButton: React.FC<{
     variant?: 'primary' | 'secondary' | 'accent'
     className?: string
     id?: string
+    isExpanded?: boolean
 }> = ({
     onClick,
     onPointerDown,
@@ -49,21 +50,24 @@ const ControlButton: React.FC<{
     label,
     variant = 'primary',
     className = '',
-    id
+    id,
+    isExpanded = true
 }) => {
         const baseStyles: React.CSSProperties = {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             gap: '8px',
-            padding: '12px 16px',
+            padding: isExpanded ? '12px 16px' : '12px 8px',
             border: 'none',
             borderRadius: '8px',
             cursor: 'pointer',
             fontSize: '14px',
             fontWeight: '600',
-            transition: 'all 0.2s ease',
-            minWidth: '120px',
+            transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+            minWidth: isExpanded ? '120px' : '44px',
+            width: isExpanded ? 'auto' : '44px',
+            height: '44px',
             position: 'relative',
             overflow: 'hidden',
         }
@@ -127,11 +131,16 @@ const ControlButton: React.FC<{
                     alignItems: 'center',
                     justifyContent: 'center',
                     width: '20px',
-                    height: '20px'
+                    height: '20px',
+                    flexShrink: 0
                 }}>
                     {icon}
                 </div>
-                <span>{label}</span>
+                <span style={{
+                    display: isExpanded ? 'inline' : 'none',
+                    transition: 'opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                    whiteSpace: 'nowrap'
+                }}>{label}</span>
             </button>
         )
     }
@@ -151,6 +160,8 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
     lassoMode,
     onToggleLassoMode
 }) => {
+    const [isExpanded, setIsExpanded] = React.useState(false)
+
     return (
         <div style={{
             position: 'absolute',
@@ -162,18 +173,23 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
             gap: '12px'
         }}>
             {/* Main Control Panel */}
-            <div id="main-control-panel" style={{
-                backgroundColor: 'rgba(26, 26, 26, 0.95)',
-                backdropFilter: 'blur(10px)',
-                padding: '16px',
-                borderRadius: '12px',
-                boxShadow: '0 8px 32px #1c1c1c66',
-                border: '1px solid rgba(255, 255, 255, 0.1)',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '12px',
-                minWidth: '200px',
-            }}>
+            <div
+                id="main-control-panel"
+                onMouseEnter={() => setIsExpanded(true)}
+                onMouseLeave={() => setIsExpanded(false)}
+                style={{
+                    backgroundColor: 'rgba(26, 26, 26, 0.95)',
+                    backdropFilter: 'blur(10px)',
+                    padding: '16px',
+                    borderRadius: '12px',
+                    boxShadow: '0 8px 32px #1c1c1c66',
+                    border: '1px solid rgba(255, 255, 255, 0.1)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '12px',
+                    minWidth: isExpanded ? '200px' : 'auto',
+                    transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                }}>
                 {/* Shape Tools Section */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     <div style={{
@@ -182,7 +198,10 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                         color: '#888',
                         textTransform: 'uppercase',
                         letterSpacing: '0.5px',
-                        marginBottom: '4px'
+                        marginBottom: '4px',
+                        opacity: isExpanded ? 1 : 0,
+                        pointerEvents: isExpanded ? 'auto' : 'none',
+                        transition: 'opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
                     }}>
                         Shapes
                     </div>
@@ -192,6 +211,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                         icon={<Square size={18} />}
                         label="Rectangle"
                         variant="secondary"
+                        isExpanded={isExpanded}
                     />
 
                     <ControlButton
@@ -199,6 +219,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                         icon={<Circle size={18} />}
                         label="Circle"
                         variant="secondary"
+                        isExpanded={isExpanded}
                     />
 
                     <ControlButton
@@ -206,6 +227,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                         icon={<Type size={18} />}
                         label="Text"
                         variant="secondary"
+                        isExpanded={isExpanded}
                     />
 
                     {/* Canvas background color */}
@@ -215,6 +237,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                         icon={<Square size={18} />}
                         label="Canvas"
                         variant="secondary"
+                        isExpanded={isExpanded}
                     />
 
                     {/* Lasso Mode Toggle */}
@@ -223,6 +246,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                         icon={<Lasso size={18} />}
                         label={lassoMode ? "Lasso: ON" : "Lasso: OFF"}
                         variant={lassoMode ? "accent" : "secondary"}
+                        isExpanded={isExpanded}
                     />
                 </div>
 
@@ -230,7 +254,9 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                 <div style={{
                     height: '1px',
                     backgroundColor: 'rgba(255, 255, 255, 0.1)',
-                    margin: '4px 0'
+                    margin: '4px 0',
+                    opacity: isExpanded ? 1 : 0.5,
+                    transition: 'opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
                 }} />
 
                 {/* Navigation Tools Section */}
@@ -241,7 +267,10 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                         color: '#888',
                         textTransform: 'uppercase',
                         letterSpacing: '0.5px',
-                        marginBottom: '4px'
+                        marginBottom: '4px',
+                        opacity: isExpanded ? 1 : 0,
+                        pointerEvents: isExpanded ? 'auto' : 'none',
+                        transition: 'opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
                     }}>
                         Navigation
                     </div>
@@ -256,6 +285,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                         icon={<ZoomIn size={18} />}
                         label="Zoom In"
                         variant="secondary"
+                        isExpanded={isExpanded}
                     />
 
                     <ControlButton
@@ -268,6 +298,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                         icon={<ZoomOut size={18} />}
                         label="Zoom Out"
                         variant="secondary"
+                        isExpanded={isExpanded}
                     />
 
                     <ControlButton
@@ -275,6 +306,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                         icon={<RotateCcw size={18} />}
                         label="Reset View"
                         variant="secondary"
+                        isExpanded={isExpanded}
                     />
                 </div>
             </div>
