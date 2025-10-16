@@ -53,7 +53,7 @@ export function useWebSocket() {
       }
     }
 
-    ws.onerror = (error) => {
+    ws.onerror = () => {
       // Handle error silently
     }
 

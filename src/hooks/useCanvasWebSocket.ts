@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef } from 'react'
-import type { Shape, ActiveUser } from '../types/canvas'
 
 interface UseCanvasWebSocketParams {
   wsRef: React.MutableRefObject<WebSocket | null>
@@ -7,7 +6,7 @@ interface UseCanvasWebSocketParams {
   reconnectTimeoutRef: React.MutableRefObject<number | null>
   maxReconnectAttempts: number
   baseReconnectDelay: number
-  setConnectionState: (state: 'connected' | 'connecting' | 'reconnecting' | 'disconnected') => void
+  setConnectionState: React.Dispatch<React.SetStateAction<'connected' | 'connecting' | 'reconnecting' | 'disconnected'>>
   setReconnectAttempts: React.Dispatch<React.SetStateAction<number>>
   flushOperationQueue: () => void
   onMessage: (message: any) => void
@@ -209,7 +208,7 @@ export function useCanvasWebSocket({
       // Map WebSocket readyState to our connection state
       // 0 = CONNECTING, 1 = OPEN, 2 = CLOSING, 3 = CLOSED
       if (readyState === WebSocket.CONNECTING) {
-        setConnectionState(current => {
+        setConnectionState((current) => {
           if (current !== 'connecting' && current !== 'reconnecting') {
             console.log('🔄 [Canvas] Health check: WebSocket is connecting')
             return 'connecting'
@@ -217,7 +216,7 @@ export function useCanvasWebSocket({
           return current
         })
       } else if (readyState === WebSocket.OPEN) {
-        setConnectionState(current => {
+        setConnectionState((current) => {
           if (current !== 'connected') {
             console.log('🟢 [Canvas] Health check: WebSocket is open')
             return 'connected'
@@ -225,7 +224,7 @@ export function useCanvasWebSocket({
           return current
         })
       } else if (readyState === WebSocket.CLOSING || readyState === WebSocket.CLOSED) {
-        setConnectionState(current => {
+        setConnectionState((current) => {
           if (current === 'connected' || current === 'connecting') {
             console.log('🔴 [Canvas] Health check: WebSocket is closed/closing')
             return 'disconnected'

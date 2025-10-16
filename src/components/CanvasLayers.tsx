@@ -32,11 +32,11 @@ interface CanvasLayersProps {
   onDragEnd: (shapeId: string) => void
   onResizeStart: (id: string) => void
   onResizeMove: (id: string, updates: any) => void
-  onResizeEnd: (id: string, updates: any) => void
+  onResizeEnd: (id: string) => void
   onRotateStart: (id: string) => void
   onRotateMove: (id: string, rotation: number) => void
-  onRotateEnd: (id: string, rotation: number) => void
-  onTextDoubleClick: (id: string, currentText: string) => void
+  onRotateEnd: (id: string) => void
+  onTextDoubleClick: (id: string) => void
   onContextMenu: (e: any, shapeId: string) => void
   onCanvasContextMenu: (e: any) => void
   getUserColor: (userId: string) => string

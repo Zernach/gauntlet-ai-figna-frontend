@@ -760,7 +760,6 @@ export default function Canvas({ onToolsReady, onViewportCenterChange, onCanvasS
     cursorThrottleRef,
     viewportWidth,
     viewportHeight,
-    stageScale,
     isDrawingLasso,
     lassoMode,
     lassoStart,
@@ -895,7 +894,7 @@ export default function Canvas({ onToolsReady, onViewportCenterChange, onCanvasS
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
 
       {/* Loading Overlay - only over canvas */}
-      {isLoading && <LoadingScreen currentUserId={currentUserId} canvasId={canvasId} wsRef={wsRef} />}
+      {isLoading && <LoadingScreen currentUserId={currentUserId} canvasId={canvasId} />}
 
       {/* Control Panel */}
       <ControlPanel

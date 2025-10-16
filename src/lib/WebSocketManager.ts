@@ -120,7 +120,7 @@ export class WebSocketManager implements IWebSocketClient {
     /**
      * Unregister event handler
      */
-    off(event: string, handler: Function): void {
+    off(event: string): void {
         delete (this.eventHandlers as any)[event];
     }
 

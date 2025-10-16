@@ -9,14 +9,14 @@ interface HistoryEntry {
 }
 
 interface UseShapeResizeProps {
-  shapesRef: React.RefObject<Shape[]>
-  selectedIdsRef: React.RefObject<string[]>
-  wsRef: React.RefObject<WebSocket | null>
-  isResizingShapeRef: React.RefObject<boolean>
-  resizingShapeIdRef: React.RefObject<string | null>
-  resizeThrottleRef: React.RefObject<number>
-  resizeBaselineRef: React.RefObject<Map<string, any>>
-  recentlyResizedRef: React.RefObject<Map<string, { x?: number; y?: number; width?: number; height?: number; radius?: number; fontSize?: number; timestamp: number }>>
+  shapesRef: React.MutableRefObject<Shape[]>
+  selectedIdsRef: React.MutableRefObject<string[]>
+  wsRef: React.MutableRefObject<WebSocket | null>
+  isResizingShapeRef: React.MutableRefObject<boolean>
+  resizingShapeIdRef: React.MutableRefObject<string | null>
+  resizeThrottleRef: React.MutableRefObject<number>
+  resizeBaselineRef: React.MutableRefObject<Map<string, any>>
+  recentlyResizedRef: React.MutableRefObject<Map<string, { x?: number; y?: number; width?: number; height?: number; radius?: number; fontSize?: number; timestamp: number }>>
   setShapes: React.Dispatch<React.SetStateAction<Shape[]>>
   setSelectedIds: React.Dispatch<React.SetStateAction<string[]>>
   unlockShape: (shapeId: string) => void
@@ -39,7 +39,7 @@ export function useShapeResize({
   pushHistory,
   sendMessage,
 }: UseShapeResizeProps) {
-  
+
   const handleResizeStart = useCallback((id: string) => {
     if (!wsRef.current) return
     isResizingShapeRef.current = true

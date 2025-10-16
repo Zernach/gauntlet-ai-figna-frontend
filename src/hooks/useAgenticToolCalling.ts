@@ -50,6 +50,7 @@ export interface CreateShapeParams {
     textContent?: string
     fontSize?: number
     fontFamily?: string
+    fontWeight?: string
     opacity?: number
     rotation?: number
     borderRadius?: number

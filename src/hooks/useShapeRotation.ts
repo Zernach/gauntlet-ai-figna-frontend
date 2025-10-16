@@ -8,17 +8,17 @@ interface HistoryEntry {
 }
 
 interface UseShapeRotationProps {
-  shapesRef: React.RefObject<Shape[]>
-  selectedIdsRef: React.RefObject<string[]>
-  wsRef: React.RefObject<WebSocket | null>
-  isRotatingShapeRef: React.RefObject<boolean>
-  rotatingShapeIdRef: React.RefObject<string | null>
-  rotationThrottleRef: React.RefObject<number>
-  rotationRafRef: React.RefObject<number | null>
-  pendingRotationUpdatesRef: React.RefObject<Map<string, number>>
-  rotationFrameScheduledRef: React.RefObject<boolean>
-  rotateBaselineRef: React.RefObject<Map<string, number>>
-  recentlyRotatedRef: React.RefObject<Map<string, { rotation: number; timestamp: number }>>
+  shapesRef: React.MutableRefObject<Shape[]>
+  selectedIdsRef: React.MutableRefObject<string[]>
+  wsRef: React.MutableRefObject<WebSocket | null>
+  isRotatingShapeRef: React.MutableRefObject<boolean>
+  rotatingShapeIdRef: React.MutableRefObject<string | null>
+  rotationThrottleRef: React.MutableRefObject<number>
+  rotationRafRef: React.MutableRefObject<number | null>
+  pendingRotationUpdatesRef: React.MutableRefObject<Map<string, number>>
+  rotationFrameScheduledRef: React.MutableRefObject<boolean>
+  rotateBaselineRef: React.MutableRefObject<Map<string, number>>
+  recentlyRotatedRef: React.MutableRefObject<Map<string, { rotation: number; timestamp: number }>>
   setShapes: React.Dispatch<React.SetStateAction<Shape[]>>
   setSelectedIds: React.Dispatch<React.SetStateAction<string[]>>
   unlockShape: (shapeId: string) => void

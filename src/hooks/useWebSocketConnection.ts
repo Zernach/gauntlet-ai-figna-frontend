@@ -215,7 +215,7 @@ export function useWebSocketConnection({
       handleWebSocketMessage(message)
     }
 
-    ws.onerror = (error) => {
+    ws.onerror = () => {
       setConnectionState('disconnected')
     }
 

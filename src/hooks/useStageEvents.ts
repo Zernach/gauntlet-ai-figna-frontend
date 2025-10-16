@@ -2,15 +2,14 @@ import { useCallback } from 'react'
 import type { Shape } from '../types/canvas'
 
 interface UseStageEventsProps {
-  stageRef: React.RefObject<any>
-  wsRef: React.RefObject<WebSocket | null>
-  selectedIdsRef: React.RefObject<string[]>
-  isDraggingShapeRef: React.RefObject<boolean>
-  justFinishedMultiDragRef: React.RefObject<boolean>
-  cursorThrottleRef: React.RefObject<number>
+  stageRef: React.MutableRefObject<any>
+  wsRef: React.MutableRefObject<WebSocket | null>
+  selectedIdsRef: React.MutableRefObject<string[]>
+  isDraggingShapeRef: React.MutableRefObject<boolean>
+  justFinishedMultiDragRef: React.MutableRefObject<boolean>
+  cursorThrottleRef: React.MutableRefObject<number>
   viewportWidth: number
   viewportHeight: number
-  stageScale: number
   isDrawingLasso: boolean
   lassoMode: boolean
   lassoStart: { x: number; y: number } | null
@@ -34,7 +33,6 @@ export function useStageEvents({
   cursorThrottleRef,
   viewportWidth,
   viewportHeight,
-  stageScale,
   isDrawingLasso,
   lassoMode,
   lassoStart,

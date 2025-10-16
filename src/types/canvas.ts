@@ -32,6 +32,20 @@ export interface Shape {
     last_modified_at?: number
 }
 
+// Alias for compatibility with websocket types
+export type CanvasObject = Shape
+
+export interface Canvas {
+    id: string
+    name?: string
+    width?: number
+    height?: number
+    background_color?: string
+    created_by?: string
+    created_at?: string
+    updated_at?: string
+}
+
 export interface Cursor {
     userId: string
     username: string

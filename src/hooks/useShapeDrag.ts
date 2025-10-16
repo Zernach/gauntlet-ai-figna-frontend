@@ -1,4 +1,4 @@
-import { useCallback, useRef } from 'react'
+import { useCallback } from 'react'
 import type { Shape, ActiveUser } from '../types/canvas'
 import { CANVAS_WIDTH, CANVAS_HEIGHT, DEFAULT_SHAPE_SIZE } from '../types/canvas'
 
@@ -9,22 +9,22 @@ interface HistoryEntry {
 }
 
 interface UseShapeDragProps {
-  shapesRef: React.RefObject<Shape[]>
-  selectedIdsRef: React.RefObject<string[]>
-  currentUserIdRef: React.RefObject<string | null>
-  wsRef: React.RefObject<WebSocket | null>
-  isDraggingShapeRef: React.RefObject<boolean>
-  isShapeDragActiveRef: React.RefObject<boolean>
-  isDragMoveRef: React.RefObject<boolean>
-  justFinishedMultiDragRef: React.RefObject<boolean>
-  dragBaselineRef: React.RefObject<Map<string, { x: number; y: number }>>
-  multiDragOffsetsRef: React.RefObject<Map<string, { dx: number; dy: number }>>
-  dragPositionRef: React.RefObject<{ shapeId: string; x: number; y: number } | null>
-  dragThrottleRef: React.RefObject<number>
-  dragRafRef: React.RefObject<number | null>
-  pendingDragUpdatesRef: React.RefObject<Map<string, { x: number; y: number }>>
-  dragFrameScheduledRef: React.RefObject<boolean>
-  recentlyDraggedRef: React.RefObject<Map<string, { x: number; y: number; timestamp: number }>>
+  shapesRef: React.MutableRefObject<Shape[]>
+  selectedIdsRef: React.MutableRefObject<string[]>
+  currentUserIdRef: React.MutableRefObject<string | null>
+  wsRef: React.MutableRefObject<WebSocket | null>
+  isDraggingShapeRef: React.MutableRefObject<boolean>
+  isShapeDragActiveRef: React.MutableRefObject<boolean>
+  isDragMoveRef: React.MutableRefObject<boolean>
+  justFinishedMultiDragRef: React.MutableRefObject<boolean>
+  dragBaselineRef: React.MutableRefObject<Map<string, { x: number; y: number }>>
+  multiDragOffsetsRef: React.MutableRefObject<Map<string, { dx: number; dy: number }>>
+  dragPositionRef: React.MutableRefObject<{ shapeId: string; x: number; y: number } | null>
+  dragThrottleRef: React.MutableRefObject<number>
+  dragRafRef: React.MutableRefObject<number | null>
+  pendingDragUpdatesRef: React.MutableRefObject<Map<string, { x: number; y: number }>>
+  dragFrameScheduledRef: React.MutableRefObject<boolean>
+  recentlyDraggedRef: React.MutableRefObject<Map<string, { x: number; y: number; timestamp: number }>>
   activeUsers: ActiveUser[]
   setShapes: React.Dispatch<React.SetStateAction<Shape[]>>
   setSelectedIds: React.Dispatch<React.SetStateAction<string[]>>

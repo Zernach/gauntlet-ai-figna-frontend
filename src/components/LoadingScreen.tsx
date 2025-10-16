@@ -1,10 +1,9 @@
 interface LoadingScreenProps {
   currentUserId: string | null
   canvasId: string | null
-  wsRef: React.MutableRefObject<WebSocket | null>
 }
 
-export default function LoadingScreen({ currentUserId, canvasId, wsRef }: LoadingScreenProps) {
+export default function LoadingScreen({ currentUserId, canvasId }: LoadingScreenProps) {
   return (
     <div style={{
       position: 'absolute',

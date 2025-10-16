@@ -2,11 +2,11 @@ import { useCallback } from 'react'
 import type { Shape } from '../types/canvas'
 
 interface UseShapePropertyHandlersProps {
-  wsRef: React.RefObject<WebSocket | null>
+  wsRef: React.MutableRefObject<WebSocket | null>
   selectedIds: string[]
-  colorThrottleRef: React.RefObject<number>
-  opacityThrottleRef: React.RefObject<number>
-  shadowThrottleRef: React.RefObject<number>
+  colorThrottleRef: React.MutableRefObject<number>
+  opacityThrottleRef: React.MutableRefObject<number>
+  shadowThrottleRef: React.MutableRefObject<number>
   setShapes: React.Dispatch<React.SetStateAction<Shape[]>>
   recordPropChange: (shapeId: string, propName: string, newValue: any) => void
   sendMessage: (message: any) => void
