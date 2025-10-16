@@ -25,6 +25,65 @@ interface ContextMenuProps {
     hasPasteData: boolean
 }
 
+// Move MenuItem outside to prevent recreation on every render
+const MenuItem: React.FC<{
+    icon: React.ReactNode
+    label: string
+    onClick: () => void
+    disabled?: boolean
+}> = React.memo(({ icon, label, onClick, disabled }) => {
+    const [isHovered, setIsHovered] = React.useState(false)
+
+    return (
+        <button
+            disabled={disabled}
+            onClick={onClick}
+            onMouseEnter={() => !disabled && setIsHovered(true)}
+            onMouseLeave={() => setIsHovered(false)}
+            style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '12px',
+                padding: '10px 16px',
+                width: '100%',
+                backgroundColor: isHovered && !disabled ? '#2a2a2a' : 'transparent',
+                border: 'none',
+                color: disabled ? '#666666' : '#ffffff',
+                fontSize: '13px',
+                fontWeight: '500',
+                cursor: disabled ? 'not-allowed' : 'pointer',
+                transition: 'background-color 0.15s ease',
+                textAlign: 'left',
+                opacity: disabled ? 0.5 : 1,
+            }}
+        >
+            <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: '16px',
+                height: '16px'
+            }}>
+                {icon}
+            </div>
+            <span>{label}</span>
+        </button>
+    )
+})
+
+MenuItem.displayName = 'MenuItem'
+
+// Move Divider outside as well
+const Divider: React.FC = React.memo(() => (
+    <div style={{
+        height: '1px',
+        backgroundColor: 'rgba(255, 255, 255, 0.1)',
+        margin: '4px 0'
+    }} />
+))
+
+Divider.displayName = 'Divider'
+
 const ContextMenu: React.FC<ContextMenuProps> = ({
     x,
     y,
@@ -72,67 +131,13 @@ const ContextMenu: React.FC<ContextMenuProps> = ({
         return () => document.removeEventListener('keydown', handleEscape)
     }, [onClose])
 
-    const MenuItem: React.FC<{
-        icon: React.ReactNode
-        label: string
-        onClick: () => void
-        disabled?: boolean
-    }> = ({ icon, label, onClick, disabled }) => {
-        return (
-            <button
-                disabled={disabled}
-                onClick={() => {
-                    if (!disabled) {
-                        onClick()
-                        onClose()
-                    }
-                }}
-                style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '12px',
-                    padding: '10px 16px',
-                    width: '100%',
-                    backgroundColor: 'transparent',
-                    border: 'none',
-                    color: disabled ? '#666666' : '#ffffff',
-                    fontSize: '13px',
-                    fontWeight: '500',
-                    cursor: disabled ? 'not-allowed' : 'pointer',
-                    transition: 'background-color 0.15s ease',
-                    textAlign: 'left',
-                    opacity: disabled ? 0.5 : 1,
-                }}
-                onMouseEnter={(e) => {
-                    if (!disabled) {
-                        e.currentTarget.style.backgroundColor = '#2a2a2a'
-                    }
-                }}
-                onMouseLeave={(e) => {
-                    e.currentTarget.style.backgroundColor = 'transparent'
-                }}
-            >
-                <div style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    width: '16px',
-                    height: '16px'
-                }}>
-                    {icon}
-                </div>
-                <span>{label}</span>
-            </button>
-        )
-    }
-
-    const Divider = () => (
-        <div style={{
-            height: '1px',
-            backgroundColor: 'rgba(255, 255, 255, 0.1)',
-            margin: '4px 0'
-        }} />
-    )
+    // Wrap handlers to close menu after action
+    const handleAction = React.useCallback((action: () => void) => {
+        return () => {
+            action()
+            onClose()
+        }
+    }, [onClose])
 
     return (
         <div
@@ -164,22 +169,22 @@ const ContextMenu: React.FC<ContextMenuProps> = ({
             <MenuItem
                 icon={<ArrowUpToLine size={16} />}
                 label="Send to Front"
-                onClick={onSendToFront}
+                onClick={handleAction(onSendToFront)}
             />
             <MenuItem
                 icon={<ArrowUp size={16} />}
                 label="Move Forward"
-                onClick={onMoveForward}
+                onClick={handleAction(onMoveForward)}
             />
             <MenuItem
                 icon={<ArrowDown size={16} />}
                 label="Move Backward"
-                onClick={onMoveBackward}
+                onClick={handleAction(onMoveBackward)}
             />
             <MenuItem
                 icon={<ArrowDownToLine size={16} />}
                 label="Send to Back"
-                onClick={onSendToBack}
+                onClick={handleAction(onSendToBack)}
             />
 
             <Divider />
@@ -197,23 +202,23 @@ const ContextMenu: React.FC<ContextMenuProps> = ({
             <MenuItem
                 icon={<Scissors size={16} />}
                 label="Cut"
-                onClick={onCut}
+                onClick={handleAction(onCut)}
             />
             <MenuItem
                 icon={<Copy size={16} />}
                 label="Copy"
-                onClick={onCopy}
+                onClick={handleAction(onCopy)}
             />
             <MenuItem
                 icon={<Clipboard size={16} />}
                 label="Paste"
-                onClick={onPaste}
+                onClick={handleAction(onPaste)}
                 disabled={!hasPasteData}
             />
             <MenuItem
                 icon={<CopyPlus size={16} />}
                 label="Duplicate"
-                onClick={onDuplicate}
+                onClick={handleAction(onDuplicate)}
             />
         </div>
     )

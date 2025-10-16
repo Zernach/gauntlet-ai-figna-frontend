@@ -1,29 +1,81 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
-import { Stage } from 'react-konva'
+import { Stage, Layer, Rect, Text as KonvaText, Circle as KonvaCircle } from 'react-konva'
 import Konva from 'konva'
 import { supabase } from '../lib/supabase'
+import ColorSlider from './ColorSlider'
+import CanvasShape from './CanvasShape'
+import CanvasCursor from './CanvasCursor'
 import ControlPanel from './ControlPanel'
 import ShapeSelectionPanel from './ShapeSelectionPanel'
 import UndoRedoPanel from './UndoRedoPanel'
 import ContextMenu from './ContextMenu'
 import { ToastContainer, ToastMessage } from './Toast'
-import LoadingScreen from './LoadingScreen'
-import ReconnectionOverlay from './ReconnectionOverlay'
-import PresencePanel from './PresencePanel'
-import CanvasBackgroundPanel from './CanvasBackgroundPanel'
-import CanvasLayers from './CanvasLayers'
 
-// Import types and constants
-import type { Shape, Cursor, ActiveUser } from '../types/canvas'
-import { 
-  CANVAS_WIDTH, 
-  CANVAS_HEIGHT, 
-  VIEWPORT_WIDTH, 
-  VIEWPORT_HEIGHT, 
-  DEFAULT_SHAPE_SIZE, 
-  SHAPE_COLOR,
-  USER_COLORS 
-} from '../types/canvas'
+// Canvas constants - Extremely expansive canvas
+const CANVAS_WIDTH = 50000
+const CANVAS_HEIGHT = 50000
+const VIEWPORT_WIDTH = window.innerWidth
+const VIEWPORT_HEIGHT = window.innerHeight
+const DEFAULT_SHAPE_SIZE = 100
+const SHAPE_COLOR = '#c1c1c1' // Gray shapes
+
+// User color palette - Bright NEON colors
+// NOTE: #00ff00 (bright neon green) is reserved for FPS connectivity status and excluded from user colors
+const USER_COLORS = [
+  '#72fa41', '#24ccff', '#fbff00', '#ff69b4', '#00ffff',
+  '#ff00ff', '#ff0080', '#80ff00', '#ff8000',
+  '#0080ff', '#ff0040', '#40ff00', '#00ff80', '#8000ff'
+]
+
+interface Shape {
+  id: string
+  type: string
+  x: number
+  y: number
+  width?: number
+  height?: number
+  radius?: number
+  rotation?: number
+  color: string
+  opacity?: number
+  shadowColor?: string
+  shadowStrength?: number
+  text_content?: string
+  font_size?: number
+  font_family?: string
+  font_weight?: string
+  text_align?: string
+  textContent?: string
+  fontSize?: number
+  fontFamily?: string
+  fontWeight?: string
+  textAlign?: string
+  zIndex?: number
+  z_index?: number
+  locked_at?: string | null
+  locked_by?: string | null
+  created_by?: string
+  last_modified_by?: string
+  last_modified_at?: number
+}
+
+interface Cursor {
+  userId: string
+  username: string
+  displayName: string
+  email: string
+  color: string
+  x: number
+  y: number
+}
+
+interface ActiveUser {
+  userId: string
+  username: string
+  displayName: string
+  email: string
+  color: string
+}
 
 export default function Canvas() {
   const stageRef = useRef<Konva.Stage>(null)
@@ -55,7 +107,6 @@ export default function Canvas() {
 
   // Context menu state
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; shapeId: string } | null>(null)
-  const contextMenuShapeIdRef = useRef<string | null>(null)
 
   // Clipboard state
   const [clipboard, setClipboard] = useState<Shape[]>([])
@@ -2182,16 +2233,14 @@ export default function Canvas() {
     const pos = stage.getPointerPosition()
     if (!pos) return
 
-    contextMenuShapeIdRef.current = shapeId
     setContextMenu({ x: pos.x, y: pos.y, shapeId })
   }, [])
 
   // Layer management handlers
   const handleSendToFront = useCallback(() => {
-    const shapeId = contextMenuShapeIdRef.current
-    if (!shapeId || !wsRef.current) return
+    if (!contextMenu || !wsRef.current) return
 
-    const shape = shapes.find(s => s.id === shapeId)
+    const shape = shapes.find(s => s.id === contextMenu.shapeId)
     if (!shape) return
 
     // Get max z-index
@@ -2200,17 +2249,16 @@ export default function Canvas() {
 
     wsRef.current.send(JSON.stringify({
       type: 'SHAPE_UPDATE',
-      payload: { shapeId, updates: { zIndex: newZIndex } },
+      payload: { shapeId: contextMenu.shapeId, updates: { zIndex: newZIndex } },
     }))
 
-    contextMenuShapeIdRef.current = null
-  }, [shapes])
+    setContextMenu(null)
+  }, [contextMenu, shapes])
 
   const handleSendToBack = useCallback(() => {
-    const shapeId = contextMenuShapeIdRef.current
-    if (!shapeId || !wsRef.current) return
+    if (!contextMenu || !wsRef.current) return
 
-    const shape = shapes.find(s => s.id === shapeId)
+    const shape = shapes.find(s => s.id === contextMenu.shapeId)
     if (!shape) return
 
     // Get min z-index
@@ -2219,17 +2267,16 @@ export default function Canvas() {
 
     wsRef.current.send(JSON.stringify({
       type: 'SHAPE_UPDATE',
-      payload: { shapeId, updates: { zIndex: newZIndex } },
+      payload: { shapeId: contextMenu.shapeId, updates: { zIndex: newZIndex } },
     }))
 
-    contextMenuShapeIdRef.current = null
-  }, [shapes])
+    setContextMenu(null)
+  }, [contextMenu, shapes])
 
   const handleMoveForward = useCallback(() => {
-    const shapeId = contextMenuShapeIdRef.current
-    if (!shapeId || !wsRef.current) return
+    if (!contextMenu || !wsRef.current) return
 
-    const shape = shapes.find(s => s.id === shapeId)
+    const shape = shapes.find(s => s.id === contextMenu.shapeId)
     if (!shape) return
 
     const currentZ = shape.z_index || shape.zIndex || 0
@@ -2237,17 +2284,16 @@ export default function Canvas() {
 
     wsRef.current.send(JSON.stringify({
       type: 'SHAPE_UPDATE',
-      payload: { shapeId, updates: { zIndex: newZIndex } },
+      payload: { shapeId: contextMenu.shapeId, updates: { zIndex: newZIndex } },
     }))
 
-    contextMenuShapeIdRef.current = null
-  }, [shapes])
+    setContextMenu(null)
+  }, [contextMenu, shapes])
 
   const handleMoveBackward = useCallback(() => {
-    const shapeId = contextMenuShapeIdRef.current
-    if (!shapeId || !wsRef.current) return
+    if (!contextMenu || !wsRef.current) return
 
-    const shape = shapes.find(s => s.id === shapeId)
+    const shape = shapes.find(s => s.id === contextMenu.shapeId)
     if (!shape) return
 
     const currentZ = shape.z_index || shape.zIndex || 0
@@ -2255,29 +2301,27 @@ export default function Canvas() {
 
     wsRef.current.send(JSON.stringify({
       type: 'SHAPE_UPDATE',
-      payload: { shapeId, updates: { zIndex: newZIndex } },
+      payload: { shapeId: contextMenu.shapeId, updates: { zIndex: newZIndex } },
     }))
 
-    contextMenuShapeIdRef.current = null
-  }, [shapes])
+    setContextMenu(null)
+  }, [contextMenu, shapes])
 
   // Clipboard handlers
   const handleCopy = useCallback(() => {
-    const shapeId = contextMenuShapeIdRef.current
-    if (!shapeId) return
+    if (!contextMenu) return
 
-    const shape = shapes.find(s => s.id === shapeId)
+    const shape = shapes.find(s => s.id === contextMenu.shapeId)
     if (!shape) return
 
     setClipboard([shape])
-    contextMenuShapeIdRef.current = null
-  }, [shapes])
+    setContextMenu(null)
+  }, [contextMenu, shapes])
 
   const handleCut = useCallback(() => {
-    const shapeId = contextMenuShapeIdRef.current
-    if (!shapeId || !wsRef.current) return
+    if (!contextMenu || !wsRef.current) return
 
-    const shape = shapes.find(s => s.id === shapeId)
+    const shape = shapes.find(s => s.id === contextMenu.shapeId)
     if (!shape) return
 
     setClipboard([shape])
@@ -2285,7 +2329,7 @@ export default function Canvas() {
     // Delete the shape
     wsRef.current.send(JSON.stringify({
       type: 'SHAPE_DELETE',
-      payload: { shapeId },
+      payload: { shapeId: contextMenu.shapeId },
     }))
 
     pushHistory({
@@ -2294,11 +2338,11 @@ export default function Canvas() {
       label: 'Cut shape',
     })
 
-    contextMenuShapeIdRef.current = null
-  }, [shapes, pushHistory])
+    setContextMenu(null)
+  }, [contextMenu, shapes, pushHistory])
 
   const handlePaste = useCallback(() => {
-    if (clipboard.length === 0 || !wsRef.current) return
+    if (!contextMenu || clipboard.length === 0 || !wsRef.current) return
 
     // Paste at cursor position with offset
     const offsetX = 50
@@ -2322,14 +2366,13 @@ export default function Canvas() {
       }))
     })
 
-    contextMenuShapeIdRef.current = null
-  }, [clipboard])
+    setContextMenu(null)
+  }, [contextMenu, clipboard])
 
   const handleDuplicate = useCallback(() => {
-    const shapeId = contextMenuShapeIdRef.current
-    if (!shapeId || !wsRef.current) return
+    if (!contextMenu || !wsRef.current) return
 
-    const shape = shapes.find(s => s.id === shapeId)
+    const shape = shapes.find(s => s.id === contextMenu.shapeId)
     if (!shape) return
 
     // Duplicate with offset
@@ -2352,12 +2395,52 @@ export default function Canvas() {
       payload: newShape,
     }))
 
-    contextMenuShapeIdRef.current = null
-  }, [shapes])
+    setContextMenu(null)
+  }, [contextMenu, shapes])
 
   // Show authentication prompt if not connected
   if (!currentUserId || !canvasId || !wsRef.current) {
-    return <LoadingScreen currentUserId={currentUserId} canvasId={canvasId} wsRef={wsRef} />
+    return (
+      <div style={{
+        width: '100%',
+        height: '100%',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: '#0a0a0a',
+      }}>
+        <div style={{
+          backgroundColor: '#1a1a1a',
+          padding: '32px',
+          borderRadius: '12px',
+          boxShadow: '0 4px 16px #1c1c1c80',
+          border: '1px solid #404040',
+          maxWidth: '400px',
+          textAlign: 'center',
+        }}>
+          <h2 style={{ fontSize: '24px', fontWeight: '600', marginBottom: '16px', color: '#ffffff' }}>
+            Canvas Loading...
+          </h2>
+          <p style={{ color: '#b0b0b0', marginBottom: '24px' }}>
+            {!currentUserId
+              ? 'Please sign in to access the canvas.'
+              : !canvasId
+                ? 'Initializing canvas...'
+                : 'Connecting to WebSocket...'}
+          </p>
+          <div style={{
+            width: '40px',
+            height: '40px',
+            border: '4px solid #404040',
+            borderTop: '4px solid #24ccff',
+            borderRadius: '50%',
+            margin: '0 auto',
+            animation: 'spin 1s linear infinite',
+          }} />
+        </div>
+      </div>
+
+    )
   }
 
 
@@ -2368,11 +2451,49 @@ export default function Canvas() {
 
       {/* Reconnection Overlay */}
       {connectionState === 'reconnecting' && (
-        <ReconnectionOverlay
-          reconnectAttempts={reconnectAttempts}
-          maxReconnectAttempts={maxReconnectAttempts}
-          queuedOperationsCount={operationQueueRef.current.length}
-        />
+        <div style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: '#1c1c1cb3',
+          zIndex: 50,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}>
+          <div style={{
+            backgroundColor: '#1a1a1a',
+            padding: '32px',
+            borderRadius: '12px',
+            boxShadow: '0 8px 32px #1c1c1ccc',
+            border: '1px solid #404040',
+            textAlign: 'center',
+            maxWidth: '400px',
+          }}>
+            <div style={{
+              width: '48px',
+              height: '48px',
+              border: '4px solid #404040',
+              borderTop: '4px solid #24ccff',
+              borderRadius: '50%',
+              margin: '0 auto 16px',
+              animation: 'spin 1s linear infinite',
+            }} />
+            <h3 style={{ fontSize: '18px', fontWeight: '600', marginBottom: '8px', color: '#ffffff' }}>
+              Reconnecting to server...
+            </h3>
+            <p style={{ color: '#b0b0b0', fontSize: '14px', marginBottom: '12px' }}>
+              Attempt {reconnectAttempts} of {maxReconnectAttempts}
+            </p>
+            {operationQueueRef.current.length > 0 && (
+              <p style={{ color: '#888', fontSize: '12px' }}>
+                {operationQueueRef.current.length} operation(s) queued and will sync on reconnection
+              </p>
+            )}
+          </div>
+        </div>
       )}
 
       {/* Control Panel */}
@@ -2395,19 +2516,135 @@ export default function Canvas() {
       {/* Pan Mode Indicator removed */}
 
       {/* Combined Status Panel - Users, Connection, and Performance */}
-      <PresencePanel
-        currentUserEmail={currentUserEmail}
-        currentUserColor={currentUserColor}
-        uniqueActiveUsers={uniqueActiveUsers}
-        onlineUsersCount={onlineUsersCount}
-        connectionState={connectionState}
-        reconnectAttempts={reconnectAttempts}
-        maxReconnectAttempts={maxReconnectAttempts}
-        queuedOperationsCount={operationQueueRef.current.length}
-        fps={fps}
-        shapesCount={shapes.length}
-        onSignOut={handleSignOut}
-      />
+      <div id="presence-panel" style={{
+        position: 'absolute',
+        top: '20px',
+        right: '20px',
+        zIndex: 10,
+        backgroundColor: '#1a1a1a',
+        padding: '12px 16px',
+        borderRadius: '8px',
+        boxShadow: '0 2px 8px #1c1c1c80',
+        border: '1px solid #404040',
+        minWidth: '200px',
+      }}>
+        <button
+          onClick={handleSignOut}
+          title="Sign out"
+          style={{
+            position: 'absolute',
+            top: '8px',
+            right: '8px',
+            width: '22px',
+            height: '22px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: '#2a2a2a',
+            color: '#ffffff',
+            border: '1px solid #404040',
+            borderRadius: '4px',
+            cursor: 'pointer',
+            fontSize: '12px',
+            lineHeight: 1,
+          }}
+        >
+          ⎋
+        </button>
+
+        {/* Active Users Section */}
+        <div style={{ fontWeight: '600', marginBottom: '8px', fontSize: '14px', color: '#ffffff' }}>
+          Online ({onlineUsersCount})
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '12px' }}>
+          {/* Current user */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div style={{
+              width: '8px',
+              height: '8px',
+              borderRadius: '50%',
+              backgroundColor: currentUserColor,
+              boxShadow: `0 0 4px ${currentUserColor}`,
+            }} />
+            <span style={{ fontSize: '13px', color: '#ffffff' }}>{currentUserEmail} (you)</span>
+          </div>
+          {/* Other users - using memoized uniqueActiveUsers */}
+          {uniqueActiveUsers.map(user => (
+            <div key={user.userId} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div style={{
+                width: '8px',
+                height: '8px',
+                borderRadius: '50%',
+                backgroundColor: user.color,
+                boxShadow: `0 0 4px ${user.color}`,
+              }} />
+              <span style={{ fontSize: '13px', color: '#ffffff' }}>
+                {user.email || user.username || 'Unknown User'}
+              </span>
+            </div>
+          ))}
+        </div>
+
+        {/* Divider */}
+        <div style={{
+          height: '1px',
+          backgroundColor: '#404040',
+          margin: '12px -16px 12px -16px'
+        }} />
+
+        {/* Connection Status Section */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          marginBottom: '8px',
+        }}>
+          <div style={{
+            width: '8px',
+            height: '8px',
+            borderRadius: '50%',
+            backgroundColor:
+              connectionState === 'connected' ? '#00ff00' :
+                connectionState === 'reconnecting' ? '#ffaa00' :
+                  connectionState === 'connecting' ? '#24ccff' :
+                    '#ff0000',
+            boxShadow: `0 0 8px ${connectionState === 'connected' ? '#00ff00' :
+              connectionState === 'reconnecting' ? '#ffaa00' :
+                connectionState === 'connecting' ? '#24ccff' :
+                  '#ff0000'
+              }`,
+            animation: connectionState === 'reconnecting' || connectionState === 'connecting' ? 'pulse 1.5s ease-in-out infinite' : 'none',
+          }} />
+          <span style={{ fontSize: '12px', color: '#ffffff', fontWeight: 500 }}>
+            {connectionState === 'connected' ? 'Connected' :
+              connectionState === 'reconnecting' ? `Reconnecting... (${reconnectAttempts}/${maxReconnectAttempts})` :
+                connectionState === 'connecting' ? 'Connecting...' :
+                  'Disconnected'}
+          </span>
+          {operationQueueRef.current.length > 0 && (
+            <span style={{ fontSize: '11px', color: '#888' }}>
+              ({operationQueueRef.current.length} queued)
+            </span>
+          )}
+        </div>
+
+        {/* Performance Stats Section */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '12px',
+          fontSize: '11px',
+          color: '#888',
+        }}>
+          <span style={{ color: fps >= 50 ? '#00ff00' : fps >= 30 ? '#ffaa00' : '#ff0000', fontWeight: 600, fontFamily: 'monospace', minWidth: '55px', display: 'inline-block' }}>
+            {fps} FPS
+          </span>
+          <span>|</span>
+          <span>
+            {shapes.length} shapes
+          </span>
+        </div>
+      </div>
 
       {/* Undo/Redo Panel - rendered 20px below Status Panel */}
       {hasUserActed && (
@@ -2482,33 +2719,127 @@ export default function Canvas() {
           return { x: newX, y: newY }
         }}
       >
-        <CanvasLayers
-          canvasWidth={CANVAS_WIDTH}
-          canvasHeight={CANVAS_HEIGHT}
-          canvasBgHex={canvasBgHex}
-          shapeRenderProps={shapeRenderProps}
-          selectedIds={selectedIds}
-          stageScale={stageScale}
-          cursorsArray={cursorsArray}
-          isDrawingLasso={isDrawingLasso}
-          lassoStart={lassoStart}
-          lassoEnd={lassoEnd}
-          activeUsers={activeUsers}
-          currentUserId={currentUserId}
-          onShapeClick={handleShapeClick}
-          onDragStart={handleShapeDragStart}
-          onDragMove={handleShapeDrag}
-          onDragEnd={handleShapeDragEnd}
-          onResizeStart={handleResizeStart}
-          onResizeMove={handleResizeMove}
-          onResizeEnd={handleResizeEnd}
-          onRotateStart={handleRotateStart}
-          onRotateMove={handleRotateMove}
-          onRotateEnd={handleRotateEnd}
-          onTextDoubleClick={handleTextDoubleClick}
-          onContextMenu={handleShapeContextMenu}
-          getUserColor={getUserColor}
-        />
+        {/* Background Layer - separate layer prevents re-renders */}
+        <Layer listening={false}>
+          {/* Canvas Background */}
+          <Rect
+            x={0}
+            y={0}
+            width={CANVAS_WIDTH}
+            height={CANVAS_HEIGHT}
+            fill={canvasBgHex}
+            listening={false}
+          />
+
+          {/* Canvas Border */}
+          <Rect
+            x={0}
+            y={0}
+            width={CANVAS_WIDTH}
+            height={CANVAS_HEIGHT}
+            stroke="#404040"
+            strokeWidth={2}
+            listening={false}
+          />
+        </Layer>
+
+        {/* Shapes Layer - separate layer prevents re-renders of other elements */}
+        <Layer>
+          {shapeRenderProps.map(props => (
+            <CanvasShape
+              key={props.shape.id}
+              shape={props.shape}
+              strokeColor={props.strokeColor}
+              strokeWidth={props.strokeWidth}
+              isPressable={props.isPressable}
+              isDraggable={props.isDraggable}
+              isSelected={selectedIds.includes(props.shape.id)}
+              canResize={props.isDraggable}
+              remainingSeconds={props.remainingSeconds}
+              stageScale={stageScale}
+              onShapeClick={handleShapeClick}
+              onDragStart={handleShapeDragStart}
+              onDragMove={handleShapeDrag}
+              onDragEnd={handleShapeDragEnd}
+              onResizeStart={handleResizeStart}
+              onResizeMove={handleResizeMove}
+              onResizeEnd={handleResizeEnd}
+              onRotateStart={handleRotateStart}
+              onRotateMove={handleRotateMove}
+              onRotateEnd={handleRotateEnd}
+              onTextDoubleClick={handleTextDoubleClick}
+              onContextMenu={handleShapeContextMenu}
+            />
+          ))}
+
+          {/* Last Edited Labels - show for recently edited shapes */}
+          {shapeRenderProps.map(props => {
+            const shape = props.shape
+            const lastModifiedAt = shape.last_modified_at
+            const lastModifiedBy = shape.last_modified_by
+
+            // Only show for shapes edited in the last 3 seconds
+            if (!lastModifiedAt || !lastModifiedBy || Date.now() - lastModifiedAt > 3000) {
+              return null
+            }
+
+            // Don't show for shapes edited by current user
+            if (lastModifiedBy === currentUserId) {
+              return null
+            }
+
+            const user = activeUsers.find(u => u.userId === lastModifiedBy)
+            const userName = user?.email?.split('@')[0] || user?.username || 'Unknown'
+            const userColor = getUserColor(lastModifiedBy)
+
+            // Position label above shape
+            const labelY = shape.type === 'circle'
+              ? shape.y - (shape.radius || 50) - 20 / stageScale
+              : shape.y - 20 / stageScale
+
+            return (
+              <KonvaText
+                key={`label-${shape.id}`}
+                x={shape.x}
+                y={labelY}
+                text={`edited by ${userName}`}
+                fontSize={12 / stageScale}
+                fill={userColor}
+                opacity={Math.max(0, 1 - (Date.now() - lastModifiedAt) / 3000)}
+                listening={false}
+              />
+            )
+          })}
+        </Layer>
+
+        {/* Cursors Layer - separate layer prevents re-renders when cursors move */}
+        <Layer listening={false}>
+          {cursorsArray.map(cursor => (
+            <CanvasCursor key={cursor.userId} cursor={cursor} />
+          ))}
+        </Layer>
+
+        {/* Lasso Layer - visualization for lasso selection */}
+        {isDrawingLasso && lassoStart && lassoEnd && (
+          <Layer listening={false}>
+            <KonvaCircle
+              x={lassoStart.x}
+              y={lassoStart.y}
+              radius={Math.sqrt((lassoEnd.x - lassoStart.x) ** 2 + (lassoEnd.y - lassoStart.y) ** 2)}
+              stroke="#24ccff"
+              strokeWidth={2 / stageScale}
+              dash={[10 / stageScale, 5 / stageScale]}
+              listening={false}
+            />
+            <KonvaCircle
+              x={lassoStart.x}
+              y={lassoStart.y}
+              radius={5 / stageScale}
+              fill="#24ccff"
+              listening={false}
+            />
+          </Layer>
+        )}
       </Stage>
 
       {/* Context Menu */}
@@ -2516,10 +2847,7 @@ export default function Canvas() {
         <ContextMenu
           x={contextMenu.x}
           y={contextMenu.y}
-          onClose={() => {
-            contextMenuShapeIdRef.current = null
-            setContextMenu(null)
-          }}
+          onClose={() => setContextMenu(null)}
           onSendToFront={handleSendToFront}
           onSendToBack={handleSendToBack}
           onMoveForward={handleMoveForward}
@@ -2548,21 +2876,40 @@ export default function Canvas() {
       {/* Color Tooltip removed in favor of ShapeSelectionPanel */}
 
       {/* Floating Canvas Background Color panel (right side) */}
-      <CanvasBackgroundPanel
-        isOpen={isCanvasBgOpen}
-        position={canvasBgPanelPos}
-        valueHex={canvasBgHex}
-        onChangeHex={(hex) => {
-          setCanvasBgHex(hex)
-          if (wsRef.current) {
-            wsRef.current.send(JSON.stringify({
-              type: 'CANVAS_UPDATE',
-              payload: { updates: { backgroundColor: hex } }
-            }))
-          }
-          recordCanvasBgChange(hex)
-        }}
-      />
+      {isCanvasBgOpen && (
+        <div
+          style={{
+            position: 'absolute',
+            top: canvasBgPanelPos ? `${canvasBgPanelPos.top}px` : '20px',
+            left: canvasBgPanelPos ? `${canvasBgPanelPos.left}px` : 'calc(20px + 200px + 12px)',
+            zIndex: 11,
+            backgroundColor: 'rgba(26, 26, 26, 0.95)',
+            border: '1px solid #404040',
+            borderRadius: '12px',
+            padding: '12px 14px',
+            boxShadow: '0 8px 32px #1c1c1c66'
+          }}
+        >
+          <div style={{ fontSize: '12px', fontWeight: 600, color: '#888', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>
+            Canvas Background
+          </div>
+          <ColorSlider
+            valueHex={canvasBgHex}
+            onChangeHex={(hex) => {
+              setCanvasBgHex(hex)
+              if (wsRef.current) {
+                wsRef.current.send(JSON.stringify({
+                  type: 'CANVAS_UPDATE',
+                  payload: { updates: { backgroundColor: hex } }
+                }))
+              }
+              recordCanvasBgChange(hex)
+            }}
+            allowHexEdit={true}
+            layout="row"
+          />
+        </div>
+      )}
     </div>
   )
 }

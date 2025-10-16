@@ -4,6 +4,7 @@ import { Session } from '@supabase/supabase-js'
 import Canvas from './components/Canvas'
 import AuthButton from './components/AuthButton'
 import AuthModal from './components/AuthModal'
+import RealtimeVoicePanel from './components/RealtimeVoicePanel'
 
 function App() {
   const [session, setSession] = useState<Session | null>(null)
@@ -148,6 +149,8 @@ function App() {
       {showAuthModal && (
         <AuthModal onClose={handleCloseModal} />
       )}
+
+      {session && <RealtimeVoicePanel session={session} />}
     </div>
   )
 }
