@@ -14,12 +14,13 @@ interface UseShapeManagementProps {
     pushHistory: (entry: any) => void
     shapesRef: React.MutableRefObject<any[]>
     currentUserIdRef: React.MutableRefObject<string | null>
+    canvasIdRef: React.MutableRefObject<string | null>
 }
 
 export function useShapeManagement({
     wsRef,
-    canvasId,
-    currentUserId,
+    canvasId: _canvasId,
+    currentUserId: _currentUserId,
     stagePos,
     stageScale,
     viewportWidth,
@@ -28,7 +29,8 @@ export function useShapeManagement({
     showToast,
     pushHistory,
     shapesRef,
-    currentUserIdRef
+    currentUserIdRef,
+    canvasIdRef
 }: UseShapeManagementProps) {
 
     // Refs to keep stable function references for external use
@@ -40,11 +42,11 @@ export function useShapeManagement({
     const createShapes = useCallback((shapesData: any[]) => {
         console.log('🎨 [Canvas] createShapes called with:', shapesData.length, 'shape(s)')
 
-        if (!wsRef.current || !canvasId || !currentUserId) {
+        if (!wsRef.current || !canvasIdRef.current || !currentUserIdRef.current) {
             console.error('❌ [Canvas] Cannot create shapes - missing requirements:', {
                 hasWs: !!wsRef.current,
-                canvasId,
-                currentUserId
+                canvasId: canvasIdRef.current,
+                currentUserId: currentUserIdRef.current
             })
             return
         }
@@ -114,7 +116,7 @@ export function useShapeManagement({
 
         showToast(`${shapesData.length} shape(s) created!`, 'success', 2000)
         console.log(`✅ [Canvas] All ${shapesData.length} shape creation message(s) sent`)
-    }, [stagePos, stageScale, canvasId, currentUserId, showToast, viewportWidth, viewportHeight, sendMessage, wsRef])
+    }, [stagePos, stageScale, showToast, viewportWidth, viewportHeight, sendMessage, wsRef, canvasIdRef, currentUserIdRef])
 
     // Handle shape creation from UI (rectangle button)
     const handleAddShape = useCallback(() => {

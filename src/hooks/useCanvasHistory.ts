@@ -1,9 +1,24 @@
-import { useRef, useState, useCallback } from 'react'
+import { useState, useRef, useCallback } from 'react'
 
 type WSMessage = { type: string; payload?: any }
 type HistoryEntry = { undo: WSMessage | WSMessage[]; redo: WSMessage | WSMessage[]; label?: string }
 
-export function useCanvasHistory() {
+interface UseCanvasHistoryParams {
+  sendMessage: (message: WSMessage) => void
+}
+
+interface UseCanvasHistoryReturn {
+  undoCount: number
+  redoCount: number
+  hasUserActed: boolean
+  pushHistory: (entry: HistoryEntry) => void
+  performUndo: () => void
+  performRedo: () => void
+  undoStackRef: React.MutableRefObject<HistoryEntry[]>
+  redoStackRef: React.MutableRefObject<HistoryEntry[]>
+}
+
+export function useCanvasHistory({ sendMessage }: UseCanvasHistoryParams): UseCanvasHistoryReturn {
   const undoStackRef = useRef<HistoryEntry[]>([])
   const redoStackRef = useRef<HistoryEntry[]>([])
   const [undoCount, setUndoCount] = useState<number>(0)
@@ -13,48 +28,31 @@ export function useCanvasHistory() {
   const pushHistory = useCallback((entry: HistoryEntry) => {
     undoStackRef.current.push(entry)
     setUndoCount(undoStackRef.current.length)
-    redoStackRef.current = [] // Clear redo stack when new action is performed
+    // clear redo stack on new action
+    redoStackRef.current = []
     setRedoCount(0)
-    setHasUserActed(true)
-  }, [])
+    if (!hasUserActed) setHasUserActed(true)
+  }, [hasUserActed])
 
-  const performUndo = useCallback((sendMessage: (msg: WSMessage) => void) => {
-    if (undoStackRef.current.length === 0) return
-
+  const performUndo = useCallback(() => {
     const entry = undoStackRef.current.pop()
     if (!entry) return
-
-    // Send undo message(s)
-    if (Array.isArray(entry.undo)) {
-      entry.undo.forEach(msg => sendMessage(msg))
-    } else {
-      sendMessage(entry.undo)
-    }
-
-    // Push to redo stack
+    const msgs = Array.isArray(entry.undo) ? entry.undo : [entry.undo]
+    msgs.forEach(sendMessage)
     redoStackRef.current.push(entry)
     setUndoCount(undoStackRef.current.length)
     setRedoCount(redoStackRef.current.length)
-  }, [])
+  }, [sendMessage])
 
-  const performRedo = useCallback((sendMessage: (msg: WSMessage) => void) => {
-    if (redoStackRef.current.length === 0) return
-
+  const performRedo = useCallback(() => {
     const entry = redoStackRef.current.pop()
     if (!entry) return
-
-    // Send redo message(s)
-    if (Array.isArray(entry.redo)) {
-      entry.redo.forEach(msg => sendMessage(msg))
-    } else {
-      sendMessage(entry.redo)
-    }
-
-    // Push back to undo stack
+    const msgs = Array.isArray(entry.redo) ? entry.redo : [entry.redo]
+    msgs.forEach(sendMessage)
     undoStackRef.current.push(entry)
     setUndoCount(undoStackRef.current.length)
     setRedoCount(redoStackRef.current.length)
-  }, [])
+  }, [sendMessage])
 
   return {
     undoCount,
@@ -63,6 +61,7 @@ export function useCanvasHistory() {
     pushHistory,
     performUndo,
     performRedo,
+    undoStackRef,
+    redoStackRef,
   }
 }
-

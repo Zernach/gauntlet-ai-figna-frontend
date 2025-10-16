@@ -1,0 +1,476 @@
+import { useCallback, useRef } from 'react'
+import type { Shape, ActiveUser } from '../types/canvas'
+import { CANVAS_WIDTH, CANVAS_HEIGHT, DEFAULT_SHAPE_SIZE } from '../types/canvas'
+
+interface HistoryEntry {
+  undo: any
+  redo: any
+  label: string
+}
+
+interface UseShapeDragProps {
+  shapesRef: React.RefObject<Shape[]>
+  selectedIdsRef: React.RefObject<string[]>
+  currentUserIdRef: React.RefObject<string | null>
+  wsRef: React.RefObject<WebSocket | null>
+  isDraggingShapeRef: React.RefObject<boolean>
+  isShapeDragActiveRef: React.RefObject<boolean>
+  isDragMoveRef: React.RefObject<boolean>
+  justFinishedMultiDragRef: React.RefObject<boolean>
+  dragBaselineRef: React.RefObject<Map<string, { x: number; y: number }>>
+  multiDragOffsetsRef: React.RefObject<Map<string, { dx: number; dy: number }>>
+  dragPositionRef: React.RefObject<{ shapeId: string; x: number; y: number } | null>
+  dragThrottleRef: React.RefObject<number>
+  dragRafRef: React.RefObject<number | null>
+  pendingDragUpdatesRef: React.RefObject<Map<string, { x: number; y: number }>>
+  dragFrameScheduledRef: React.RefObject<boolean>
+  recentlyDraggedRef: React.RefObject<Map<string, { x: number; y: number; timestamp: number }>>
+  activeUsers: ActiveUser[]
+  setShapes: React.Dispatch<React.SetStateAction<Shape[]>>
+  setSelectedIds: React.Dispatch<React.SetStateAction<string[]>>
+  unlockShape: (shapeId: string) => void
+  pushHistory: (entry: HistoryEntry) => void
+  showToast: (message: string, type: 'success' | 'error' | 'info', duration?: number) => void
+  sendMessage: (message: any) => void
+}
+
+export function useShapeDrag({
+  shapesRef,
+  selectedIdsRef,
+  currentUserIdRef,
+  wsRef,
+  isDraggingShapeRef,
+  isShapeDragActiveRef,
+  isDragMoveRef,
+  justFinishedMultiDragRef,
+  dragBaselineRef,
+  multiDragOffsetsRef,
+  dragPositionRef,
+  dragThrottleRef,
+  dragRafRef,
+  pendingDragUpdatesRef,
+  dragFrameScheduledRef,
+  recentlyDraggedRef,
+  activeUsers,
+  setShapes,
+  setSelectedIds,
+  unlockShape,
+  pushHistory,
+  showToast,
+  sendMessage,
+}: UseShapeDragProps) {
+  
+  const flushPendingDragUpdates = useCallback(() => {
+    dragFrameScheduledRef.current = false
+    const pending = pendingDragUpdatesRef.current
+    if (pending.size === 0) return
+    setShapes(prev => prev.map(s => {
+      const u = pending.get(s.id)
+      return u ? { ...s, x: u.x, y: u.y } : s
+    }))
+    pending.clear()
+  }, [dragFrameScheduledRef, pendingDragUpdatesRef, setShapes])
+
+  const handleShapeDragStart = useCallback((id: string) => {
+    if (!wsRef.current) return
+
+    // Check if the shape is locked by another user
+    const shape = shapesRef.current.find(s => s.id === id)
+    if (shape && shape.locked_at && shape.locked_by !== currentUserIdRef.current) {
+      // Check if lock is still valid (not expired)
+      const lockTime = new Date(shape.locked_at).getTime()
+      const elapsed = (Date.now() - lockTime) / 1000
+      if (elapsed < 10) {
+        // Shape is still locked by another user - prevent drag
+        // Show red error toast notification with user info
+        const lockedByUser = activeUsers.find(u => u.userId === shape.locked_by)
+        const userName = lockedByUser?.email?.split('@')[0] || lockedByUser?.username || 'another user'
+        showToast(`This shape is locked and being edited by ${userName}`, 'error', 2500)
+        return
+      }
+    }
+
+    // Set dragging flags to prevent stage click deselection and accidental selection
+    isDraggingShapeRef.current = true
+    isShapeDragActiveRef.current = true // Mark shape drag as active
+    isDragMoveRef.current = false // Reset drag move flag
+    justFinishedMultiDragRef.current = false // Reset multi-drag flag when starting new drag
+
+    // Select the shape being dragged if not already selected
+    if (!selectedIdsRef.current.includes(id)) {
+      // Unlock previously selected shapes
+      selectedIdsRef.current.forEach(sid => unlockShape(sid))
+      setSelectedIds([id])
+    }
+
+    // Store baseline positions for all selected shapes
+    const selectedShapes = shapesRef.current.filter(s => selectedIdsRef.current.includes(s.id))
+    const primaryShape = shapesRef.current.find(sh => sh.id === id)
+
+    if (primaryShape) {
+      // Calculate offsets for multi-shape drag
+      multiDragOffsetsRef.current.clear()
+      selectedShapes.forEach(s => {
+        dragBaselineRef.current.set(s.id, { x: s.x, y: s.y })
+        if (s.id !== id) {
+          // Store offset relative to primary dragged shape
+          multiDragOffsetsRef.current.set(s.id, {
+            dx: s.x - primaryShape.x,
+            dy: s.y - primaryShape.y,
+          })
+        }
+      })
+    }
+
+    // Send lock messages for all selected shapes
+    selectedShapes.forEach(shape => {
+      wsRef.current!.send(JSON.stringify({
+        type: 'SHAPE_UPDATE',
+        payload: {
+          shapeId: shape.id,
+          updates: {
+            isLocked: true,
+          },
+        },
+      }))
+    })
+  }, [
+    wsRef,
+    shapesRef,
+    selectedIdsRef,
+    currentUserIdRef,
+    isDraggingShapeRef,
+    isShapeDragActiveRef,
+    isDragMoveRef,
+    justFinishedMultiDragRef,
+    dragBaselineRef,
+    multiDragOffsetsRef,
+    activeUsers,
+    unlockShape,
+    setSelectedIds,
+    showToast,
+  ])
+
+  const handleShapeDrag = useCallback((id: string, x: number, y: number) => {
+    const shape = shapesRef.current.find(s => s.id === id)
+    if (!shape) return
+
+    // Mark that an actual drag move occurred
+    isDragMoveRef.current = true
+
+    let constrainedX: number
+    let constrainedY: number
+
+    // Constrain to canvas boundaries based on shape type
+    if (shape.type === 'circle') {
+      const radius = shape.radius || DEFAULT_SHAPE_SIZE / 2
+      constrainedX = Math.max(radius, Math.min(x, CANVAS_WIDTH - radius))
+      constrainedY = Math.max(radius, Math.min(y, CANVAS_HEIGHT - radius))
+    } else {
+      // Rectangle or other shapes
+      const width = shape.width || DEFAULT_SHAPE_SIZE
+      const height = shape.height || DEFAULT_SHAPE_SIZE
+      constrainedX = Math.max(0, Math.min(x, CANVAS_WIDTH - width))
+      constrainedY = Math.max(0, Math.min(y, CANVAS_HEIGHT - height))
+    }
+
+    // Check if multiple shapes are selected
+    const selectedShapes = shapesRef.current.filter(s => selectedIdsRef.current.includes(s.id))
+
+    if (selectedShapes.length > 1) {
+      // Multi-shape drag: use stored offsets to maintain exact relative positioning
+      const primaryNewX = constrainedX
+      const primaryNewY = constrainedY
+
+      // Calculate new positions for all shapes
+      const newPositions = new Map<string, { x: number; y: number }>()
+
+      selectedShapes.forEach(s => {
+        let newX, newY
+
+        if (s.id === id) {
+          // Primary dragged shape
+          newX = primaryNewX
+          newY = primaryNewY
+        } else {
+          // Other shapes: use stored offset from primary shape
+          const offset = multiDragOffsetsRef.current.get(s.id)
+          if (offset) {
+            newX = primaryNewX + offset.dx
+            newY = primaryNewY + offset.dy
+          } else {
+            // Fallback (shouldn't happen)
+            newX = s.x
+            newY = s.y
+          }
+        }
+
+        // Constrain each shape to canvas boundaries
+        if (s.type === 'circle') {
+          const radius = s.radius || DEFAULT_SHAPE_SIZE / 2
+          newX = Math.max(radius, Math.min(newX, CANVAS_WIDTH - radius))
+          newY = Math.max(radius, Math.min(newY, CANVAS_HEIGHT - radius))
+        } else {
+          const width = s.width || DEFAULT_SHAPE_SIZE
+          const height = s.height || DEFAULT_SHAPE_SIZE
+          newX = Math.max(0, Math.min(newX, CANVAS_WIDTH - width))
+          newY = Math.max(0, Math.min(newY, CANVAS_HEIGHT - height))
+        }
+
+        newPositions.set(s.id, { x: newX, y: newY })
+      })
+
+      // Immediately update only the non-primary shapes to keep them in sync with cursor
+      // The primary shape is handled smoothly by Konva's drag system - don't interfere with it
+      setShapes(prev => prev.map(s => {
+        // Skip the primary shape - Konva handles it
+        if (s.id === id) return s
+
+        const pos = newPositions.get(s.id)
+        return pos ? { ...s, x: pos.x, y: pos.y } : s
+      }))
+
+      // Store positions for WebSocket updates (including primary)
+      newPositions.forEach((pos, shapeId) => {
+        pendingDragUpdatesRef.current.set(shapeId, pos)
+      })
+
+      // Throttle WebSocket updates - send all shape updates in a single batch
+      const now = Date.now()
+      if (wsRef.current && now - dragThrottleRef.current > 33) {
+        dragThrottleRef.current = now
+
+        // Send batch update for all selected shapes
+        selectedShapes.forEach(s => {
+          const updates = pendingDragUpdatesRef.current.get(s.id)
+          if (updates) {
+            wsRef.current!.send(JSON.stringify({
+              type: 'SHAPE_UPDATE',
+              payload: {
+                shapeId: s.id,
+                updates: {
+                  x: updates.x,
+                  y: updates.y,
+                },
+              },
+              timestamp: now,
+            }))
+          }
+        })
+      }
+
+      // Store the primary drag position
+      dragPositionRef.current = { shapeId: id, x: constrainedX, y: constrainedY }
+    } else {
+      // Single shape drag (original behavior)
+      pendingDragUpdatesRef.current.set(id, { x: constrainedX, y: constrainedY })
+      if (!dragFrameScheduledRef.current) {
+        dragFrameScheduledRef.current = true
+        dragRafRef.current = requestAnimationFrame(flushPendingDragUpdates)
+      }
+
+      // Store the drag position
+      dragPositionRef.current = { shapeId: id, x: constrainedX, y: constrainedY }
+
+      // Throttle WebSocket updates to reduce network traffic (every 33ms for sub-100ms target)
+      const now = Date.now()
+      if (now - dragThrottleRef.current > 33) {
+        dragThrottleRef.current = now
+
+        sendMessage({
+          type: 'SHAPE_UPDATE',
+          payload: {
+            shapeId: id,
+            updates: {
+              x: constrainedX,
+              y: constrainedY,
+            },
+          },
+        } as any)
+      }
+    }
+  }, [
+    shapesRef,
+    selectedIdsRef,
+    isDragMoveRef,
+    multiDragOffsetsRef,
+    pendingDragUpdatesRef,
+    dragFrameScheduledRef,
+    dragRafRef,
+    dragPositionRef,
+    dragThrottleRef,
+    wsRef,
+    setShapes,
+    sendMessage,
+    flushPendingDragUpdates,
+  ])
+
+  const handleShapeDragEnd = useCallback((id: string) => {
+    if (!wsRef.current) return
+
+    // Clear shape drag active flag immediately
+    isShapeDragActiveRef.current = false
+
+    // Clear dragging flag after a longer delay to prevent accidental clicks/deselections
+    setTimeout(() => {
+      isDraggingShapeRef.current = false
+    }, 100)
+
+    // Clear drag move flag after an even longer delay to prevent onClick from firing
+    setTimeout(() => {
+      isDragMoveRef.current = false
+    }, 150)
+
+    // Check if multiple shapes were dragged
+    const selectedShapes = shapesRef.current.filter(s => selectedIdsRef.current.includes(s.id))
+
+    if (selectedShapes.length > 1) {
+      // Multi-shape drag end: send final positions and create undo/redo entry
+      const undoMessages: any[] = []
+      const redoMessages: any[] = []
+
+      selectedShapes.forEach(shape => {
+        const currentPos = pendingDragUpdatesRef.current.get(shape.id) || { x: shape.x, y: shape.y }
+        const baseline = dragBaselineRef.current.get(shape.id)
+
+        // Record the final position to prevent animation from server updates
+        recentlyDraggedRef.current.set(shape.id, {
+          x: currentPos.x,
+          y: currentPos.y,
+          timestamp: Date.now(),
+        })
+
+        // Send final position
+        wsRef.current!.send(JSON.stringify({
+          type: 'SHAPE_UPDATE',
+          payload: {
+            shapeId: shape.id,
+            updates: {
+              x: currentPos.x,
+              y: currentPos.y,
+            },
+          },
+        }))
+
+        // Build undo/redo if position changed
+        if (baseline && (baseline.x !== currentPos.x || baseline.y !== currentPos.y)) {
+          undoMessages.push({
+            type: 'SHAPE_UPDATE',
+            payload: { shapeId: shape.id, updates: { x: baseline.x, y: baseline.y } },
+          })
+          redoMessages.push({
+            type: 'SHAPE_UPDATE',
+            payload: { shapeId: shape.id, updates: { x: currentPos.x, y: currentPos.y } },
+          })
+        }
+
+        dragBaselineRef.current.delete(shape.id)
+      })
+
+      // Add multi-shape move to history
+      if (undoMessages.length > 0) {
+        pushHistory({
+          undo: undoMessages,
+          redo: redoMessages,
+          label: `Move ${selectedShapes.length} shapes`,
+        })
+      }
+
+      // Update React state with final positions (especially for primary shape which wasn't updated during drag)
+      setShapes(prev => prev.map(s => {
+        const finalPos = pendingDragUpdatesRef.current.get(s.id)
+        return finalPos ? { ...s, x: finalPos.x, y: finalPos.y } : s
+      }))
+
+      // Unlock all selected shapes
+      selectedShapes.forEach(shape => unlockShape(shape.id))
+
+      // Mark that we just finished a multi-shape drag to prevent stage click from deselecting
+      justFinishedMultiDragRef.current = true
+      setTimeout(() => {
+        justFinishedMultiDragRef.current = false
+      }, 200)
+    } else {
+      // Single shape drag end (original behavior)
+      const finalPos = dragPositionRef.current
+      if (finalPos && finalPos.shapeId === id) {
+        // Record the final position to prevent animation from server updates
+        recentlyDraggedRef.current.set(id, {
+          x: finalPos.x,
+          y: finalPos.y,
+          timestamp: Date.now(),
+        })
+
+        sendMessage({
+          type: 'SHAPE_UPDATE',
+          payload: {
+            shapeId: id,
+            updates: {
+              x: finalPos.x,
+              y: finalPos.y,
+            },
+          },
+        })
+        const base = dragBaselineRef.current.get(id)
+        if (base && (base.x !== finalPos.x || base.y !== finalPos.y)) {
+          pushHistory({
+            undo: { type: 'SHAPE_UPDATE', payload: { shapeId: id, updates: { x: base.x, y: base.y } } },
+            redo: { type: 'SHAPE_UPDATE', payload: { shapeId: id, updates: { x: finalPos.x, y: finalPos.y } } },
+            label: 'Move shape',
+          })
+        }
+      }
+
+      dragBaselineRef.current.delete(id)
+      unlockShape(id)
+    }
+
+    // Clear drag position
+    dragPositionRef.current = null
+    dragThrottleRef.current = 0
+    multiDragOffsetsRef.current.clear()
+
+    // Cancel any pending rAF and clear queued drag updates
+    if (dragRafRef.current != null) {
+      cancelAnimationFrame(dragRafRef.current)
+      dragRafRef.current = null
+    }
+    pendingDragUpdatesRef.current.clear()
+    dragFrameScheduledRef.current = false
+
+    // Deselect shapes only if a single shape was selected
+    // Multi-shape selections are maintained after drag
+    if (selectedShapes.length === 1) {
+      setSelectedIds([])
+    }
+  }, [
+    wsRef,
+    isShapeDragActiveRef,
+    isDraggingShapeRef,
+    isDragMoveRef,
+    shapesRef,
+    selectedIdsRef,
+    pendingDragUpdatesRef,
+    dragBaselineRef,
+    recentlyDraggedRef,
+    dragPositionRef,
+    dragThrottleRef,
+    multiDragOffsetsRef,
+    dragRafRef,
+    dragFrameScheduledRef,
+    justFinishedMultiDragRef,
+    pushHistory,
+    setShapes,
+    unlockShape,
+    setSelectedIds,
+    sendMessage,
+  ])
+
+  return {
+    handleShapeDragStart,
+    handleShapeDrag,
+    handleShapeDragEnd,
+    flushPendingDragUpdates,
+  }
+}
+

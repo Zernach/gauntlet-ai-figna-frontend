@@ -1,0 +1,125 @@
+import { useEffect } from 'react'
+import type { Shape } from '../types/canvas'
+
+interface UseKeyboardShortcutsParams {
+  shapes: Shape[]
+  selectedIdsRef: React.MutableRefObject<string[]>
+  handleDeleteShape: () => void
+  unlockShape: (shapeId: string) => void
+  setSelectedIds: React.Dispatch<React.SetStateAction<string[]>>
+  performUndo: () => void
+  performRedo: () => void
+  sendMessage: (message: any) => void
+}
+
+export function useKeyboardShortcuts({
+  shapes,
+  selectedIdsRef,
+  handleDeleteShape,
+  unlockShape,
+  setSelectedIds,
+  performUndo,
+  performRedo,
+  sendMessage,
+}: UseKeyboardShortcutsParams) {
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const isMac = navigator.platform.toUpperCase().includes('MAC')
+      const ctrlOrMeta = isMac ? e.metaKey : e.ctrlKey
+
+      // Undo
+      if (ctrlOrMeta && e.key.toLowerCase() === 'z' && !e.shiftKey) {
+        e.preventDefault()
+        performUndo()
+        return
+      }
+
+      // Redo
+      if ((ctrlOrMeta && e.key.toLowerCase() === 'z' && e.shiftKey) || (!isMac && e.ctrlKey && e.key.toLowerCase() === 'y')) {
+        e.preventDefault()
+        performRedo()
+        return
+      }
+
+      // Layer shortcuts (Cmd/Ctrl + [ ] for layering)
+      if (ctrlOrMeta && selectedIdsRef.current.length > 0) {
+        // Bring to front: Cmd/Ctrl + Shift + ]
+        if (e.shiftKey && e.key === ']') {
+          e.preventDefault()
+          const maxZ = Math.max(...shapes.map(s => s.z_index || s.zIndex || 0), 0)
+          // Update all selected shapes, maintaining their relative order
+          selectedIdsRef.current.forEach((shapeId, index) => {
+            sendMessage({
+              type: 'SHAPE_UPDATE',
+              payload: { shapeId, updates: { zIndex: maxZ + 1 + index } },
+            })
+          })
+          return
+        }
+        // Send to back: Cmd/Ctrl + Shift + [
+        if (e.shiftKey && e.key === '[') {
+          e.preventDefault()
+          const minZ = Math.min(...shapes.map(s => s.z_index || s.zIndex || 0), 0)
+          // Update all selected shapes, maintaining their relative order
+          selectedIdsRef.current.forEach((shapeId, index) => {
+            sendMessage({
+              type: 'SHAPE_UPDATE',
+              payload: { shapeId, updates: { zIndex: minZ - selectedIdsRef.current.length + index } },
+            })
+          })
+          return
+        }
+        // Move forward: Cmd/Ctrl + ]
+        if (!e.shiftKey && e.key === ']') {
+          e.preventDefault()
+          selectedIdsRef.current.forEach(shapeId => {
+            const shape = shapes.find(s => s.id === shapeId)
+            if (shape) {
+              const currentZ = shape.z_index || shape.zIndex || 0
+              sendMessage({
+                type: 'SHAPE_UPDATE',
+                payload: { shapeId, updates: { zIndex: currentZ + 1 } },
+              })
+            }
+          })
+          return
+        }
+        // Move backward: Cmd/Ctrl + [
+        if (!e.shiftKey && e.key === '[') {
+          e.preventDefault()
+          selectedIdsRef.current.forEach(shapeId => {
+            const shape = shapes.find(s => s.id === shapeId)
+            if (shape) {
+              const currentZ = shape.z_index || shape.zIndex || 0
+              sendMessage({
+                type: 'SHAPE_UPDATE',
+                payload: { shapeId, updates: { zIndex: currentZ - 1 } },
+              })
+            }
+          })
+          return
+        }
+      }
+
+      // Delete
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        e.preventDefault()
+        // Use the ref to get current selectedIds
+        if (selectedIdsRef.current.length > 0) {
+          handleDeleteShape()
+        }
+      } else if (e.key === 'Escape') {
+        // Unlock shapes before deselecting
+        selectedIdsRef.current.forEach(id => unlockShape(id))
+        setSelectedIds([])
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown)
+      document.body.style.cursor = 'default'
+    }
+  }, [handleDeleteShape, unlockShape, performUndo, performRedo, shapes, sendMessage, selectedIdsRef, setSelectedIds])
+}
+

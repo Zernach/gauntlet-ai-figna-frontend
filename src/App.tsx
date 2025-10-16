@@ -17,17 +17,31 @@ function App() {
   useEffect(() => {
     // Get initial session
     supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session)
+      // Validate session has a user ID, otherwise treat as not authenticated
+      if (session && !session.user?.id) {
+        console.warn('Session exists but no user ID found. Signing out...')
+        supabase.auth.signOut()
+        setSession(null)
+      } else {
+        setSession(session)
+      }
     })
 
     // Listen for auth changes
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session)
+      // Validate session has a user ID, otherwise treat as not authenticated
+      if (session && !session.user?.id) {
+        console.warn('Session exists but no user ID found. Signing out...')
+        supabase.auth.signOut()
+        setSession(null)
+      } else {
+        setSession(session)
 
-      if (session) {
-        setShowAuthModal(false)
+        if (session) {
+          setShowAuthModal(false)
+        }
       }
     })
 

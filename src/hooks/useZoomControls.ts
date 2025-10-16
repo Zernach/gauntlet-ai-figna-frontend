@@ -200,6 +200,33 @@ export function useZoomControls({
     }
   }, [])
 
+  // Clamp stage position to keep canvas visible
+  const clampStagePosition = useCallback((scale: number, pos: { x: number; y: number }) => {
+    // Allow some overflow to make panning feel natural
+    const padding = 200
+    
+    const minX = -canvasWidth * scale + padding
+    const maxX = viewportWidth - padding
+    const minY = -canvasHeight * scale + padding
+    const maxY = viewportHeight - padding
+    
+    return {
+      x: Math.max(minX, Math.min(maxX, pos.x)),
+      y: Math.max(minY, Math.min(maxY, pos.y))
+    }
+  }, [canvasWidth, canvasHeight, viewportWidth, viewportHeight])
+
+  // Handle minimap navigation
+  const handleMinimapNavigate = useCallback((canvasX: number, canvasY: number) => {
+    // Calculate new stage position to center the viewport on the clicked canvas coordinates
+    const newX = -(canvasX * stageScale) + (viewportWidth / 2)
+    const newY = -(canvasY * stageScale) + (viewportHeight / 2)
+
+    // Clamp to canvas boundaries
+    const clampedPos = clampStagePosition(stageScale, { x: newX, y: newY })
+    setStagePos(clampedPos)
+  }, [stageScale, viewportWidth, viewportHeight, clampStagePosition])
+
   // Cleanup continuous zoom on unmount
   useEffect(() => {
     return () => {
@@ -219,12 +246,15 @@ export function useZoomControls({
     stageScale,
     stagePos,
     setStagePos,
+    setStageScale,
     handleZoomIn,
     handleZoomOut,
     handleResetView,
     handleWheel,
+    handleMinimapNavigate,
     startZoomHold,
     stopZoomHold,
+    clampStagePosition,
   }
 }
 

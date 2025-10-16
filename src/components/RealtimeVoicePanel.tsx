@@ -455,7 +455,7 @@ When the user refers to objects by their content (like "the Hello World text" or
                 border: '2px solid transparent',
                 borderRadius: '20px',
                 padding: '20px 32px',
-                boxShadow: '0 0 60px rgba(100, 50, 200, 0.4), 0 0 120px rgba(50, 100, 255, 0.2), inset 0 0 40px rgba(100, 50, 200, 0.1)',
+                boxShadow: 'none',
                 backdropFilter: 'blur(20px)',
                 zIndex: 1000,
                 display: 'flex',
