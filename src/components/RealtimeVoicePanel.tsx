@@ -410,7 +410,7 @@ Be enthusiastic and explain your design decisions!`
                 handleDisconnect();
             });
 
-            dc.addEventListener('error', (e) => {
+            dc.addEventListener('error', (_e) => {
                 setError('Connection error occurred');
                 handleDisconnect();
             });
@@ -432,7 +432,7 @@ Be enthusiastic and explain your design decisions!`
             });
 
             if (!sdpResponse.ok) {
-                const errorText = await sdpResponse.text();
+                await sdpResponse.text(); // Consume response body
                 throw new Error(`Failed to connect to OpenAI: ${sdpResponse.statusText}`);
             }
 

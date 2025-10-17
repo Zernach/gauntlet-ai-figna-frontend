@@ -64,11 +64,11 @@ export function useCanvasWebSocket({
       }
     }
 
-    ws.onerror = (error) => {
+    ws.onerror = (_error) => {
       setConnectionState('disconnected')
     }
 
-    ws.onclose = (event) => {
+    ws.onclose = (_event) => {
       // Use functional state update to track reconnect attempts
       setReconnectAttempts(currentAttempts => {
         const nextAttempt = currentAttempts + 1

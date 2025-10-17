@@ -248,7 +248,7 @@ export default function LayersSidebar({
         setContextMenu(null)
     }
 
-    const handleRenameSubmit = (canvasId: string) => {
+    const handleRenameSubmit = (_canvasId: string) => {
         // TODO: Add onRenameCanvas prop and handler
         // For now, just close the rename input
         setRenamingCanvasId(null)

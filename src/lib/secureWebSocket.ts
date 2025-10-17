@@ -97,7 +97,7 @@ export class SecureWebSocket {
         const delay = this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1) // Exponential backoff
 
         setTimeout(() => {
-            this.connect().catch((error) => {
+            this.connect().catch((_error) => {
                 // Reconnection failed
             })
         }, delay)
