@@ -10,6 +10,7 @@ interface UseShapePropertyHandlersProps {
   setShapes: React.Dispatch<React.SetStateAction<Shape[]>>
   recordPropChange: (shapeId: string, propName: string, newValue: any) => void
   sendMessage: (message: any) => void
+  recentlyModifiedPropsRef: React.MutableRefObject<Map<string, { props: Partial<Shape>; timestamp: number }>>
 }
 
 export function useShapePropertyHandlers({
@@ -21,13 +22,25 @@ export function useShapePropertyHandlers({
   setShapes,
   recordPropChange,
   sendMessage,
+  recentlyModifiedPropsRef,
 }: UseShapePropertyHandlersProps) {
+
+  // Helper to track recently modified properties with grace period
+  const trackRecentlyModified = useCallback((shapeId: string, props: Partial<Shape>) => {
+    const existing = recentlyModifiedPropsRef.current.get(shapeId)
+    recentlyModifiedPropsRef.current.set(shapeId, {
+      props: { ...existing?.props, ...props },
+      timestamp: Date.now()
+    })
+  }, [recentlyModifiedPropsRef])
 
   const handleChangeColor = useCallback((hex: string) => {
     const selectedId = selectedIds[0]
     if (!selectedId || !wsRef.current) return
     // Optimistic local update
     setShapes(prev => prev.map(s => s.id === selectedId ? { ...s, color: hex } : s))
+    // Track for grace period
+    trackRecentlyModified(selectedId, { color: hex })
     // Debounced history
     recordPropChange(selectedId, 'color', hex)
     const now = Date.now()
@@ -38,7 +51,7 @@ export function useShapePropertyHandlers({
         payload: { shapeId: selectedId, updates: { color: hex } },
       })
     }
-  }, [selectedIds, colorThrottleRef, recordPropChange, sendMessage, setShapes, wsRef])
+  }, [selectedIds, colorThrottleRef, recordPropChange, sendMessage, setShapes, wsRef, trackRecentlyModified])
 
   const handleChangeOpacity = useCallback((opacity01: number) => {
     const selectedId = selectedIds[0]
@@ -46,6 +59,8 @@ export function useShapePropertyHandlers({
     const clamped = Math.max(0, Math.min(1, opacity01))
     // Optimistic
     setShapes(prev => prev.map(s => s.id === selectedId ? { ...s, opacity: clamped } : s))
+    // Track for grace period
+    trackRecentlyModified(selectedId, { opacity: clamped })
     recordPropChange(selectedId, 'opacity', clamped)
     const now = Date.now()
     if (now - opacityThrottleRef.current > 50) {
@@ -55,7 +70,7 @@ export function useShapePropertyHandlers({
         payload: { shapeId: selectedId, updates: { opacity: clamped } },
       })
     }
-  }, [selectedIds, opacityThrottleRef, recordPropChange, sendMessage, setShapes, wsRef])
+  }, [selectedIds, opacityThrottleRef, recordPropChange, sendMessage, setShapes, wsRef, trackRecentlyModified])
 
   const handleCommitRotation = useCallback((rotationDeg: number) => {
     const selectedId = selectedIds[0]
@@ -73,18 +88,22 @@ export function useShapePropertyHandlers({
     const selectedId = selectedIds[0]
     if (!selectedId || !wsRef.current) return
     setShapes(prev => prev.map(s => s.id === selectedId ? { ...s, shadowColor: hex } : s))
+    // Track for grace period
+    trackRecentlyModified(selectedId, { shadowColor: hex })
     recordPropChange(selectedId, 'shadowColor', hex)
     sendMessage({
       type: 'SHAPE_UPDATE',
       payload: { shapeId: selectedId, updates: { shadowColor: hex } },
     })
-  }, [selectedIds, recordPropChange, sendMessage, setShapes, wsRef])
+  }, [selectedIds, recordPropChange, sendMessage, setShapes, wsRef, trackRecentlyModified])
 
   const handleChangeShadowStrength = useCallback((strength: number) => {
     const selectedId = selectedIds[0]
     if (!selectedId || !wsRef.current) return
     const v = Math.max(0, Math.min(50, Math.round(strength)))
     setShapes(prev => prev.map(s => s.id === selectedId ? { ...s, shadowStrength: v } : s))
+    // Track for grace period
+    trackRecentlyModified(selectedId, { shadowStrength: v })
     recordPropChange(selectedId, 'shadowStrength', v)
     const now = Date.now()
     if (now - shadowThrottleRef.current > 50) {
@@ -94,7 +113,7 @@ export function useShapePropertyHandlers({
         payload: { shapeId: selectedId, updates: { shadowStrength: v } },
       })
     }
-  }, [selectedIds, shadowThrottleRef, recordPropChange, sendMessage, setShapes, wsRef])
+  }, [selectedIds, shadowThrottleRef, recordPropChange, sendMessage, setShapes, wsRef, trackRecentlyModified])
 
   const handleChangeFontFamily = useCallback((family: string) => {
     const selectedId = selectedIds[0]
@@ -124,12 +143,14 @@ export function useShapePropertyHandlers({
     const v = Math.max(0, Math.min(100, Math.round(borderRadius)))
     console.log('🔴 Frontend sending border radius update:', { shapeId: selectedId, borderRadius: v })
     setShapes(prev => prev.map(s => s.id === selectedId ? { ...s, borderRadius: v } : s))
+    // Track for grace period
+    trackRecentlyModified(selectedId, { borderRadius: v })
     recordPropChange(selectedId, 'borderRadius', v)
     sendMessage({
       type: 'SHAPE_UPDATE',
       payload: { shapeId: selectedId, updates: { borderRadius: v } },
     })
-  }, [selectedIds, recordPropChange, sendMessage, setShapes, wsRef])
+  }, [selectedIds, recordPropChange, sendMessage, setShapes, wsRef, trackRecentlyModified])
 
   return {
     handleChangeColor,

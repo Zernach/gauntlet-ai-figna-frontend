@@ -4,8 +4,7 @@ interface UseCanvasWebSocketParams {
   wsRef: React.MutableRefObject<WebSocket | null>
   currentUserIdRef: React.MutableRefObject<string | null>
   reconnectTimeoutRef: React.MutableRefObject<number | null>
-  maxReconnectAttempts: number
-  baseReconnectDelay: number
+  reconnectDelay: number
   setConnectionState: React.Dispatch<React.SetStateAction<'connected' | 'connecting' | 'reconnecting' | 'disconnected'>>
   setReconnectAttempts: React.Dispatch<React.SetStateAction<number>>
   flushOperationQueue: () => void
@@ -21,8 +20,7 @@ export function useCanvasWebSocket({
   wsRef,
   currentUserIdRef,
   reconnectTimeoutRef,
-  maxReconnectAttempts,
-  baseReconnectDelay,
+  reconnectDelay,
   setConnectionState,
   setReconnectAttempts,
   flushOperationQueue,
@@ -76,34 +74,25 @@ export function useCanvasWebSocket({
     ws.onclose = (event) => {
       console.log('🔴 [Canvas] WebSocket closed. Code:', event.code, 'Reason:', event.reason, 'Clean:', event.wasClean)
 
-      // Use functional state update to get current reconnect attempts
+      // Use functional state update to track reconnect attempts
       setReconnectAttempts(currentAttempts => {
-        console.log(`🔄 [Canvas] Current attempts: ${currentAttempts}, Max: ${maxReconnectAttempts}`)
+        const nextAttempt = currentAttempts + 1
+        console.log(`🔄 [Canvas] Connection closed (attempt ${nextAttempt}), will retry in ${reconnectDelay}ms`)
+        setConnectionState('reconnecting')
 
-        // Check if we should attempt to reconnect
-        if (currentAttempts < maxReconnectAttempts) {
-          const nextAttempt = currentAttempts + 1
-          const delay = Math.min(baseReconnectDelay * Math.pow(2, currentAttempts), 30000) // Max 30 seconds
-          console.log(`⏳ [Canvas] Setting state to reconnecting (attempt ${nextAttempt}/${maxReconnectAttempts}), will retry in ${delay}ms`)
-          setConnectionState('reconnecting')
+        // Continuously retry every 5 seconds without limit
+        reconnectTimeoutRef.current = window.setTimeout(() => {
+          console.log(`🔄 [Canvas] Executing reconnection attempt ${nextAttempt}...`)
+          connectWebSocketRef.current?.(canvasId, token, true)
+        }, reconnectDelay)
 
-          reconnectTimeoutRef.current = window.setTimeout(() => {
-            console.log(`🔄 [Canvas] Executing reconnection attempt ${nextAttempt}...`)
-            connectWebSocketRef.current?.(canvasId, token, true)
-          }, delay)
-
-          return nextAttempt
-        } else {
-          console.log('❌ [Canvas] Max reconnection attempts reached, staying disconnected')
-          setConnectionState('disconnected')
-          return currentAttempts
-        }
+        return nextAttempt
       })
     }
 
     wsRef.current = ws
     sessionRef.current = { canvasId, token }
-  }, [maxReconnectAttempts, baseReconnectDelay, flushOperationQueue])
+  }, [reconnectDelay, flushOperationQueue])
 
   // Stable wrapper for connectWebSocket
   const connectWebSocket = useCallback((canvasId: string, token: string, isReconnect?: boolean) => {
@@ -115,7 +104,7 @@ export function useCanvasWebSocket({
     try {
       const { supabase } = await import('../lib/supabase')
       const { data: { session } } = await supabase.auth.getSession()
-      
+
       if (!session) {
         return
       }

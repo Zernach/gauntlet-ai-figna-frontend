@@ -1,6 +1,8 @@
 import { useEffect } from 'react'
 import type { Shape } from '../types/canvas'
 import Konva from 'konva'
+import { arrangeInRow, arrangeInColumn, arrangeInGrid, alignHorizontally, alignVertically } from '../utils/layoutUtils'
+import { PATTERN_REGISTRY } from '../utils/patternTemplates'
 
 interface UseAgenticToolsParams {
   onToolsReady?: (tools: any) => void
@@ -38,17 +40,23 @@ export function useAgenticTools({
   // Provide tool implementations to voice agent - optimized for <50ms execution
   useEffect(() => {
     if (onToolsReady && currentUserId && canvasId) {
-      const DEBUG = false; // Set to true for debugging
-
       const tools = {
         createShapes: (params: any) => {
+          console.log('🎨 [createShapes] Called with params:', params);
+          console.log('🎨 [createShapes] Number of shapes:', params.shapes?.length);
+          console.log('🎨 [createShapes] Shapes array:', JSON.stringify(params.shapes, null, 2));
+
           if (!wsRef.current || !canvasId || !currentUserId) {
             const error = 'Cannot create shapes: Canvas not ready';
-            if (DEBUG) console.error('❌', error);
+            console.error('❌ [createShapes] Error:', error);
             throw new Error(error);
           }
           if (createShapesRef.current) {
+            console.log('✅ [createShapes] Calling createShapesRef.current with shapes');
             createShapesRef.current(params.shapes);
+            console.log('✅ [createShapes] Successfully sent shapes to canvas');
+          } else {
+            console.error('❌ [createShapes] createShapesRef.current is null!');
           }
         },
         updateShapes: (params: any) => {
@@ -201,7 +209,6 @@ export function useAgenticTools({
         },
         arrangeInRow: (params: any) => {
           if (!wsRef.current) throw new Error('WebSocket not ready');
-          const { arrangeInRow } = require('../utils/layoutUtils');
           const shapes = params.shapeIds.map((id: string) =>
             shapesRef.current.find(s => s.id === id)
           ).filter((s: any) => s);
@@ -222,7 +229,6 @@ export function useAgenticTools({
         },
         arrangeInColumn: (params: any) => {
           if (!wsRef.current) throw new Error('WebSocket not ready');
-          const { arrangeInColumn } = require('../utils/layoutUtils');
           const shapes = params.shapeIds.map((id: string) =>
             shapesRef.current.find(s => s.id === id)
           ).filter((s: any) => s);
@@ -243,7 +249,6 @@ export function useAgenticTools({
         },
         arrangeInGrid: (params: any) => {
           if (!wsRef.current) throw new Error('WebSocket not ready');
-          const { arrangeInGrid } = require('../utils/layoutUtils');
           const startX = params.startX ?? (stageRef.current ?
             (-stageRef.current.x() + viewportWidth / 2) / stageRef.current.scaleX() : 25000);
           const startY = params.startY ?? (stageRef.current ?
@@ -267,7 +272,6 @@ export function useAgenticTools({
         },
         createPattern: (params: any) => {
           if (!wsRef.current) throw new Error('WebSocket not ready');
-          const { PATTERN_REGISTRY } = require('../utils/patternTemplates');
           const patternFunction = PATTERN_REGISTRY[params.patternType];
           if (!patternFunction) throw new Error(`Unknown pattern: ${params.patternType}`);
           const x = params.x ?? (stageRef.current ?
@@ -281,7 +285,6 @@ export function useAgenticTools({
         },
         alignShapes: (params: any) => {
           if (!wsRef.current) throw new Error('WebSocket not ready');
-          const { alignHorizontally, alignVertically } = require('../utils/layoutUtils');
           const shapes = params.shapeIds.map((id: string) =>
             shapesRef.current.find(s => s.id === id)
           ).filter((s: any) => s);

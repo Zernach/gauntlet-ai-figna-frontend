@@ -178,7 +178,7 @@ function Minimap({
                     e.currentTarget.style.color = '#555'
                 }}
             >
-                {new Date().getFullYear()}© ArchLife Industries Software
+                {new Date().getFullYear()}© Archlife Industries Software
             </a>
         </div>
     )

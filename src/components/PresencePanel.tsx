@@ -17,7 +17,6 @@ interface PresencePanelProps {
   onlineUsersCount: number
   connectionState: 'connecting' | 'connected' | 'disconnected' | 'reconnecting'
   reconnectAttempts: number
-  maxReconnectAttempts: number
   queuedOperationsCount: number
   onSignOut: () => void
 }
@@ -29,7 +28,6 @@ function PresencePanel({
   onlineUsersCount,
   connectionState,
   reconnectAttempts,
-  maxReconnectAttempts,
   queuedOperationsCount,
   onSignOut,
 }: PresencePanelProps) {
@@ -184,7 +182,7 @@ function PresencePanel({
               </span>
             </>
           ) :
-            connectionState === 'reconnecting' ? `Reconnecting... (${reconnectAttempts}/${maxReconnectAttempts})` :
+            connectionState === 'reconnecting' ? `Reconnecting... (attempt ${reconnectAttempts})` :
               connectionState === 'connecting' ? 'Connecting...' :
                 'Disconnected'}
         </span>

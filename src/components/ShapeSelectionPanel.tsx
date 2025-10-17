@@ -1,4 +1,4 @@
-import React, { useState, useEffect, memo, useMemo } from 'react'
+import React, { useState, useEffect, memo, useMemo, useRef } from 'react'
 import ColorSlider from './ColorSlider'
 
 interface ShapeSelectionPanelProps {
@@ -22,6 +22,9 @@ interface ShapeSelectionPanelProps {
     onChangeBorderRadius?: (borderRadius: number) => void
     onChangeFontFamily: (family: string) => void
     onChangeFontWeight: (weight: string) => void
+    isDraggingOpacityRef?: React.MutableRefObject<boolean>
+    isDraggingShadowStrengthRef?: React.MutableRefObject<boolean>
+    isDraggingBorderRadiusRef?: React.MutableRefObject<boolean>
 }
 
 const ShapeSelectionPanel: React.FC<ShapeSelectionPanelProps> = ({
@@ -34,11 +37,24 @@ const ShapeSelectionPanel: React.FC<ShapeSelectionPanelProps> = ({
     onChangeBorderRadius,
     onChangeFontFamily,
     onChangeFontWeight,
+    isDraggingOpacityRef,
+    isDraggingShadowStrengthRef,
+    isDraggingBorderRadiusRef,
 }) => {
     const [rotationInput, setRotationInput] = useState<string>('0')
     const [opacityPct, setOpacityPct] = useState<number>(100)
     const [shadowStrength, setShadowStrength] = useState<number>(0)
     const [borderRadius, setBorderRadius] = useState<number>(0)
+
+    // Track which sliders are currently being dragged
+    const isDraggingOpacity = useRef<boolean>(false)
+    const isDraggingShadowStrength = useRef<boolean>(false)
+    const isDraggingBorderRadius = useRef<boolean>(false)
+
+    // Track recently released sliders with timestamps to prevent immediate updates
+    const recentlyReleasedOpacity = useRef<{ value: number; timestamp: number } | null>(null)
+    const recentlyReleasedShadowStrength = useRef<{ value: number; timestamp: number } | null>(null)
+    const recentlyReleasedBorderRadius = useRef<{ value: number; timestamp: number } | null>(null)
 
     // Memoize shape properties to avoid unnecessary updates
     const shapeId = selectedShape.id
@@ -54,9 +70,39 @@ const ShapeSelectionPanel: React.FC<ShapeSelectionPanelProps> = ({
 
     useEffect(() => {
         setRotationInput(String(Math.round(shapeRotation)))
-        setOpacityPct(Math.round(shapeOpacity * 100))
-        setShadowStrength(Math.max(0, Math.round(shapeShadowStrength)))
-        setBorderRadius(Math.max(0, Math.round(shapeBorderRadius)))
+
+        // Only update slider values if not actively dragging them or recently released
+        if (!isDraggingOpacity.current) {
+            const recent = recentlyReleasedOpacity.current
+            if (recent && Date.now() - recent.timestamp < 500) {
+                // Within 500ms grace period, preserve the released value
+                setOpacityPct(recent.value)
+            } else {
+                // Clear old entries and update from server
+                recentlyReleasedOpacity.current = null
+                setOpacityPct(Math.round(shapeOpacity * 100))
+            }
+        }
+
+        if (!isDraggingShadowStrength.current) {
+            const recent = recentlyReleasedShadowStrength.current
+            if (recent && Date.now() - recent.timestamp < 500) {
+                setShadowStrength(recent.value)
+            } else {
+                recentlyReleasedShadowStrength.current = null
+                setShadowStrength(Math.max(0, Math.round(shapeShadowStrength)))
+            }
+        }
+
+        if (!isDraggingBorderRadius.current) {
+            const recent = recentlyReleasedBorderRadius.current
+            if (recent && Date.now() - recent.timestamp < 500) {
+                setBorderRadius(recent.value)
+            } else {
+                recentlyReleasedBorderRadius.current = null
+                setBorderRadius(Math.max(0, Math.round(shapeBorderRadius)))
+            }
+        }
     }, [shapeId, shapeRotation, shapeOpacity, shapeShadowStrength, shapeBorderRadius])
 
     const isText = useMemo(() => shapeType === 'text', [shapeType])
@@ -101,6 +147,32 @@ const ShapeSelectionPanel: React.FC<ShapeSelectionPanelProps> = ({
                     max={100}
                     step={1}
                     value={opacityPct}
+                    onMouseDown={() => {
+                        isDraggingOpacity.current = true
+                        if (isDraggingOpacityRef) isDraggingOpacityRef.current = true
+                    }}
+                    onMouseUp={() => {
+                        isDraggingOpacity.current = false
+                        if (isDraggingOpacityRef) isDraggingOpacityRef.current = false
+                        // Store current value and timestamp for grace period
+                        recentlyReleasedOpacity.current = {
+                            value: opacityPct,
+                            timestamp: Date.now()
+                        }
+                    }}
+                    onTouchStart={() => {
+                        isDraggingOpacity.current = true
+                        if (isDraggingOpacityRef) isDraggingOpacityRef.current = true
+                    }}
+                    onTouchEnd={() => {
+                        isDraggingOpacity.current = false
+                        if (isDraggingOpacityRef) isDraggingOpacityRef.current = false
+                        // Store current value and timestamp for grace period
+                        recentlyReleasedOpacity.current = {
+                            value: opacityPct,
+                            timestamp: Date.now()
+                        }
+                    }}
                     onChange={(e) => {
                         const pct = Number(e.target.value)
                         setOpacityPct(pct)
@@ -155,6 +227,32 @@ const ShapeSelectionPanel: React.FC<ShapeSelectionPanelProps> = ({
                         max={50}
                         step={1}
                         value={shadowStrength}
+                        onMouseDown={() => {
+                            isDraggingShadowStrength.current = true
+                            if (isDraggingShadowStrengthRef) isDraggingShadowStrengthRef.current = true
+                        }}
+                        onMouseUp={() => {
+                            isDraggingShadowStrength.current = false
+                            if (isDraggingShadowStrengthRef) isDraggingShadowStrengthRef.current = false
+                            // Store current value and timestamp for grace period
+                            recentlyReleasedShadowStrength.current = {
+                                value: shadowStrength,
+                                timestamp: Date.now()
+                            }
+                        }}
+                        onTouchStart={() => {
+                            isDraggingShadowStrength.current = true
+                            if (isDraggingShadowStrengthRef) isDraggingShadowStrengthRef.current = true
+                        }}
+                        onTouchEnd={() => {
+                            isDraggingShadowStrength.current = false
+                            if (isDraggingShadowStrengthRef) isDraggingShadowStrengthRef.current = false
+                            // Store current value and timestamp for grace period
+                            recentlyReleasedShadowStrength.current = {
+                                value: shadowStrength,
+                                timestamp: Date.now()
+                            }
+                        }}
                         onChange={(e) => {
                             const v = Number(e.target.value)
                             setShadowStrength(v)
@@ -176,6 +274,32 @@ const ShapeSelectionPanel: React.FC<ShapeSelectionPanelProps> = ({
                         max={100}
                         step={1}
                         value={borderRadius}
+                        onMouseDown={() => {
+                            isDraggingBorderRadius.current = true
+                            if (isDraggingBorderRadiusRef) isDraggingBorderRadiusRef.current = true
+                        }}
+                        onMouseUp={() => {
+                            isDraggingBorderRadius.current = false
+                            if (isDraggingBorderRadiusRef) isDraggingBorderRadiusRef.current = false
+                            // Store current value and timestamp for grace period
+                            recentlyReleasedBorderRadius.current = {
+                                value: borderRadius,
+                                timestamp: Date.now()
+                            }
+                        }}
+                        onTouchStart={() => {
+                            isDraggingBorderRadius.current = true
+                            if (isDraggingBorderRadiusRef) isDraggingBorderRadiusRef.current = true
+                        }}
+                        onTouchEnd={() => {
+                            isDraggingBorderRadius.current = false
+                            if (isDraggingBorderRadiusRef) isDraggingBorderRadiusRef.current = false
+                            // Store current value and timestamp for grace period
+                            recentlyReleasedBorderRadius.current = {
+                                value: borderRadius,
+                                timestamp: Date.now()
+                            }
+                        }}
                         onChange={(e) => {
                             const v = Number(e.target.value)
                             setBorderRadius(v)

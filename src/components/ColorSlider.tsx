@@ -60,9 +60,23 @@ const ColorSlider: React.FC<ColorSliderProps> = ({ valueHex, onChangeHex, label,
     const [hue, setHue] = useState<number>(0)
     const baseSLRef = useRef<{ s: number; l: number }>({ s: 1, l: 0.5 })
     const hexLastTapTsRef = useRef<number>(0)
+    const isDraggingRef = useRef<boolean>(false)
+    const recentlyReleasedRef = useRef<{ hue: number; timestamp: number } | null>(null)
 
-    // Sync internal hue/baseSL with incoming hex
+    // Sync internal hue/baseSL with incoming hex (but not while actively dragging or recently released)
     useEffect(() => {
+        if (isDraggingRef.current) return
+
+        // Check if we're in the grace period after releasing
+        const recent = recentlyReleasedRef.current
+        if (recent && Date.now() - recent.timestamp < 500) {
+            // Within 500ms grace period, preserve the released value
+            setHue(recent.hue)
+            return
+        }
+
+        // Clear old entries and update from props
+        recentlyReleasedRef.current = null
         const rgb = hexToRgb(valueHex)
         if (!rgb) return
         const { h, s, l } = rgbToHsl(rgb.r, rgb.g, rgb.b)
@@ -128,6 +142,16 @@ const ColorSlider: React.FC<ColorSliderProps> = ({ valueHex, onChangeHex, label,
                 max={360}
                 step={1}
                 value={Math.round(hue)}
+                onMouseDown={() => { isDraggingRef.current = true }}
+                onMouseUp={() => {
+                    isDraggingRef.current = false
+                    recentlyReleasedRef.current = { hue, timestamp: Date.now() }
+                }}
+                onTouchStart={() => { isDraggingRef.current = true }}
+                onTouchEnd={() => {
+                    isDraggingRef.current = false
+                    recentlyReleasedRef.current = { hue, timestamp: Date.now() }
+                }}
                 onChange={(e) => handleHueChange(Number(e.target.value))}
                 style={{
                     width: '180px',

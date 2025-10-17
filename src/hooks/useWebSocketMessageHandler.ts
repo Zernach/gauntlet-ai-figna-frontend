@@ -13,6 +13,10 @@ interface UseWebSocketMessageHandlerParams {
   recentlyDraggedRef: React.MutableRefObject<Map<string, { x: number; y: number; timestamp: number }>>
   recentlyResizedRef: React.MutableRefObject<Map<string, any>>
   recentlyRotatedRef: React.MutableRefObject<Map<string, { rotation: number; timestamp: number }>>
+  isDraggingOpacityRef: React.MutableRefObject<boolean>
+  isDraggingShadowStrengthRef: React.MutableRefObject<boolean>
+  isDraggingBorderRadiusRef: React.MutableRefObject<boolean>
+  recentlyModifiedPropsRef: React.MutableRefObject<Map<string, { props: Partial<Shape>; timestamp: number }>>
   normalizeShape: (shape: any) => Shape
   setShapes: React.Dispatch<React.SetStateAction<Shape[]>>
   setSelectedIds: React.Dispatch<React.SetStateAction<string[]>>
@@ -35,6 +39,10 @@ export function useWebSocketMessageHandler({
   recentlyDraggedRef,
   recentlyResizedRef,
   recentlyRotatedRef,
+  isDraggingOpacityRef,
+  isDraggingShadowStrengthRef,
+  isDraggingBorderRadiusRef,
+  recentlyModifiedPropsRef,
   normalizeShape,
   setShapes,
   setSelectedIds,
@@ -209,6 +217,38 @@ export function useWebSocketMessageHandler({
                   rotation: s.rotation,
                 }
               }
+              // If we're currently dragging sliders, preserve those properties to prevent jumpy behavior
+              const preservedProps: Partial<Shape> = {}
+              if (isDraggingOpacityRef.current) {
+                preservedProps.opacity = s.opacity
+              }
+              if (isDraggingShadowStrengthRef.current) {
+                preservedProps.shadowStrength = s.shadowStrength
+              }
+              if (isDraggingBorderRadiusRef.current) {
+                preservedProps.borderRadius = s.borderRadius
+              }
+
+              // Check if any properties were recently modified (grace period after release)
+              const recentlyModified = recentlyModifiedPropsRef.current.get(shape.id)
+              if (recentlyModified) {
+                const timeSinceModification = Date.now() - recentlyModified.timestamp
+                // Within 500ms grace period, preserve local properties to prevent glitch
+                if (timeSinceModification < 500) {
+                  Object.assign(preservedProps, recentlyModified.props)
+                } else {
+                  // Clean up old entry
+                  recentlyModifiedPropsRef.current.delete(shape.id)
+                }
+              }
+
+              // If any properties need to be preserved, return merged shape
+              if (Object.keys(preservedProps).length > 0) {
+                return {
+                  ...shape,
+                  ...preservedProps,
+                }
+              }
               return shape
             }
             return s
@@ -312,6 +352,10 @@ export function useWebSocketMessageHandler({
     recentlyDraggedRef,
     recentlyResizedRef,
     recentlyRotatedRef,
+    isDraggingOpacityRef,
+    isDraggingShadowStrengthRef,
+    isDraggingBorderRadiusRef,
+    recentlyModifiedPropsRef,
     normalizeShape,
     setShapes,
     setSelectedIds,

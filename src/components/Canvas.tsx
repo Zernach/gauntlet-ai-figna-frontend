@@ -80,8 +80,7 @@ export default function Canvas({ onToolsReady, onViewportCenterChange, onCanvasS
     operationQueueRef,
     sendMessage,
     flushOperationQueue,
-    maxReconnectAttempts,
-    baseReconnectDelay
+    reconnectDelay
   } = useCanvasConnection()
 
   // Log connection state changes for debugging
@@ -96,9 +95,9 @@ export default function Canvas({ onToolsReady, onViewportCenterChange, onCanvasS
     console.log(`${stateEmoji} [Canvas] Connection state changed to: ${connectionState.toUpperCase()}`)
     console.log(`   Navigator online: ${navigator.onLine}`)
     console.log(`   WebSocket readyState: ${wsRef.current?.readyState ?? 'null'} (0=CONNECTING, 1=OPEN, 2=CLOSING, 3=CLOSED)`)
-    console.log(`   Reconnect attempts: ${reconnectAttempts}/${maxReconnectAttempts}`)
+    console.log(`   Reconnect attempts: ${reconnectAttempts} (continuous every ${reconnectDelay}ms)`)
     console.log(`   Queued operations: ${operationQueueRef.current.length}`)
-  }, [connectionState, reconnectAttempts, maxReconnectAttempts])
+  }, [connectionState, reconnectAttempts, reconnectDelay])
 
   const {
     stageScale,
@@ -143,6 +142,12 @@ export default function Canvas({ onToolsReady, onViewportCenterChange, onCanvasS
   const rotationRafRef = useRef<number | null>(null)
   const pendingRotationUpdatesRef = useRef<Map<string, number>>(new Map())
   const rotationFrameScheduledRef = useRef<boolean>(false)
+  // Slider dragging refs (to prevent WebSocket updates from causing jumpy behavior)
+  const isDraggingOpacityRef = useRef<boolean>(false)
+  const isDraggingShadowStrengthRef = useRef<boolean>(false)
+  const isDraggingBorderRadiusRef = useRef<boolean>(false)
+  // Track recently modified slider properties to prevent glitches after release
+  const recentlyModifiedPropsRef = useRef<Map<string, { props: Partial<Shape>; timestamp: number }>>(new Map())
   // Drag batching refs
   const dragRafRef = useRef<number | null>(null)
   const pendingDragUpdatesRef = useRef<Map<string, { x: number; y: number }>>(new Map())
@@ -481,6 +486,10 @@ export default function Canvas({ onToolsReady, onViewportCenterChange, onCanvasS
     recentlyDraggedRef,
     recentlyResizedRef,
     recentlyRotatedRef,
+    isDraggingOpacityRef,
+    isDraggingShadowStrengthRef,
+    isDraggingBorderRadiusRef,
+    recentlyModifiedPropsRef,
     normalizeShape,
     setShapes,
     setSelectedIds,
@@ -496,8 +505,7 @@ export default function Canvas({ onToolsReady, onViewportCenterChange, onCanvasS
     wsRef,
     currentUserIdRef,
     reconnectTimeoutRef,
-    maxReconnectAttempts,
-    baseReconnectDelay,
+    reconnectDelay,
     setConnectionState,
     setReconnectAttempts,
     flushOperationQueue,
@@ -694,6 +702,7 @@ export default function Canvas({ onToolsReady, onViewportCenterChange, onCanvasS
     setShapes,
     recordPropChange,
     sendMessage,
+    recentlyModifiedPropsRef,
   })
 
   // Get zoom handlers from useZoomPan hook (already called above)
@@ -924,7 +933,6 @@ export default function Canvas({ onToolsReady, onViewportCenterChange, onCanvasS
         onlineUsersCount={onlineUsersCount}
         connectionState={connectionState}
         reconnectAttempts={reconnectAttempts}
-        maxReconnectAttempts={maxReconnectAttempts}
         queuedOperationsCount={operationQueueRef.current.length}
         onSignOut={handleSignOut}
       />
@@ -1151,6 +1159,9 @@ export default function Canvas({ onToolsReady, onViewportCenterChange, onCanvasS
             onChangeBorderRadius={handleChangeBorderRadius}
             onChangeFontFamily={handleChangeFontFamily}
             onChangeFontWeight={handleChangeFontWeight}
+            isDraggingOpacityRef={isDraggingOpacityRef}
+            isDraggingShadowStrengthRef={isDraggingShadowStrengthRef}
+            isDraggingBorderRadiusRef={isDraggingBorderRadiusRef}
           />
         </div>
       )}

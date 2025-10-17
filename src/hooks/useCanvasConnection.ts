@@ -8,13 +8,11 @@ export interface WSMessage {
 }
 
 interface UseCanvasConnectionProps {
-    maxReconnectAttempts?: number
-    baseReconnectDelay?: number
+    reconnectDelay?: number
 }
 
 export function useCanvasConnection({
-    maxReconnectAttempts = 10,
-    baseReconnectDelay = 1000
+    reconnectDelay = 5000 // 5 seconds - consistent delay for all reconnection attempts
 }: UseCanvasConnectionProps = {}) {
     const [connectionState, setConnectionState] = useState<ConnectionState>('connecting')
     const [reconnectAttempts, setReconnectAttempts] = useState(0)
@@ -66,8 +64,7 @@ export function useCanvasConnection({
         sendMessage,
         flushOperationQueue,
         clearReconnectTimeout,
-        maxReconnectAttempts,
-        baseReconnectDelay
+        reconnectDelay
     }
 }
 

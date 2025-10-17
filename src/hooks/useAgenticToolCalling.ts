@@ -590,11 +590,10 @@ export function useAgenticToolCalling() {
      * Execute a tool call from OpenAI - optimized for speed (<50ms target)
      */
     const executeTool = useCallback((toolName: string, args: any) => {
-        // Performance optimization: Skip logging in production or use minimal logging
-        const DEBUG = false; // Set to true for debugging
+        console.log('🔧 [executeTool] Called with:', { toolName, args });
 
         if (!toolsRef.current) {
-            if (DEBUG) console.error('❌ [Tool Calling] Canvas tools not registered');
+            console.error('❌ [Tool Calling] Canvas tools not registered');
             return { success: false, error: 'Canvas tools not registered' }
         }
 
@@ -602,23 +601,30 @@ export function useAgenticToolCalling() {
             // Direct function dispatch - faster than switch statement
             const tool = toolsRef.current[toolName as keyof CanvasTools];
             if (!tool) {
-                if (DEBUG) console.error('❌ [Tool Calling] Unknown tool:', toolName);
+                console.error('❌ [Tool Calling] Unknown tool:', toolName);
+                console.log('Available tools:', Object.keys(toolsRef.current));
                 return { success: false, error: `Unknown tool: ${toolName}` }
             }
+
+            console.log('✅ [Tool Calling] Tool found, executing:', toolName);
 
             // Execute tool immediately without logging overhead
             if (toolName === 'getCanvasState') {
                 const state = (tool as any)();
+                console.log('📊 [getCanvasState] Returning state:', state);
                 return { success: true, data: state }
             }
 
             // Execute tool with args
+            console.log('⚙️ [Tool Calling] Executing tool with args...');
             (tool as any)(args);
+            console.log('✅ [Tool Calling] Tool executed successfully');
 
             // Return success without building complex message strings
             return { success: true, message: 'OK' }
         } catch (error) {
-            if (DEBUG) console.error('❌ [Tool Calling] Exception:', error);
+            console.error('❌ [Tool Calling] Exception:', error);
+            console.error('❌ [Tool Calling] Error stack:', error instanceof Error ? error.stack : 'No stack');
             return {
                 success: false,
                 error: error instanceof Error ? error.message : 'Unknown error'

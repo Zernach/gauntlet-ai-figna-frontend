@@ -207,6 +207,9 @@ const CanvasShapeComponent = ({
                     shadowColor={shape.shadowColor ?? 'transparent'}
                     shadowBlur={(shape.shadowStrength ?? 0)}
                     shadowOpacity={Math.min(1, Math.max(0, (shape.shadowStrength ?? 0) / 50))}
+                    shadowOffsetX={shape.shadowStrength ? 2 : 0}
+                    shadowOffsetY={shape.shadowStrength ? 2 : 0}
+                    shadowEnabled={true}
                     onTap={() => isPressable && onShapeClick(shape.id)}
                     onClick={() => isPressable && onShapeClick(shape.id)}
                     onContextMenu={(e) => onContextMenu && onContextMenu(e, shape.id)}
@@ -222,7 +225,6 @@ const CanvasShapeComponent = ({
                         e.cancelBubble = true
                         onDragEnd(shape.id)
                     }}
-                    perfectDrawEnabled={false}
                     listening={!isRotatingRef.current}
                 />
                 {isSelected && canResize && (() => {
@@ -290,7 +292,6 @@ const CanvasShapeComponent = ({
                                     e.cancelBubble = true
                                     onResizeEnd && onResizeEnd(shape.id)
                                 }}
-                                perfectDrawEnabled={false}
                             />
                             {/* Rotation handle */}
                             <Rect
@@ -341,7 +342,6 @@ const CanvasShapeComponent = ({
                                     isRotatingRef.current = false
                                     _onRotateEnd && _onRotateEnd(shape.id)
                                 }}
-                                perfectDrawEnabled={false}
                             />
                         </Group>
                     )
@@ -378,6 +378,9 @@ const CanvasShapeComponent = ({
                     shadowColor={shape.shadowColor ?? 'transparent'}
                     shadowBlur={(shape.shadowStrength ?? 0)}
                     shadowOpacity={Math.min(1, Math.max(0, (shape.shadowStrength ?? 0) / 50))}
+                    shadowOffsetX={shape.shadowStrength ? 2 : 0}
+                    shadowOffsetY={shape.shadowStrength ? 2 : 0}
+                    shadowEnabled={true}
                     onTap={() => isPressable && onShapeClick(shape.id)}
                     onClick={() => isPressable && onShapeClick(shape.id)}
                     onContextMenu={(e) => onContextMenu && onContextMenu(e, shape.id)}
@@ -391,7 +394,6 @@ const CanvasShapeComponent = ({
                         e.cancelBubble = true
                         onDragEnd(shape.id)
                     }}
-                    perfectDrawEnabled={false}
                     listening={!isRotatingRef.current}
                 />
                 {isSelected && canResize && (
@@ -431,7 +433,6 @@ const CanvasShapeComponent = ({
                                 e.cancelBubble = true
                                 onResizeEnd && onResizeEnd(shape.id)
                             }}
-                            perfectDrawEnabled={false}
                         />
                         {/* Rotation handle */}
                         <Rect
@@ -480,7 +481,6 @@ const CanvasShapeComponent = ({
                                 isRotatingRef.current = false
                                 _onRotateEnd && _onRotateEnd(shape.id)
                             }}
-                            perfectDrawEnabled={false}
                         />
                     </Group>
                 )}
@@ -502,6 +502,7 @@ const CanvasShapeComponent = ({
 
     // Default to rectangle
     const borderRadius = shape.borderRadius ?? shape.border_radius ?? 0
+
     return (
         <>
             <Rect
@@ -519,6 +520,9 @@ const CanvasShapeComponent = ({
                 shadowColor={shape.shadowColor ?? 'transparent'}
                 shadowBlur={(shape.shadowStrength ?? 0)}
                 shadowOpacity={Math.min(1, Math.max(0, (shape.shadowStrength ?? 0) / 50))}
+                shadowOffsetX={shape.shadowStrength ? 2 : 0}
+                shadowOffsetY={shape.shadowStrength ? 2 : 0}
+                shadowEnabled={true}
                 onTap={() => isPressable && onShapeClick(shape.id)}
                 onClick={() => isPressable && onShapeClick(shape.id)}
                 onContextMenu={(e) => onContextMenu && onContextMenu(e, shape.id)}
@@ -532,7 +536,6 @@ const CanvasShapeComponent = ({
                     e.cancelBubble = true
                     onDragEnd(shape.id)
                 }}
-                perfectDrawEnabled={false}
                 listening={!isRotatingRef.current}
             />
             {isSelected && canResize && (() => {
@@ -601,7 +604,6 @@ const CanvasShapeComponent = ({
                                 resizeOppositeCornerRef.current = null
                                 onResizeEnd && onResizeEnd(shape.id)
                             }}
-                            perfectDrawEnabled={false}
                         />
                         {/* NE handle */}
                         <Rect
@@ -647,7 +649,6 @@ const CanvasShapeComponent = ({
                                 resizeOppositeCornerRef.current = null
                                 onResizeEnd && onResizeEnd(shape.id)
                             }}
-                            perfectDrawEnabled={false}
                         />
                         {/* SW handle */}
                         <Rect
@@ -693,7 +694,6 @@ const CanvasShapeComponent = ({
                                 resizeOppositeCornerRef.current = null
                                 onResizeEnd && onResizeEnd(shape.id)
                             }}
-                            perfectDrawEnabled={false}
                         />
                         {/* SE handle */}
                         <Rect
@@ -739,7 +739,6 @@ const CanvasShapeComponent = ({
                                 resizeOppositeCornerRef.current = null
                                 onResizeEnd && onResizeEnd(shape.id)
                             }}
-                            perfectDrawEnabled={false}
                         />
                         {/* Rotation handle */}
                         <Rect
@@ -790,7 +789,6 @@ const CanvasShapeComponent = ({
                                 isRotatingRef.current = false
                                 _onRotateEnd && _onRotateEnd(shape.id)
                             }}
-                            perfectDrawEnabled={false}
                         />
                     </Group>
                 )
@@ -823,6 +821,10 @@ function areEqual(prev: CanvasShapeProps, next: CanvasShapeProps) {
     if ((a.radius ?? DEFAULT_SHAPE_SIZE / 2) !== (b.radius ?? DEFAULT_SHAPE_SIZE / 2)) return false
     if ((a.rotation ?? 0) !== (b.rotation ?? 0)) return false
     if (a.color !== b.color) return false
+    if ((a.opacity ?? 1) !== (b.opacity ?? 1)) return false
+    if ((a.shadowColor ?? 'transparent') !== (b.shadowColor ?? 'transparent')) return false
+    if ((a.shadowStrength ?? 0) !== (b.shadowStrength ?? 0)) return false
+    if ((a.borderRadius ?? a.border_radius ?? 0) !== (b.borderRadius ?? b.border_radius ?? 0)) return false
     if ((a.textContent ?? a.text_content) !== (b.textContent ?? b.text_content)) return false
     if ((a.fontSize ?? a.font_size) !== (b.fontSize ?? b.font_size)) return false
     if ((a.fontFamily ?? a.font_family) !== (b.fontFamily ?? b.font_family)) return false

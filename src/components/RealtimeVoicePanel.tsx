@@ -84,28 +84,35 @@ export default function RealtimeVoicePanel({ session, onRegisterTools, viewportC
     // Update session with viewport center and canvas shapes when they change
     useEffect(() => {
         if (isConnected && dataChannelRef.current && dataChannelRef.current.readyState === 'open') {
-            const DEBUG = false;
             const centerX = viewportCenter ? Math.round(viewportCenter.x) : 25000;
             const centerY = viewportCenter ? Math.round(viewportCenter.y) : 25000;
             const shapeContext = generateShapeContext(canvasShapes);
 
-            const instructions = `You are a helpful AI assistant that can manipulate shapes on a collaborative canvas. The canvas is 50000x50000 pixels (coordinates from 0 to 50000). The user's current viewport is centered at (${centerX}, ${centerY}).
+            console.log('🔄 [Session Update] Viewport or shapes changed:', { centerX, centerY, shapeCount: canvasShapes.length });
 
-IMPORTANT SHAPE CREATION GUIDELINES:
-- When creating a SINGLE shape without explicit coordinates, place it at the viewport center (${centerX}, ${centerY}) for best visibility.
-- When creating MULTIPLE shapes (e.g., "three circles", "five rectangles", "create 3 shapes"):
-  * ALWAYS calculate specific x and y coordinates for each shape to space them properly
-  * NEVER place multiple shapes at the same coordinates - they will stack and be invisible
-  * For horizontal spacing: Use 300-400 pixel spacing between shapes (e.g., x positions: ${centerX - 400}, ${centerX}, ${centerX + 400})
-  * For vertical spacing: Use 300-400 pixel spacing between shapes (e.g., y positions: ${centerY - 400}, ${centerY}, ${centerY + 400})
-  * For grid layouts: Arrange shapes in rows and columns with appropriate spacing
-  * Always specify explicit x and y coordinates for each shape in the shapes array
-- When asked to space shapes "evenly" or "horizontally" or "vertically", distribute them with consistent spacing relative to the viewport center
-- Default to horizontal arrangement unless the user specifies otherwise
+            const instructions = `You are a professional Figma designer AI creating beautiful user interfaces. The canvas is 50000x50000 pixels. The user's viewport is centered at (${centerX}, ${centerY}).
+
+DESIGN APPROACH:
+- Think like a professional UI/UX designer
+- Create visually stunning, well-organized layouts
+- Use proper z-indexes for layering (background: z:1, containers: z:2, content: z:3, overlays: z:4)
+- Choose harmonious color schemes
+- Add polish with borderRadius, opacity, and proper spacing
+- Make bold creative choices based on design best practices
+
+SHAPE CREATION RULES:
+- Single shape without coordinates → place at viewport center (${centerX}, ${centerY})
+- Multiple shapes → ALWAYS specify x,y coordinates with proper spacing (300-400px)
+- NEVER stack shapes at same coordinates
+- Horizontal spacing: x positions ${centerX - 400}, ${centerX}, ${centerX + 400}
+- Vertical spacing: y positions ${centerY - 400}, ${centerY}, ${centerY + 400}
+- Use explicit coordinates for each shape in the array
 
 ${shapeContext}
 
-When the user refers to objects by their content (like "the Hello World text" or "the red circle"), use the shape IDs from the list above to identify and modify them. You can use updateShapes with an array of shape updates to modify existing objects. Always pass an array to updateShapes, even for a single shape: updateShapes({shapes: [{shapeId: "id", color: "#FF0000"}]})`
+When users reference shapes (like "the Hello World text" or "the red circle"), use shape IDs from above. Always pass arrays: updateShapes({shapes: [{shapeId: "id", color: "#FF0000"}]})
+
+Be enthusiastic and explain your design decisions!`
 
             const sessionUpdatePayload = {
                 type: 'session.update',
@@ -114,14 +121,14 @@ When the user refers to objects by their content (like "the Hello World text" or
                 }
             };
 
-            if (DEBUG) console.log('📍 Updating session:', { x: centerX, y: centerY, shapeCount: canvasShapes.length });
+            console.log('📍 [Session Update] Sending update to OpenAI');
             dataChannelRef.current.send(JSON.stringify(sessionUpdatePayload));
         }
     }, [viewportCenter, canvasShapes, isConnected])
 
     // Handle function call from OpenAI - optimized for <50ms execution
     const handleFunctionCall = useCallback((callId: string, name: string, args: string) => {
-        const DEBUG = false; // Set to true for debugging
+        console.log('⚡ [Executing Tool]', name, 'with args:', args);
 
         // Start performance monitoring
         performanceMonitor.startTimer(`voiceAgent_${name}`);
@@ -129,27 +136,32 @@ When the user refers to objects by their content (like "the Hello World text" or
         try {
             // Fast path: parse and execute immediately
             const parsedArgs = JSON.parse(args);
+            console.log('🔍 [Parsed Args]', parsedArgs);
             const result = executeTool(name, parsedArgs);
+            console.log('✅ [Tool Result]', result);
 
             // Send response immediately if channel is ready
             const dc = dataChannelRef.current;
             if (dc?.readyState === 'open') {
                 // Pre-build payload structure for speed
-                dc.send(JSON.stringify({
+                const responsePayload = {
                     type: 'conversation.item.create',
                     item: {
                         type: 'function_call_output',
                         call_id: callId,
                         output: JSON.stringify(result)
                     }
-                }));
-            } else if (DEBUG) {
-                console.warn('⚠️ Data channel not ready');
+                };
+                console.log('📤 [Sending Tool Response]', responsePayload);
+                dc.send(JSON.stringify(responsePayload));
+                console.log('✅ [Tool Response Sent]');
+            } else {
+                console.warn('⚠️ Data channel not ready:', dc?.readyState);
             }
 
             // End performance monitoring
             const duration = performanceMonitor.endTimer(`voiceAgent_${name}`);
-            if (DEBUG && duration !== null) {
+            if (duration !== null) {
                 console.log(`⚡ Tool ${name} executed in ${duration.toFixed(2)}ms`);
             }
 
@@ -172,7 +184,7 @@ When the user refers to objects by their content (like "the Hello World text" or
                 }));
             }
             performanceMonitor.endTimer(`voiceAgent_${name}`);
-            if (DEBUG) console.error('❌ Error:', error);
+            console.error('❌ Tool execution error:', error);
             // Command processing complete even on error
             setIsProcessingCommand(false);
         }
@@ -202,26 +214,24 @@ When the user refers to objects by their content (like "the Hello World text" or
     }
 
     const handleStartVoice = async () => {
-        const DEBUG = false; // Set to true for debugging
-
         if (!session) {
             setError('Please sign in to use voice assistant');
             return;
         }
 
         if (isConnected) {
-            if (DEBUG) console.log('🛑 Disconnecting...');
+            console.log('🛑 Disconnecting...');
             handleDisconnect();
             return;
         }
 
-        if (DEBUG) console.log('🚀 Starting voice assistant...');
+        console.log('🚀 Starting voice assistant...');
         setIsLoading(true);
         setError(null);
 
         try {
             const { relayUrl } = await getVoiceRelayUrl();
-            if (DEBUG) console.log('✅ Relay URL obtained');
+            console.log('✅ Relay URL obtained');
 
             // Create audio context for visualization
             const ctx = new AudioContext();
@@ -235,7 +245,7 @@ When the user refers to objects by their content (like "the Hello World text" or
             const audioEl = audioElementRef.current;
             if (audioEl) {
                 pc.ontrack = (e) => {
-                    if (DEBUG) console.log('🎵 Received remote audio track');
+                    console.log('🎵 Received remote audio track');
                     audioEl.srcObject = e.streams[0];
 
                     // Set up agent audio analyser
@@ -269,7 +279,7 @@ When the user refers to objects by their content (like "the Hello World text" or
             dataChannelRef.current = dc;
 
             dc.addEventListener('open', () => {
-                if (DEBUG) console.log('🔌 Data channel opened');
+                console.log('🔌 Data channel opened');
                 setIsConnected(true);
                 setIsLoading(false);
 
@@ -278,23 +288,32 @@ When the user refers to objects by their content (like "the Hello World text" or
                 const centerY = viewportCenter?.y ?? 25000
                 const shapeContext = generateShapeContext(canvasShapes)
 
-                const instructions = `You are a helpful AI assistant that can manipulate shapes on a collaborative canvas. The canvas is 50000x50000 pixels (coordinates from 0 to 50000). The user's current viewport is centered at (${Math.round(centerX)}, ${Math.round(centerY)}).
+                console.log('📍 [Session Setup] Viewport center:', { centerX, centerY });
+                console.log('📍 [Session Setup] Canvas shapes count:', canvasShapes.length);
 
-IMPORTANT SHAPE CREATION GUIDELINES:
-- When creating a SINGLE shape without explicit coordinates, place it at the viewport center (${Math.round(centerX)}, ${Math.round(centerY)}) for best visibility.
-- When creating MULTIPLE shapes (e.g., "three circles", "five rectangles", "create 3 shapes"):
-  * ALWAYS calculate specific x and y coordinates for each shape to space them properly
-  * NEVER place multiple shapes at the same coordinates - they will stack and be invisible
-  * For horizontal spacing: Use 300-400 pixel spacing between shapes (e.g., x positions: ${Math.round(centerX) - 400}, ${Math.round(centerX)}, ${Math.round(centerX) + 400})
-  * For vertical spacing: Use 300-400 pixel spacing between shapes (e.g., y positions: ${Math.round(centerY) - 400}, ${Math.round(centerY)}, ${Math.round(centerY) + 400})
-  * For grid layouts: Arrange shapes in rows and columns with appropriate spacing
-  * Always specify explicit x and y coordinates for each shape in the shapes array
-- When asked to space shapes "evenly" or "horizontally" or "vertically", distribute them with consistent spacing relative to the viewport center
-- Default to horizontal arrangement unless the user specifies otherwise
+                const instructions = `You are a professional Figma designer AI creating beautiful user interfaces. The canvas is 50000x50000 pixels. The user's viewport is centered at (${Math.round(centerX)}, ${Math.round(centerY)}).
+
+DESIGN APPROACH:
+- Think like a professional UI/UX designer
+- Create visually stunning, well-organized layouts
+- Use proper z-indexes for layering (background: z:1, containers: z:2, content: z:3, overlays: z:4)
+- Choose harmonious color schemes
+- Add polish with borderRadius, opacity, and proper spacing
+- Make bold creative choices based on design best practices
+
+SHAPE CREATION RULES:
+- Single shape without coordinates → place at viewport center (${Math.round(centerX)}, ${Math.round(centerY)})
+- Multiple shapes → ALWAYS specify x,y coordinates with proper spacing (300-400px)
+- NEVER stack shapes at same coordinates
+- Horizontal spacing: x positions ${Math.round(centerX) - 400}, ${Math.round(centerX)}, ${Math.round(centerX) + 400}
+- Vertical spacing: y positions ${Math.round(centerY) - 400}, ${Math.round(centerY)}, ${Math.round(centerY) + 400}
+- Use explicit coordinates for each shape in the array
 
 ${shapeContext}
 
-When the user refers to objects by their content (like "the Hello World text" or "the red circle"), use the shape IDs from the list above to identify and modify them. You can use updateShapes with an array of shape updates to modify existing objects. Always pass an array to updateShapes, even for a single shape: updateShapes({shapes: [{shapeId: "id", color: "#FF0000"}]})`
+When users reference shapes (like "the Hello World text" or "the red circle"), use shape IDs from above. Always pass arrays: updateShapes({shapes: [{shapeId: "id", color: "#FF0000"}]})
+
+Be enthusiastic and explain your design decisions!`
 
                 const sessionUpdatePayload = {
                     type: 'session.update',
@@ -306,39 +325,75 @@ When the user refers to objects by their content (like "the Hello World text" or
                         instructions
                     }
                 };
-                if (DEBUG) console.log('📨 Sending session update:', { toolCount: tools.length });
+                console.log('📨 [Session Setup] Sending session update with tools:', tools.length);
+                console.log('📨 [Session Setup] Full session config:', sessionUpdatePayload);
                 dc.send(JSON.stringify(sessionUpdatePayload));
+                console.log('✅ [Session Setup] Session update sent successfully');
             });
 
             dc.addEventListener('message', (e) => {
-                const DEBUG = false; // Set to true for debugging
-
                 try {
                     const event = JSON.parse(e.data);
                     const eventType = event.type;
 
+                    // Log all relevant events for debugging
+                    if (![
+                        'input_audio_buffer.speech_started',
+                        'input_audio_buffer.speech_stopped',
+                        'response.audio.delta',
+                        'input_audio_buffer.committed',
+                        'input_audio_buffer.append'
+                    ].includes(eventType)) {
+                        console.log('🎙️ [Voice Event]', eventType, event);
+                    }
+
                     // Fast path: handle most common events with minimal processing
                     switch (eventType) {
                         case 'response.audio.delta':
-                        case 'response.audio_transcript.delta':
                             setIsSpeaking(true);
                             return;
 
+                        case 'response.audio_transcript.delta':
+                            if (event.delta) {
+                                console.log('🗣️ [AI Speaking]', event.delta);
+                            }
+                            setIsSpeaking(true);
+                            return;
+
+                        case 'response.text.delta':
+                            if (event.delta) {
+                                console.log('📝 [AI Text]', event.delta);
+                            }
+                            return;
+
                         case 'response.done':
+                            console.log('🏁 [Response Complete]', event.response);
+                            setIsSpeaking(false);
+                            return;
+
                         case 'response.audio.done':
                             setIsSpeaking(false);
                             return;
 
                         case 'input_audio_buffer.speech_started':
+                            console.log('🎤 [User Started Speaking]');
+                            return;
+
                         case 'input_audio_buffer.speech_stopped':
-                            return; // Skip noisy events
+                            console.log('🎤 [User Stopped Speaking]');
+                            return;
 
                         case 'session.updated':
-                            if (DEBUG) console.log('✅ Session updated');
+                            console.log('✅ Session updated');
+                            return;
+
+                        case 'conversation.item.created':
+                            console.log('💭 [Conversation Item Created]', event.item);
                             return;
 
                         case 'response.output_item.added':
                             if (event.item?.type === 'function_call') {
+                                console.log('🔧 [Function Call Started]', event.item.name);
                                 pendingToolCallRef.current = {
                                     call_id: event.item.call_id || '',
                                     name: event.item.name || '',
@@ -346,6 +401,9 @@ When the user refers to objects by their content (like "the Hello World text" or
                                 };
                                 // Show loading spinner when command starts
                                 setIsProcessingCommand(true);
+                            }
+                            if (event.item?.type === 'message') {
+                                console.log('💬 [AI Message]', event.item);
                             }
                             return;
 
@@ -367,6 +425,11 @@ When the user refers to objects by their content (like "the Hello World text" or
                             // Execute immediately
                             const toolCall = pendingToolCallRef.current;
                             if (toolCall?.name && toolCall.call_id && !executedCallIdsRef.current.has(toolCall.call_id)) {
+                                console.log('📦 [Function Call Complete]', {
+                                    name: toolCall.name,
+                                    arguments: toolCall.arguments,
+                                    parsedArgs: JSON.parse(toolCall.arguments)
+                                });
                                 handleFunctionCall(toolCall.call_id, toolCall.name, toolCall.arguments);
                                 executedCallIdsRef.current.add(toolCall.call_id);
                                 pendingToolCallRef.current = null;
@@ -385,25 +448,30 @@ When the user refers to objects by their content (like "the Hello World text" or
                             }
                             return;
 
+                        case 'response.created':
+                            console.log('🚀 [Response Created]', event.response);
+                            return;
+
                         case 'error':
-                            if (DEBUG) console.error('❌ OpenAI error:', event);
+                            console.error('❌ [OpenAI Error]', event.error);
+                            console.error('❌ [Full Error Event]', event);
                             return;
 
                         default:
-                            if (DEBUG) console.log('📥 Event:', eventType);
+                            console.log('📥 [Other Event]', eventType);
                     }
                 } catch (err) {
-                    if (DEBUG) console.error('❌ Parse error:', err);
+                    console.error('❌ Parse error:', err);
                 }
             })
 
             dc.addEventListener('close', () => {
-                if (DEBUG) console.log('🔌 Data channel closed');
+                console.log('🔌 Data channel closed');
                 handleDisconnect();
             });
 
             dc.addEventListener('error', (e) => {
-                if (DEBUG) console.error('❌ Data channel error:', e);
+                console.error('❌ Data channel error:', e);
                 setError('Connection error occurred');
                 handleDisconnect();
             });
@@ -426,7 +494,7 @@ When the user refers to objects by their content (like "the Hello World text" or
 
             if (!sdpResponse.ok) {
                 const errorText = await sdpResponse.text();
-                if (DEBUG) console.error('❌ Failed to connect:', sdpResponse.status, errorText);
+                console.error('❌ Failed to connect:', sdpResponse.status, errorText);
                 throw new Error(`Failed to connect to OpenAI: ${sdpResponse.statusText}`);
             }
 
@@ -435,9 +503,9 @@ When the user refers to objects by their content (like "the Hello World text" or
                 type: 'answer',
                 sdp: answerSdp,
             });
-            if (DEBUG) console.log('🎉 Voice assistant ready!');
+            console.log('🎉 Voice assistant ready and connected!');
         } catch (err) {
-            if (DEBUG) console.error('❌ Error:', err);
+            console.error('❌ Connection error:', err);
             setError(err instanceof Error ? err.message : 'Failed to start voice assistant');
             handleDisconnect();
             setIsLoading(false);

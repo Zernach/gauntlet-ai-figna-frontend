@@ -85,8 +85,7 @@ export function useWebSocketConnection({
   const [reconnectAttempts, setReconnectAttempts] = useState(0)
   const reconnectTimeoutRef = useRef<number | null>(null)
   const operationQueueRef = useRef<WSMessage[]>([])
-  const maxReconnectAttempts = 10
-  const baseReconnectDelay = 1000
+  const reconnectDelay = 5000 // 5 seconds - consistent delay for all reconnection attempts
 
   const sendMessage = useCallback((msg: WSMessage) => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
@@ -220,23 +219,19 @@ export function useWebSocketConnection({
     }
 
     ws.onclose = () => {
-      setConnectionState('disconnected')
+      console.log('🔴 [WebSocket] Connection closed, will retry in 5 seconds...')
+      setConnectionState('reconnecting')
+      setReconnectAttempts(prev => prev + 1)
 
-      if (reconnectAttempts < maxReconnectAttempts) {
-        const delay = Math.min(baseReconnectDelay * Math.pow(2, reconnectAttempts), 30000)
-        setConnectionState('reconnecting')
-        setReconnectAttempts(prev => prev + 1)
-
-        reconnectTimeoutRef.current = window.setTimeout(() => {
-          connectWebSocket(canvasId, token, true)
-        }, delay)
-      } else {
-        setConnectionState('disconnected')
-      }
+      // Continuously retry every 5 seconds without limit
+      reconnectTimeoutRef.current = window.setTimeout(() => {
+        console.log('🔄 [WebSocket] Attempting reconnection...')
+        connectWebSocket(canvasId, token, true)
+      }, reconnectDelay)
     }
 
     wsRef.current = ws
-  }, [reconnectAttempts, handleWebSocketMessage, flushOperationQueue])
+  }, [reconnectAttempts, handleWebSocketMessage, flushOperationQueue, reconnectDelay])
 
   // Cleanup on unmount
   useEffect(() => {
