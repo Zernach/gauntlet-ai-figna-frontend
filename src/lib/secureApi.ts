@@ -42,7 +42,6 @@ async function getAuthToken(): Promise<string | null> {
 
         if (timeUntilExpiry <= 300 && timeUntilExpiry > 0) {
             // Token expiring soon, refresh it
-            console.log('🔄 Token expiring soon, refreshing...')
             const { data: { session: newSession }, error: refreshError } = await supabase.auth.refreshSession()
 
             if (refreshError || !newSession) {
@@ -136,7 +135,6 @@ export async function secureRequest<T = any>(
 
             // Handle specific error codes
             if (errorData.code === 'TOKEN_EXPIRED') {
-                console.log('🔄 Token expired, refreshing...')
                 const { error } = await supabase.auth.refreshSession()
                 if (!error) {
                     // Retry request with new token

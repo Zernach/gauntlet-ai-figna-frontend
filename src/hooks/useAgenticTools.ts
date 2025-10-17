@@ -42,9 +42,6 @@ export function useAgenticTools({
     if (onToolsReady && currentUserId && canvasId) {
       const tools = {
         createShapes: (params: any) => {
-          console.log('🎨 [createShapes] Called with params:', params);
-          console.log('🎨 [createShapes] Number of shapes:', params.shapes?.length);
-          console.log('🎨 [createShapes] Shapes array:', JSON.stringify(params.shapes, null, 2));
 
           if (!wsRef.current || !canvasId || !currentUserId) {
             const error = 'Cannot create shapes: Canvas not ready';
@@ -52,9 +49,7 @@ export function useAgenticTools({
             throw new Error(error);
           }
           if (createShapesRef.current) {
-            console.log('✅ [createShapes] Calling createShapesRef.current with shapes');
             createShapesRef.current(params.shapes);
-            console.log('✅ [createShapes] Successfully sent shapes to canvas');
           } else {
             console.error('❌ [createShapes] createShapesRef.current is null!');
           }
