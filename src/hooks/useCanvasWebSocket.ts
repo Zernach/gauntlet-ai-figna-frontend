@@ -37,12 +37,10 @@ export function useCanvasWebSocket({
       reconnectTimeoutRef.current = null
     }
 
-    console.log(`🔌 [Canvas] ${isReconnect ? 'Reconnecting' : 'Connecting'} WebSocket...`)
     const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:3002'
     const ws = new WebSocket(`${WS_URL}?token=${token}&canvasId=${canvasId}`)
 
     ws.onopen = () => {
-      console.log('🟢 [Canvas] WebSocket connected')
       setConnectionState('connected')
       setReconnectAttempts(0)
 
@@ -62,27 +60,22 @@ export function useCanvasWebSocket({
         const message = JSON.parse(event.data)
         onMessage(message)
       } catch (error) {
-        console.error('❌ [Canvas] Error parsing WebSocket message:', error, event.data);
+        // Error parsing message
       }
     }
 
     ws.onerror = (error) => {
-      console.error('🔴 [Canvas] WebSocket error:', error)
       setConnectionState('disconnected')
     }
 
     ws.onclose = (event) => {
-      console.log('🔴 [Canvas] WebSocket closed. Code:', event.code, 'Reason:', event.reason, 'Clean:', event.wasClean)
-
       // Use functional state update to track reconnect attempts
       setReconnectAttempts(currentAttempts => {
         const nextAttempt = currentAttempts + 1
-        console.log(`🔄 [Canvas] Connection closed (attempt ${nextAttempt}), will retry in ${reconnectDelay}ms`)
         setConnectionState('reconnecting')
 
         // Continuously retry every 5 seconds without limit
         reconnectTimeoutRef.current = window.setTimeout(() => {
-          console.log(`🔄 [Canvas] Executing reconnection attempt ${nextAttempt}...`)
           connectWebSocketRef.current?.(canvasId, token, true)
         }, reconnectDelay)
 
@@ -137,18 +130,15 @@ export function useCanvasWebSocket({
 
       onSuccess(canvas.id, session.access_token, session.user.id, session.user.email || '')
     } catch (error) {
-      console.error('❌ [Canvas] Error initializing canvas:', error)
+      // Error initializing canvas
     }
   }, [])
 
   // Monitor browser online/offline events for immediate network state detection
   useEffect(() => {
     const handleOnline = () => {
-      console.log('🌐 [Canvas] Browser detected online, current WS state:', wsRef.current?.readyState)
-
       // If WebSocket is not connected, try to reconnect
       if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
-        console.log('🔄 [Canvas] Reconnecting due to browser online event...')
         setConnectionState('reconnecting')
         setReconnectAttempts(0) // Reset attempts when coming back online
 
@@ -160,12 +150,10 @@ export function useCanvasWebSocket({
     }
 
     const handleOffline = () => {
-      console.log('🌐 [Canvas] Browser detected offline')
       setConnectionState('disconnected')
 
       // Close WebSocket immediately to trigger reconnection flow
       if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-        console.log('🔌 [Canvas] Closing WebSocket due to offline event')
         wsRef.current.close()
       }
     }
@@ -176,7 +164,6 @@ export function useCanvasWebSocket({
 
     // Check initial online status
     if (!navigator.onLine) {
-      console.log('🌐 [Canvas] Initial state: Browser is offline')
       setConnectionState('disconnected')
     }
 
@@ -199,7 +186,6 @@ export function useCanvasWebSocket({
       if (readyState === WebSocket.CONNECTING) {
         setConnectionState((current) => {
           if (current !== 'connecting' && current !== 'reconnecting') {
-            console.log('🔄 [Canvas] Health check: WebSocket is connecting')
             return 'connecting'
           }
           return current
@@ -207,7 +193,6 @@ export function useCanvasWebSocket({
       } else if (readyState === WebSocket.OPEN) {
         setConnectionState((current) => {
           if (current !== 'connected') {
-            console.log('🟢 [Canvas] Health check: WebSocket is open')
             return 'connected'
           }
           return current
@@ -215,7 +200,6 @@ export function useCanvasWebSocket({
       } else if (readyState === WebSocket.CLOSING || readyState === WebSocket.CLOSED) {
         setConnectionState((current) => {
           if (current === 'connected' || current === 'connecting') {
-            console.log('🔴 [Canvas] Health check: WebSocket is closed/closing')
             return 'disconnected'
           }
           return current

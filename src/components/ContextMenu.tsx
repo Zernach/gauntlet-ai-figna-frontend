@@ -8,8 +8,10 @@ import {
     Scissors,
     Clipboard,
     CopyPlus,
-    Trash2
+    Trash2,
+    Palette
 } from 'lucide-react'
+import ColorSlider from './ColorSlider'
 
 interface ContextMenuProps {
     x: number
@@ -26,6 +28,8 @@ interface ContextMenuProps {
     onDuplicate?: () => void
     onDelete?: () => void
     hasPasteData: boolean
+    canvasBgHex?: string
+    onChangeCanvasBg?: (hex: string) => void
 }
 
 // Move MenuItem outside to prevent recreation on every render
@@ -101,9 +105,12 @@ const ContextMenu: React.FC<ContextMenuProps> = ({
     onPaste,
     onDuplicate,
     onDelete,
-    hasPasteData
+    hasPasteData,
+    canvasBgHex,
+    onChangeCanvasBg
 }) => {
     const menuRef = React.useRef<HTMLDivElement>(null)
+    const [showBgColorPicker, setShowBgColorPicker] = React.useState(false)
 
     // Close menu when clicking outside
     React.useEffect(() => {
@@ -235,8 +242,43 @@ const ContextMenu: React.FC<ContextMenuProps> = ({
                 </>
             ) : (
                 <>
+                    {/* Background Color Section - Always visible */}
+                    <div style={{
+                        fontSize: '11px',
+                        fontWeight: '600',
+                        color: '#888',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.5px',
+                        padding: '8px 16px 6px',
+                    }}>
+                        Canvas
+                    </div>
+                    <MenuItem
+                        icon={<Palette size={16} />}
+                        label="Background Color"
+                        onClick={() => setShowBgColorPicker(!showBgColorPicker)}
+                    />
+                    
+                    {/* Color Picker - Inline */}
+                    {showBgColorPicker && canvasBgHex && onChangeCanvasBg && (
+                        <div style={{
+                            padding: '12px 16px',
+                            backgroundColor: '#222',
+                            borderTop: '1px solid #333',
+                            borderBottom: '1px solid #333',
+                        }}>
+                            <ColorSlider
+                                valueHex={canvasBgHex}
+                                onChangeHex={onChangeCanvasBg}
+                                layout="column"
+                                allowHexEdit={true}
+                            />
+                        </div>
+                    )}
+
                     {hasPasteData && (
                         <>
+                            <Divider />
                             <div style={{
                                 fontSize: '11px',
                                 fontWeight: '600',

@@ -1,4 +1,4 @@
-import { useCallback } from 'react'
+import { useCallback, useRef } from 'react'
 import type { Shape } from '../types/canvas'
 import { CANVAS_WIDTH, CANVAS_HEIGHT, DEFAULT_SHAPE_SIZE } from '../types/canvas'
 
@@ -6,6 +6,8 @@ interface HistoryEntry {
   undo: any
   redo: any
   label: string
+  timestamp?: number
+  source?: 'user' | 'agent'
 }
 
 interface UseShapeResizeProps {
@@ -40,7 +42,12 @@ export function useShapeResize({
   sendMessage,
 }: UseShapeResizeProps) {
 
+  // Track when resize actions start for accurate history timestamps
+  const resizeStartTimeRef = useRef<number>(0)
+
   const handleResizeStart = useCallback((id: string) => {
+    // Capture the timestamp when the resize actually starts
+    resizeStartTimeRef.current = Date.now()
     if (!wsRef.current) return
     isResizingShapeRef.current = true
     resizingShapeIdRef.current = id
@@ -206,6 +213,8 @@ export function useShapeResize({
             undo: { type: 'SHAPE_UPDATE', payload: { shapeId: id, updates: before } },
             redo: { type: 'SHAPE_UPDATE', payload: { shapeId: id, updates: after } },
             label: 'Resize shape',
+            timestamp: resizeStartTimeRef.current,
+            source: 'user'
           })
         }
       }

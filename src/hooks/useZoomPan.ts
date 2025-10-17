@@ -193,10 +193,11 @@ export function useZoomPan({
             let newScale = zoomHoldDirectionRef.current > 0 ? oldScale * factor : oldScale / factor
             newScale = Math.max(minScale, Math.min(maxScale, newScale))
 
-            // Use the current screen position of the canvas center as the anchor
+            // Use the viewport center as the anchor point
+            // This keeps whatever is at the center of the screen fixed during zoom
             const anchor = {
-                x: stagePosRef.current.x + (CANVAS_WIDTH / 2) * oldScale,
-                y: stagePosRef.current.y + (CANVAS_HEIGHT / 2) * oldScale
+                x: viewportWidth / 2,
+                y: viewportHeight / 2
             }
             const newPos = computeAnchoredPosition(oldScale, newScale, stagePosRef.current, anchor)
 

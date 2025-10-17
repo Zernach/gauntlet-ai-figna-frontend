@@ -59,7 +59,6 @@ export class WebSocketManager implements IWebSocketClient {
             this.ws.onclose = this.handleClose.bind(this);
 
         } catch (error) {
-            console.error('WebSocket connection error:', error);
             this.setConnectionState(ConnectionState.ERROR);
             this.scheduleReconnect();
         }
@@ -99,14 +98,13 @@ export class WebSocketManager implements IWebSocketClient {
      */
     send(message: WSMessage): void {
         if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-            console.warn('Cannot send message: WebSocket not connected');
             return;
         }
 
         try {
             this.ws.send(JSON.stringify(message));
         } catch (error) {
-            console.error('Error sending message:', error);
+            // Error sending message
         }
     }
 
@@ -142,7 +140,6 @@ export class WebSocketManager implements IWebSocketClient {
      * Handle WebSocket open event
      */
     private handleOpen(): void {
-        console.log('✅ WebSocket connected');
         this.setConnectionState(ConnectionState.CONNECTED);
         this.reconnectAttempts = 0;
 
@@ -170,7 +167,7 @@ export class WebSocketManager implements IWebSocketClient {
             const message: WSMessage = JSON.parse(event.data);
             this.routeMessage(message);
         } catch (error) {
-            console.error('Error parsing WebSocket message:', error);
+            // Error parsing message
         }
     }
 
@@ -217,7 +214,6 @@ export class WebSocketManager implements IWebSocketClient {
 
             case WS_MESSAGE_TYPES.ERROR:
                 this.eventHandlers.onError?.(message.payload);
-                console.error('WebSocket error from server:', message.payload);
                 break;
 
             case WS_MESSAGE_TYPES.PONG:
@@ -225,7 +221,8 @@ export class WebSocketManager implements IWebSocketClient {
                 break;
 
             default:
-                console.warn('Unknown message type:', message.type);
+                // Unknown message type
+                break;
         }
     }
 
@@ -233,7 +230,6 @@ export class WebSocketManager implements IWebSocketClient {
      * Handle WebSocket error event
      */
     private handleError(event: Event): void {
-        console.error('WebSocket error:', event);
         this.setConnectionState(ConnectionState.ERROR);
 
         if (this.options?.onError) {
@@ -245,7 +241,6 @@ export class WebSocketManager implements IWebSocketClient {
      * Handle WebSocket close event
      */
     private handleClose(): void {
-        console.log('❌ WebSocket closed');
         this.setConnectionState(ConnectionState.DISCONNECTED);
 
         // Stop heartbeat
@@ -276,14 +271,11 @@ export class WebSocketManager implements IWebSocketClient {
         const maxAttempts = this.options?.maxReconnectAttempts || 10;
 
         if (this.reconnectAttempts >= maxAttempts) {
-            console.error('Max reconnection attempts reached');
             return;
         }
 
         const delay = this.options?.reconnectDelay || 3000;
         const backoffDelay = Math.min(delay * Math.pow(1.5, this.reconnectAttempts), 30000);
-
-        console.log(`Reconnecting in ${backoffDelay}ms (attempt ${this.reconnectAttempts + 1}/${maxAttempts})`);
 
         this.reconnectTimeout = setTimeout(() => {
             this.reconnectAttempts++;

@@ -590,10 +590,7 @@ export function useAgenticToolCalling() {
      * Execute a tool call from OpenAI - optimized for speed (<50ms target)
      */
     const executeTool = useCallback((toolName: string, args: any) => {
-        console.log('🔧 [executeTool] Called with:', { toolName, args });
-
         if (!toolsRef.current) {
-            console.error('❌ [Tool Calling] Canvas tools not registered');
             return { success: false, error: 'Canvas tools not registered' }
         }
 
@@ -601,30 +598,21 @@ export function useAgenticToolCalling() {
             // Direct function dispatch - faster than switch statement
             const tool = toolsRef.current[toolName as keyof CanvasTools];
             if (!tool) {
-                console.error('❌ [Tool Calling] Unknown tool:', toolName);
-                console.log('Available tools:', Object.keys(toolsRef.current));
                 return { success: false, error: `Unknown tool: ${toolName}` }
             }
-
-            console.log('✅ [Tool Calling] Tool found, executing:', toolName);
 
             // Execute tool immediately without logging overhead
             if (toolName === 'getCanvasState') {
                 const state = (tool as any)();
-                console.log('📊 [getCanvasState] Returning state:', state);
                 return { success: true, data: state }
             }
 
             // Execute tool with args
-            console.log('⚙️ [Tool Calling] Executing tool with args...');
             (tool as any)(args);
-            console.log('✅ [Tool Calling] Tool executed successfully');
 
             // Return success without building complex message strings
             return { success: true, message: 'OK' }
         } catch (error) {
-            console.error('❌ [Tool Calling] Exception:', error);
-            console.error('❌ [Tool Calling] Error stack:', error instanceof Error ? error.stack : 'No stack');
             return {
                 success: false,
                 error: error instanceof Error ? error.message : 'Unknown error'

@@ -88,8 +88,6 @@ export default function RealtimeVoicePanel({ session, onRegisterTools, viewportC
             const centerY = viewportCenter ? Math.round(viewportCenter.y) : 25000;
             const shapeContext = generateShapeContext(canvasShapes);
 
-            console.log('🔄 [Session Update] Viewport or shapes changed:', { centerX, centerY, shapeCount: canvasShapes.length });
-
             const instructions = `You are a professional Figma designer AI creating beautiful user interfaces. The canvas is 50000x50000 pixels. The user's viewport is centered at (${centerX}, ${centerY}).
 
 DESIGN APPROACH:
@@ -121,24 +119,19 @@ Be enthusiastic and explain your design decisions!`
                 }
             };
 
-            console.log('📍 [Session Update] Sending update to OpenAI');
             dataChannelRef.current.send(JSON.stringify(sessionUpdatePayload));
         }
     }, [viewportCenter, canvasShapes, isConnected])
 
     // Handle function call from OpenAI - optimized for <50ms execution
     const handleFunctionCall = useCallback((callId: string, name: string, args: string) => {
-        console.log('⚡ [Executing Tool]', name, 'with args:', args);
-
         // Start performance monitoring
         performanceMonitor.startTimer(`voiceAgent_${name}`);
 
         try {
             // Fast path: parse and execute immediately
             const parsedArgs = JSON.parse(args);
-            console.log('🔍 [Parsed Args]', parsedArgs);
             const result = executeTool(name, parsedArgs);
-            console.log('✅ [Tool Result]', result);
 
             // Send response immediately if channel is ready
             const dc = dataChannelRef.current;
@@ -152,18 +145,11 @@ Be enthusiastic and explain your design decisions!`
                         output: JSON.stringify(result)
                     }
                 };
-                console.log('📤 [Sending Tool Response]', responsePayload);
                 dc.send(JSON.stringify(responsePayload));
-                console.log('✅ [Tool Response Sent]');
-            } else {
-                console.warn('⚠️ Data channel not ready:', dc?.readyState);
             }
 
             // End performance monitoring
-            const duration = performanceMonitor.endTimer(`voiceAgent_${name}`);
-            if (duration !== null) {
-                console.log(`⚡ Tool ${name} executed in ${duration.toFixed(2)}ms`);
-            }
+            performanceMonitor.endTimer(`voiceAgent_${name}`);
 
             // Command processing complete
             setIsProcessingCommand(false);
@@ -220,18 +206,14 @@ Be enthusiastic and explain your design decisions!`
         }
 
         if (isConnected) {
-            console.log('🛑 Disconnecting...');
             handleDisconnect();
             return;
         }
-
-        console.log('🚀 Starting voice assistant...');
         setIsLoading(true);
         setError(null);
 
         try {
             const { relayUrl } = await getVoiceRelayUrl();
-            console.log('✅ Relay URL obtained');
 
             // Create audio context for visualization
             const ctx = new AudioContext();
@@ -245,7 +227,6 @@ Be enthusiastic and explain your design decisions!`
             const audioEl = audioElementRef.current;
             if (audioEl) {
                 pc.ontrack = (e) => {
-                    console.log('🎵 Received remote audio track');
                     audioEl.srcObject = e.streams[0];
 
                     // Set up agent audio analyser
@@ -279,17 +260,13 @@ Be enthusiastic and explain your design decisions!`
             dataChannelRef.current = dc;
 
             dc.addEventListener('open', () => {
-                console.log('🔌 Data channel opened');
                 setIsConnected(true);
                 setIsLoading(false);
 
                 // Send session update to configure the session with tools
                 const centerX = viewportCenter?.x ?? 25000
                 const centerY = viewportCenter?.y ?? 25000
-                const shapeContext = generateShapeContext(canvasShapes)
-
-                console.log('📍 [Session Setup] Viewport center:', { centerX, centerY });
-                console.log('📍 [Session Setup] Canvas shapes count:', canvasShapes.length);
+                const shapeContext = generateShapeContext(canvasShapes);
 
                 const instructions = `You are a professional Figma designer AI creating beautiful user interfaces. The canvas is 50000x50000 pixels. The user's viewport is centered at (${Math.round(centerX)}, ${Math.round(centerY)}).
 
@@ -325,27 +302,13 @@ Be enthusiastic and explain your design decisions!`
                         instructions
                     }
                 };
-                console.log('📨 [Session Setup] Sending session update with tools:', tools.length);
-                console.log('📨 [Session Setup] Full session config:', sessionUpdatePayload);
                 dc.send(JSON.stringify(sessionUpdatePayload));
-                console.log('✅ [Session Setup] Session update sent successfully');
             });
 
             dc.addEventListener('message', (e) => {
                 try {
                     const event = JSON.parse(e.data);
                     const eventType = event.type;
-
-                    // Log all relevant events for debugging
-                    if (![
-                        'input_audio_buffer.speech_started',
-                        'input_audio_buffer.speech_stopped',
-                        'response.audio.delta',
-                        'input_audio_buffer.committed',
-                        'input_audio_buffer.append'
-                    ].includes(eventType)) {
-                        console.log('🎙️ [Voice Event]', eventType, event);
-                    }
 
                     // Fast path: handle most common events with minimal processing
                     switch (eventType) {
@@ -354,20 +317,13 @@ Be enthusiastic and explain your design decisions!`
                             return;
 
                         case 'response.audio_transcript.delta':
-                            if (event.delta) {
-                                console.log('🗣️ [AI Speaking]', event.delta);
-                            }
                             setIsSpeaking(true);
                             return;
 
                         case 'response.text.delta':
-                            if (event.delta) {
-                                console.log('📝 [AI Text]', event.delta);
-                            }
                             return;
 
                         case 'response.done':
-                            console.log('🏁 [Response Complete]', event.response);
                             setIsSpeaking(false);
                             return;
 
@@ -376,24 +332,19 @@ Be enthusiastic and explain your design decisions!`
                             return;
 
                         case 'input_audio_buffer.speech_started':
-                            console.log('🎤 [User Started Speaking]');
                             return;
 
                         case 'input_audio_buffer.speech_stopped':
-                            console.log('🎤 [User Stopped Speaking]');
                             return;
 
                         case 'session.updated':
-                            console.log('✅ Session updated');
                             return;
 
                         case 'conversation.item.created':
-                            console.log('💭 [Conversation Item Created]', event.item);
                             return;
 
                         case 'response.output_item.added':
                             if (event.item?.type === 'function_call') {
-                                console.log('🔧 [Function Call Started]', event.item.name);
                                 pendingToolCallRef.current = {
                                     call_id: event.item.call_id || '',
                                     name: event.item.name || '',
@@ -401,9 +352,6 @@ Be enthusiastic and explain your design decisions!`
                                 };
                                 // Show loading spinner when command starts
                                 setIsProcessingCommand(true);
-                            }
-                            if (event.item?.type === 'message') {
-                                console.log('💬 [AI Message]', event.item);
                             }
                             return;
 
@@ -425,11 +373,6 @@ Be enthusiastic and explain your design decisions!`
                             // Execute immediately
                             const toolCall = pendingToolCallRef.current;
                             if (toolCall?.name && toolCall.call_id && !executedCallIdsRef.current.has(toolCall.call_id)) {
-                                console.log('📦 [Function Call Complete]', {
-                                    name: toolCall.name,
-                                    arguments: toolCall.arguments,
-                                    parsedArgs: JSON.parse(toolCall.arguments)
-                                });
                                 handleFunctionCall(toolCall.call_id, toolCall.name, toolCall.arguments);
                                 executedCallIdsRef.current.add(toolCall.call_id);
                                 pendingToolCallRef.current = null;
@@ -449,29 +392,25 @@ Be enthusiastic and explain your design decisions!`
                             return;
 
                         case 'response.created':
-                            console.log('🚀 [Response Created]', event.response);
                             return;
 
                         case 'error':
-                            console.error('❌ [OpenAI Error]', event.error);
-                            console.error('❌ [Full Error Event]', event);
                             return;
 
                         default:
-                            console.log('📥 [Other Event]', eventType);
+                            // Other event type
+                            break;
                     }
                 } catch (err) {
-                    console.error('❌ Parse error:', err);
+                    // Parse error handled silently
                 }
             })
 
             dc.addEventListener('close', () => {
-                console.log('🔌 Data channel closed');
                 handleDisconnect();
             });
 
             dc.addEventListener('error', (e) => {
-                console.error('❌ Data channel error:', e);
                 setError('Connection error occurred');
                 handleDisconnect();
             });
@@ -494,7 +433,6 @@ Be enthusiastic and explain your design decisions!`
 
             if (!sdpResponse.ok) {
                 const errorText = await sdpResponse.text();
-                console.error('❌ Failed to connect:', sdpResponse.status, errorText);
                 throw new Error(`Failed to connect to OpenAI: ${sdpResponse.statusText}`);
             }
 
@@ -503,9 +441,7 @@ Be enthusiastic and explain your design decisions!`
                 type: 'answer',
                 sdp: answerSdp,
             });
-            console.log('🎉 Voice assistant ready and connected!');
         } catch (err) {
-            console.error('❌ Connection error:', err);
             setError(err instanceof Error ? err.message : 'Failed to start voice assistant');
             handleDisconnect();
             setIsLoading(false);

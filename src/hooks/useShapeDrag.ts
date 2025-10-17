@@ -1,4 +1,4 @@
-import { useCallback } from 'react'
+import { useCallback, useRef } from 'react'
 import type { Shape, ActiveUser } from '../types/canvas'
 import { CANVAS_WIDTH, CANVAS_HEIGHT, DEFAULT_SHAPE_SIZE } from '../types/canvas'
 
@@ -6,6 +6,8 @@ interface HistoryEntry {
   undo: any
   redo: any
   label: string
+  timestamp?: number
+  source?: 'user' | 'agent'
 }
 
 interface UseShapeDragProps {
@@ -59,7 +61,7 @@ export function useShapeDrag({
   showToast,
   sendMessage,
 }: UseShapeDragProps) {
-  
+
   const flushPendingDragUpdates = useCallback(() => {
     dragFrameScheduledRef.current = false
     const pending = pendingDragUpdatesRef.current
@@ -71,8 +73,14 @@ export function useShapeDrag({
     pending.clear()
   }, [dragFrameScheduledRef, pendingDragUpdatesRef, setShapes])
 
+  // Track when drag actions start for accurate history timestamps
+  const dragStartTimeRef = useRef<number>(0)
+
   const handleShapeDragStart = useCallback((id: string) => {
     if (!wsRef.current) return
+
+    // Capture the timestamp when the drag actually starts
+    dragStartTimeRef.current = Date.now()
 
     // Check if the shape is locked by another user
     const shape = shapesRef.current.find(s => s.id === id)
@@ -367,12 +375,14 @@ export function useShapeDrag({
         dragBaselineRef.current.delete(shape.id)
       })
 
-      // Add multi-shape move to history
+      // Add multi-shape move to history with timestamp from when drag started
       if (undoMessages.length > 0) {
         pushHistory({
           undo: undoMessages,
           redo: redoMessages,
           label: `Move ${selectedShapes.length} shapes`,
+          timestamp: dragStartTimeRef.current,
+          source: 'user'
         })
       }
 
@@ -417,6 +427,8 @@ export function useShapeDrag({
             undo: { type: 'SHAPE_UPDATE', payload: { shapeId: id, updates: { x: base.x, y: base.y } } },
             redo: { type: 'SHAPE_UPDATE', payload: { shapeId: id, updates: { x: finalPos.x, y: finalPos.y } } },
             label: 'Move shape',
+            timestamp: dragStartTimeRef.current,
+            source: 'user'
           })
         }
       }

@@ -1,10 +1,12 @@
-import { useCallback } from 'react'
+import { useCallback, useRef } from 'react'
 import type { Shape } from '../types/canvas'
 
 interface HistoryEntry {
   undo: any
   redo: any
   label: string
+  timestamp?: number
+  source?: 'user' | 'agent'
 }
 
 interface UseShapeRotationProps {
@@ -44,7 +46,10 @@ export function useShapeRotation({
   pushHistory,
   sendMessage,
 }: UseShapeRotationProps) {
-  
+
+  // Track when rotation actions start for accurate history timestamps
+  const rotationStartTimeRef = useRef<number>(0)
+
   const flushPendingRotationUpdates = useCallback(() => {
     rotationFrameScheduledRef.current = false
     const pending = pendingRotationUpdatesRef.current
@@ -76,6 +81,10 @@ export function useShapeRotation({
 
   const handleRotateStart = useCallback((id: string) => {
     if (!wsRef.current) return
+
+    // Capture the timestamp when the rotation actually starts
+    rotationStartTimeRef.current = Date.now()
+
     // Select and lock immediately
     if (!selectedIdsRef.current.includes(id)) {
       selectedIdsRef.current.forEach(sid => unlockShape(sid))
@@ -153,6 +162,8 @@ export function useShapeRotation({
           undo: { type: 'SHAPE_UPDATE', payload: { shapeId: id, updates: { rotation: base } } },
           redo: { type: 'SHAPE_UPDATE', payload: { shapeId: id, updates: { rotation: finalRotation } } },
           label: 'Rotate shape',
+          timestamp: rotationStartTimeRef.current,
+          source: 'user'
         })
       }
     }

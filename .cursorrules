@@ -7,3 +7,6 @@ Always ask before:
 - Running commands with --prod or --production flags
 - Pushing to git repositories
 - Deploying to hosting services
+
+Important:
+- Always use useMemo, useCallback, etc.

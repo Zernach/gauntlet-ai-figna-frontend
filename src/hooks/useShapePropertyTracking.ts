@@ -6,12 +6,15 @@ type PendingPropChange = {
     initial: any
     latest: any
     timer: number | null
+    startTimestamp: number  // When the user first started changing this property
 }
 
 interface HistoryEntry {
     undo: { type: string; payload?: any } | { type: string; payload?: any }[]
     redo: { type: string; payload?: any } | { type: string; payload?: any }[]
     label?: string
+    timestamp?: number
+    source?: 'user' | 'agent'
 }
 
 interface UseShapePropertyTrackingProps {
@@ -51,6 +54,8 @@ export function useShapePropertyTracking({ shapes, pushHistory }: UseShapeProper
                 }
             },
             label: `Change ${pending.prop}`,
+            timestamp: pending.startTimestamp,  // Use the timestamp when user first started changing
+            source: 'user'
         })
     }, [pushHistory])
 
@@ -68,6 +73,7 @@ export function useShapePropertyTracking({ shapes, pushHistory }: UseShapeProper
             if (existing.timer != null) window.clearTimeout(existing.timer)
             existing.timer = window.setTimeout(() => finalizePropChange(key), debounceMs)
             pendingPropChangesRef.current.set(key, existing)
+            // Keep the original startTimestamp from when user first started changing
             return
         }
 
@@ -78,7 +84,8 @@ export function useShapePropertyTracking({ shapes, pushHistory }: UseShapeProper
             prop,
             initial,
             latest: nextValue,
-            timer: window.setTimeout(() => finalizePropChange(key), debounceMs)
+            timer: window.setTimeout(() => finalizePropChange(key), debounceMs),
+            startTimestamp: Date.now()  // Capture when the user first started changing this property
         }
         pendingPropChangesRef.current.set(key, created)
     }, [finalizePropChange])

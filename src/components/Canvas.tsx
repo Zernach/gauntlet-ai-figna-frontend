@@ -103,18 +103,7 @@ export default function Canvas({ onToolsReady, onViewportCenterChange, onCanvasS
 
   // Log connection state changes for debugging
   useEffect(() => {
-    const stateEmoji = {
-      'connected': '🟢',
-      'connecting': '🔵',
-      'reconnecting': '🟡',
-      'disconnected': '🔴'
-    }[connectionState] || '⚪'
-
-    console.log(`${stateEmoji} [Canvas] Connection state changed to: ${connectionState.toUpperCase()}`)
-    console.log(`   Navigator online: ${navigator.onLine}`)
-    console.log(`   WebSocket readyState: ${wsRef.current?.readyState ?? 'null'} (0=CONNECTING, 1=OPEN, 2=CLOSING, 3=CLOSED)`)
-    console.log(`   Reconnect attempts: ${reconnectAttempts} (continuous every ${reconnectDelay}ms)`)
-    console.log(`   Queued operations: ${operationQueueRef.current.length}`)
+    // Connection state monitoring removed
   }, [connectionState, reconnectAttempts, reconnectDelay])
 
   const {
@@ -140,6 +129,7 @@ export default function Canvas({ onToolsReady, onViewportCenterChange, onCanvasS
     handleCanvasContextMenu,
   } = useContextMenu({ stageRef })
   const cursorThrottleRef = useRef<number>(0)
+  const lastCursorActivityRef = useRef<number>(Date.now())
   const dragThrottleRef = useRef<number>(0)
   const dragPositionRef = useRef<{ shapeId: string; x: number; y: number } | null>(null)
   const isDraggingShapeRef = useRef<boolean>(false)
@@ -260,6 +250,7 @@ export default function Canvas({ onToolsReady, onViewportCenterChange, onCanvasS
     currentUserIdRef,
     activeUsers,
     isDragMoveRef,
+    lastCursorActivityRef,
     showToast,
     sendMessage,
     unlockShape
@@ -565,12 +556,10 @@ export default function Canvas({ onToolsReady, onViewportCenterChange, onCanvasS
   useEffect(() => {
     // Wait for canvas management to load canvases
     if (isLoadingCanvases) {
-      console.log('⏳ [Canvas] Waiting for canvases to load...')
       return
     }
 
     if (!managedCanvasId) {
-      console.error('❌ [Canvas] No canvas ID available after loading. User may have no canvases.')
       return
     }
 
@@ -578,8 +567,6 @@ export default function Canvas({ onToolsReady, onViewportCenterChange, onCanvasS
     if (hasInitializedRef.current) {
       return
     }
-
-    console.log('🚀 [Canvas] Initial initialization with canvas ID:', managedCanvasId)
     hasInitializedRef.current = true
 
     initializeCanvas((_loadedCanvasId, token, userId, userEmail) => {
@@ -636,7 +623,6 @@ export default function Canvas({ onToolsReady, onViewportCenterChange, onCanvasS
     // If the managed canvas ID changed, update local state
     // (The actual switch happens via SWITCH_CANVAS WebSocket message in handleSwitchCanvas)
     if (canvasIdRef.current !== managedCanvasId) {
-      console.log('🔄 [Canvas] Canvas ID changed to:', managedCanvasId, '(using existing WebSocket connection)')
       setCanvasId(managedCanvasId)
       canvasIdRef.current = managedCanvasId
     }
@@ -645,7 +631,6 @@ export default function Canvas({ onToolsReady, onViewportCenterChange, onCanvasS
   // Cleanup WebSocket on component unmount only
   useEffect(() => {
     return () => {
-      console.log('🔌 [Canvas] Component unmounting, closing WebSocket')
       if (wsRef.current) {
         wsRef.current.close()
       }
@@ -679,10 +664,7 @@ export default function Canvas({ onToolsReady, onViewportCenterChange, onCanvasS
   }, [deleteCanvasAPI, showToast])
 
   const handleSwitchCanvas = useCallback(async (targetCanvasId: string) => {
-    console.log(`🎨 [Canvas] handleSwitchCanvas called for: ${targetCanvasId}`)
-
     // Clear local state BEFORE switching to prevent showing stale data
-    console.log('🧹 [Canvas] Clearing local state before switch')
     setShapes([])
     setCursors(new Map())
     setActiveUsers([])
@@ -691,7 +673,6 @@ export default function Canvas({ onToolsReady, onViewportCenterChange, onCanvasS
     const success = await switchCanvasAPI(targetCanvasId, wsRef, () => {
       // On successful switch, just update refs and show confirmation
       // The canvas state has already been rehydrated by the CANVAS_SYNC message from the server
-      console.log('✅ [Canvas] Canvas switch confirmed')
       setCanvasId(targetCanvasId)
       canvasIdRef.current = targetCanvasId
       showToast('Switched canvas', 'success')
@@ -844,23 +825,25 @@ export default function Canvas({ onToolsReady, onViewportCenterChange, onCanvasS
   // These handlers will be used by the control panel
   const handleZoomIn = useCallback(() => {
     const newScale = Math.min(stageScale * 1.2, 3)
-    // Use the current screen position of the canvas center as the anchor
+    // Use the viewport center as the anchor point
+    // This keeps whatever is at the center of the screen fixed during zoom
     const anchor = {
-      x: stagePos.x + (CANVAS_WIDTH / 2) * stageScale,
-      y: stagePos.y + (CANVAS_HEIGHT / 2) * stageScale
+      x: viewportWidth / 2,
+      y: viewportHeight / 2
     }
     animateZoomTo(newScale, anchor, 200)
-  }, [animateZoomTo, stageScale, stagePos, viewportWidth, viewportHeight])
+  }, [animateZoomTo, stageScale, viewportWidth, viewportHeight])
 
   const handleZoomOut = useCallback(() => {
     const newScale = Math.max(stageScale / 1.2, 0.1)
-    // Use the current screen position of the canvas center as the anchor
+    // Use the viewport center as the anchor point
+    // This keeps whatever is at the center of the screen fixed during zoom
     const anchor = {
-      x: stagePos.x + (CANVAS_WIDTH / 2) * stageScale,
-      y: stagePos.y + (CANVAS_HEIGHT / 2) * stageScale
+      x: viewportWidth / 2,
+      y: viewportHeight / 2
     }
     animateZoomTo(newScale, anchor, 200)
-  }, [animateZoomTo, stageScale, stagePos, viewportWidth, viewportHeight])
+  }, [animateZoomTo, stageScale, viewportWidth, viewportHeight])
 
   const handleResetView = useCallback(() => {
     // Center the canvas at 100% zoom
@@ -910,6 +893,7 @@ export default function Canvas({ onToolsReady, onViewportCenterChange, onCanvasS
     isDraggingShapeRef,
     justFinishedMultiDragRef,
     cursorThrottleRef,
+    lastCursorActivityRef,
     viewportWidth,
     viewportHeight,
     isDrawingLasso,
@@ -1233,6 +1217,15 @@ export default function Canvas({ onToolsReady, onViewportCenterChange, onCanvasS
           onDuplicate={handleDuplicate}
           onDelete={handleContextMenuDelete}
           hasPasteData={clipboard.length > 0}
+          canvasBgHex={canvasBgHex}
+          onChangeCanvasBg={(hex) => {
+            setCanvasBgHex(hex)
+            sendMessage({
+              type: 'CANVAS_UPDATE',
+              payload: { updates: { backgroundColor: hex } }
+            })
+            recordCanvasBgChange(hex)
+          }}
         />
       )}
 

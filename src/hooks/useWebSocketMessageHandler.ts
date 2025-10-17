@@ -58,11 +58,6 @@ export function useWebSocketMessageHandler({
     switch (message.type) {
       case 'CANVAS_SYNC':
         // Initial sync with all shapes and users
-        console.log('📥 [WS Handler] Processing CANVAS_SYNC:', {
-          shapesCount: message.payload.shapes?.length || 0,
-          activeUsersCount: message.payload.activeUsers?.length || 0,
-          hasCanvas: !!message.payload.canvas
-        })
         if (message.payload.shapes) {
           setShapes((message.payload.shapes as any[]).map(normalizeShape))
         }
@@ -87,7 +82,6 @@ export function useWebSocketMessageHandler({
             setCurrentUserColor(currentUserData.color)
           }
         }
-        console.log('✅ [WS Handler] CANVAS_SYNC processing complete')
         break
 
       case 'CANVAS_UPDATE':
@@ -347,7 +341,6 @@ export function useWebSocketMessageHandler({
 
       case 'CANVAS_SWITCHED':
         // Canvas switch completed - notify callback
-        console.log('🔄 [WS Handler] CANVAS_SWITCHED received:', message.payload)
         if (onCanvasSwitched) {
           onCanvasSwitched(message.payload)
         }

@@ -53,7 +53,6 @@ export class SecureWebSocket {
             this.ws = new WebSocket(wsUrl, protocols)
 
             this.ws.onopen = () => {
-                console.log('✅ Secure WebSocket connected')
                 this.reconnectAttempts = 0
                 this.reconnectDelay = 1000
                 this.isIntentionallyClosed = false
@@ -65,17 +64,15 @@ export class SecureWebSocket {
                     const message = JSON.parse(event.data)
                     this.options.onMessage?.(message)
                 } catch (error) {
-                    console.error('Failed to parse WebSocket message:', error)
+                    // Error parsing message
                 }
             }
 
             this.ws.onerror = (error) => {
-                console.error('WebSocket error:', error)
                 this.options.onError?.(error)
             }
 
             this.ws.onclose = () => {
-                console.log('WebSocket closed')
                 this.options.onClose?.()
 
                 // Auto-reconnect if enabled and not intentionally closed
@@ -84,7 +81,6 @@ export class SecureWebSocket {
                 }
             }
         } catch (error) {
-            console.error('Failed to connect to WebSocket:', error)
             throw error
         }
     }
@@ -94,18 +90,15 @@ export class SecureWebSocket {
      */
     private handleReconnect(): void {
         if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-            console.error('Max reconnection attempts reached')
             return
         }
 
         this.reconnectAttempts++
         const delay = this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1) // Exponential backoff
 
-        console.log(`Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`)
-
         setTimeout(() => {
             this.connect().catch((error) => {
-                console.error('Reconnection failed:', error)
+                // Reconnection failed
             })
         }, delay)
     }

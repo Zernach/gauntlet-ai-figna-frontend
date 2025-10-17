@@ -40,34 +40,23 @@ export function useShapeManagement({
 
     // Handle shape creation (generic version for voice and UI) - now supports arrays
     const createShapes = useCallback((shapesData: any[]) => {
-        console.log('🎨 [Canvas] createShapes called with:', shapesData.length, 'shape(s)')
-
         // Check WebSocket connection
         if (!wsRef.current) {
-            console.error('❌ [Canvas] Cannot create shapes - WebSocket not connected')
             showToast('Cannot create shape: Not connected to server', 'error')
             return
         }
 
         // Check canvas ID
         if (!canvasIdRef.current) {
-            console.error('❌ [Canvas] Cannot create shapes - No canvas ID available')
             showToast('Cannot create shape: No canvas selected', 'error')
             return
         }
 
         // Check user ID
         if (!currentUserIdRef.current) {
-            console.error('❌ [Canvas] Cannot create shapes - No user ID available')
             showToast('Cannot create shape: Not authenticated', 'error')
             return
         }
-
-        console.log('✅ [Canvas] Prerequisites met:', {
-            wsState: wsRef.current.readyState,
-            canvasId: canvasIdRef.current,
-            userId: currentUserIdRef.current
-        })
 
         // Sort shapes by z-index (lowest first) to ensure proper rendering order
         // Shapes without z-index will be treated as z-index 0
@@ -76,21 +65,12 @@ export function useShapeManagement({
             const zIndexB = b.zIndex !== undefined ? b.zIndex : 0
             return zIndexA - zIndexB
         })
-        console.log('🔢 [Canvas] Sorted shapes by z-index:', sortedShapesData.map((s, i) => ({
-            index: i,
-            type: s.type,
-            zIndex: s.zIndex !== undefined ? s.zIndex : 0
-        })))
 
         // Process each shape in the array (now sorted by z-index)
         sortedShapesData.forEach((shapeData, index) => {
-            console.log(`🎨 [Canvas] Processing shape ${index + 1}/${sortedShapesData.length}:`, shapeData)
-
             // Ensure coordinates are within canvas boundaries
             let x = shapeData.x !== undefined ? shapeData.x : -stagePos.x / stageScale + (viewportWidth / 2) / stageScale
             let y = shapeData.y !== undefined ? shapeData.y : -stagePos.y / stageScale + (viewportHeight / 2) / stageScale
-
-            console.log('📍 [Canvas] Coordinates for shape', index + 1, ':', { x, y })
 
             // Set default values based on shape type
             const defaults: any = {}
@@ -124,9 +104,6 @@ export function useShapeManagement({
             if (shapeData.opacity === undefined) defaults.opacity = 1
             if (shapeData.rotation === undefined) defaults.rotation = 0
 
-            console.log(`📍 [Canvas] Clamped coordinates for shape ${index + 1}:`, { x, y })
-            console.log(`🎨 [Canvas] Applied defaults for shape ${index + 1}:`, defaults)
-
             const finalShapeData = {
                 type: shapeData.type,
                 ...defaults,
@@ -135,23 +112,17 @@ export function useShapeManagement({
                 y,
             }
 
-            console.log(`📦 [Canvas] Final shape data for shape ${index + 1}:`, finalShapeData)
-            console.log(`📤 [Canvas] Sending SHAPE_CREATE message for shape ${index + 1} to canvas:`, canvasIdRef.current)
-
             try {
                 sendMessage({
                     type: 'SHAPE_CREATE',
                     payload: finalShapeData,
                 })
-                console.log(`✅ [Canvas] Shape ${index + 1} creation message sent successfully`)
             } catch (error) {
-                console.error(`❌ [Canvas] Failed to send shape ${index + 1} creation message:`, error)
                 showToast(`Failed to create shape ${index + 1}`, 'error')
             }
         })
 
         showToast(`${sortedShapesData.length} shape(s) created!`, 'success', 2000)
-        console.log(`✅ [Canvas] All ${sortedShapesData.length} shape creation message(s) sent`)
     }, [stagePos, stageScale, showToast, viewportWidth, viewportHeight, sendMessage, wsRef, canvasIdRef, currentUserIdRef])
 
     // Handle shape creation from UI (rectangle button)
@@ -213,6 +184,7 @@ export function useShapeManagement({
         }
 
         const currentText = (s as any).textContent ?? (s as any).text_content ?? ''
+        const editStartTime = Date.now()  // Capture when user starts editing
         const newText = window.prompt('Edit text', String(currentText))
         if (newText == null) return
 
@@ -222,6 +194,8 @@ export function useShapeManagement({
                     undo: { type: 'SHAPE_UPDATE', payload: { shapeId: id, updates: { textContent: currentText } } },
                     redo: { type: 'SHAPE_UPDATE', payload: { shapeId: id, updates: { textContent: newText } } },
                     label: 'Edit text',
+                    timestamp: editStartTime,
+                    source: 'user'
                 })
             }
             sendMessage({

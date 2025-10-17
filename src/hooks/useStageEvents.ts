@@ -8,6 +8,7 @@ interface UseStageEventsProps {
   isDraggingShapeRef: React.MutableRefObject<boolean>
   justFinishedMultiDragRef: React.MutableRefObject<boolean>
   cursorThrottleRef: React.MutableRefObject<number>
+  lastCursorActivityRef: React.MutableRefObject<number>
   viewportWidth: number
   viewportHeight: number
   isDrawingLasso: boolean
@@ -31,6 +32,7 @@ export function useStageEvents({
   isDraggingShapeRef,
   justFinishedMultiDragRef,
   cursorThrottleRef,
+  lastCursorActivityRef,
   viewportWidth,
   viewportHeight,
   isDrawingLasso,
@@ -86,6 +88,9 @@ export function useStageEvents({
     const x = (pointerPos.x - stage.x()) / stage.scaleX()
     const y = (pointerPos.y - stage.y()) / stage.scaleY()
 
+    // Track cursor activity timestamp
+    lastCursorActivityRef.current = Date.now()
+
     // Throttle cursor updates to achieve sub-50ms target (25ms = 40 FPS)
     const now = Date.now()
     if (now - cursorThrottleRef.current > 25) {
@@ -96,7 +101,7 @@ export function useStageEvents({
         payload: { x, y },
       } as any)
     }
-  }, [wsRef, cursorThrottleRef, sendMessage])
+  }, [wsRef, cursorThrottleRef, lastCursorActivityRef, sendMessage])
 
   const handleWheel = useCallback((e: any) => {
     e.evt.preventDefault()
@@ -110,15 +115,11 @@ export function useStageEvents({
     let newScale = direction > 0 ? oldScale * scaleBy : oldScale / scaleBy
     newScale = Math.max(0.1, Math.min(3, newScale))
 
-    // Use the current screen position of the canvas center as the anchor
-    // This keeps the canvas center fixed during zoom
-    const CANVAS_WIDTH = 4000
-    const CANVAS_HEIGHT = 3000
-    const stageX = stage.x()
-    const stageY = stage.y()
+    // Use the viewport center as the anchor point
+    // This keeps whatever is at the center of the screen fixed during zoom
     const anchor = {
-      x: stageX + (CANVAS_WIDTH / 2) * oldScale,
-      y: stageY + (CANVAS_HEIGHT / 2) * oldScale
+      x: viewportWidth / 2,
+      y: viewportHeight / 2
     }
     animateZoomTo(newScale, anchor, 150)
   }, [stageRef, viewportWidth, viewportHeight, animateZoomTo])
@@ -126,7 +127,10 @@ export function useStageEvents({
   const handleStageMouseDown = useCallback((e: any) => {
     // Check if shift/cmd is pressed or lasso mode is active
     const isLassoKey = e.evt?.shiftKey || e.evt?.metaKey
-    if ((lassoMode || isLassoKey) && e.target === e.target.getStage()) {
+    const targetId = e.target.attrs?.id
+    const isStageOrBackground = e.target === e.target.getStage() || targetId === 'canvas-background'
+
+    if ((lassoMode || isLassoKey) && isStageOrBackground) {
       const stage = e.target.getStage()
       const pos = stage.getPointerPosition()
       if (!pos) return

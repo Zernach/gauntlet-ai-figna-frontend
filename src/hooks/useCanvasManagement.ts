@@ -50,7 +50,6 @@ export function useCanvasManagement(): UseCanvasManagementReturn {
         try {
             const { data: { session } } = await supabase.auth.getSession()
             if (!session) {
-                console.error('No session found')
                 setIsLoadingCanvases(false)
                 return
             }
@@ -70,38 +69,27 @@ export function useCanvasManagement(): UseCanvasManagementReturn {
             }
 
             const result = await response.json()
-            console.log('📦 [Canvas Management] API Response:', result)
-            console.log('📦 [Canvas Management] result.data type:', typeof result.data, Array.isArray(result.data))
-            console.log('📦 [Canvas Management] result.data:', result.data)
 
             // Ensure we always have an array
             let fetchedCanvases = result.data || []
 
             // If result.data is an object instead of an array, wrap it in an array
             if (!Array.isArray(fetchedCanvases) && typeof fetchedCanvases === 'object') {
-                console.warn('⚠️ [Canvas Management] API returned object instead of array, wrapping...')
                 fetchedCanvases = [fetchedCanvases]
             }
 
-            console.log('📋 [Canvas Management] Fetched canvases:', fetchedCanvases.length, fetchedCanvases)
             setCanvases(fetchedCanvases)
 
             // If no current canvas is set and we have canvases, set the first one
             // Use functional update to avoid dependency on currentCanvasId
             setCurrentCanvasId(prevId => {
                 if (!prevId && fetchedCanvases.length > 0) {
-                    console.log('📍 [Canvas Management] Setting current canvas to:', fetchedCanvases[0].id)
                     return fetchedCanvases[0].id
                 }
                 return prevId
             })
-
-            if (fetchedCanvases.length === 0) {
-                console.error('⚠️ [Canvas Management] No canvases found! Backend should have created one.')
-                console.error('Response was:', result)
-            }
         } catch (error) {
-            console.error('❌ [Canvas Management] Error fetching canvases:', error)
+            // Error handled silently
         } finally {
             setIsLoadingCanvases(false)
         }
@@ -119,7 +107,6 @@ export function useCanvasManagement(): UseCanvasManagementReturn {
         try {
             const { data: { session } } = await supabase.auth.getSession()
             if (!session) {
-                console.error('No session found')
                 return null
             }
 
@@ -140,7 +127,6 @@ export function useCanvasManagement(): UseCanvasManagementReturn {
 
             if (!response.ok) {
                 const errorData = await response.json().catch(() => ({}))
-                console.error('Failed to create canvas:', errorData)
                 throw new Error(errorData.message || 'Failed to create canvas')
             }
 
@@ -152,7 +138,6 @@ export function useCanvasManagement(): UseCanvasManagementReturn {
 
             return newCanvas
         } catch (error) {
-            console.error('Error creating canvas:', error)
             return null
         } finally {
             setIsCreating(false)
@@ -167,7 +152,6 @@ export function useCanvasManagement(): UseCanvasManagementReturn {
         try {
             const { data: { session } } = await supabase.auth.getSession()
             if (!session) {
-                console.error('No session found')
                 return false
             }
 
@@ -182,7 +166,6 @@ export function useCanvasManagement(): UseCanvasManagementReturn {
 
             if (!response.ok) {
                 const error = await response.json()
-                console.error('Delete error:', error)
                 throw new Error(error.message || 'Failed to delete canvas')
             }
 
@@ -201,7 +184,6 @@ export function useCanvasManagement(): UseCanvasManagementReturn {
 
             return true
         } catch (error) {
-            console.error('Error deleting canvas:', error)
             return false
         } finally {
             setIsDeleting(false)
@@ -218,16 +200,12 @@ export function useCanvasManagement(): UseCanvasManagementReturn {
         onSuccess?: () => void
     ): Promise<boolean> => {
         if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
-            console.error('WebSocket not connected')
             return false
         }
 
         if (canvasId === currentCanvasId) {
-            console.log('Already on this canvas')
             return true
         }
-
-        console.log(`🔄 [Canvas Management] Switching from ${currentCanvasId} to ${canvasId}`)
         setIsSwitching(true)
 
         // Optimistically update the current canvas ID BEFORE sending WebSocket message
@@ -240,13 +218,11 @@ export function useCanvasManagement(): UseCanvasManagementReturn {
                 setIsSwitching(false)
 
                 if (success) {
-                    console.log('✅ Successfully switched to canvas:', canvasId)
                     if (onSuccess) {
                         onSuccess()
                     }
                     resolve(true)
                 } else {
-                    console.error('❌ Failed to switch canvas')
                     // Revert the optimistic update on failure
                     setCurrentCanvasId(currentCanvasId)
                     resolve(false)
@@ -265,7 +241,6 @@ export function useCanvasManagement(): UseCanvasManagementReturn {
             // Timeout after 10 seconds (increased from 5 for reliability)
             setTimeout(() => {
                 if (canvasSwitchResolverRef.current) {
-                    console.error('Canvas switch timeout')
                     canvasSwitchResolverRef.current(false)
                 }
             }, 10000)

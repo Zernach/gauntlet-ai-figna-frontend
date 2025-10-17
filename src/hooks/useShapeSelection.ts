@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 
 interface UseShapeSelectionProps {
     shapes: any[]
@@ -6,6 +6,7 @@ interface UseShapeSelectionProps {
     currentUserIdRef: React.MutableRefObject<string | null>
     activeUsers: any[]
     isDragMoveRef: React.MutableRefObject<boolean>
+    lastCursorActivityRef: React.MutableRefObject<number>
     showToast: (message: string, type?: 'info' | 'warning' | 'error' | 'success', duration?: number) => void
     sendMessage: (message: any) => void
     unlockShape: (shapeId: string) => void
@@ -17,6 +18,7 @@ export function useShapeSelection({
     currentUserIdRef,
     activeUsers,
     isDragMoveRef,
+    lastCursorActivityRef,
     showToast,
     sendMessage,
     unlockShape
@@ -195,6 +197,48 @@ export function useShapeSelection({
 
     // Keep selectedIdsRef in sync
     selectedIdsRef.current = selectedIds
+
+    // Automatically deselect shapes when their locks expire AND user is inactive
+    useEffect(() => {
+        if (selectedIds.length === 0) return
+
+        // Check every 100ms if any selected shapes should be deselected
+        const interval = setInterval(() => {
+            const now = Date.now()
+            const timeSinceLastCursorActivity = now - lastCursorActivityRef.current
+            const expiredSelections: string[] = []
+
+            selectedIds.forEach(selectedId => {
+                const shape = shapesRef.current.find(s => s.id === selectedId)
+                if (!shape) {
+                    // Shape no longer exists, mark for deselection
+                    expiredSelections.push(selectedId)
+                    return
+                }
+
+                // Check if this is a shape locked by the current user
+                if (shape.locked_at && shape.locked_by === currentUserIdRef.current) {
+                    const lockTime = new Date(shape.locked_at).getTime()
+                    const lockElapsed = (now - lockTime) / 1000
+
+                    // Only deselect if:
+                    // 1. Lock has expired (>= 10 seconds)
+                    // 2. User has been inactive (no cursor movement) for >= 5 seconds
+                    if (lockElapsed >= 10 && timeSinceLastCursorActivity >= 5000) {
+                        expiredSelections.push(selectedId)
+                    }
+                }
+            })
+
+            // If any selections have expired, deselect them
+            if (expiredSelections.length > 0) {
+                expiredSelections.forEach(id => unlockShape(id))
+                setSelectedIds(prev => prev.filter(id => !expiredSelections.includes(id)))
+            }
+        }, 100)
+
+        return () => clearInterval(interval)
+    }, [selectedIds, shapesRef, currentUserIdRef, lastCursorActivityRef, unlockShape, setSelectedIds])
 
     return {
         selectedIds,
