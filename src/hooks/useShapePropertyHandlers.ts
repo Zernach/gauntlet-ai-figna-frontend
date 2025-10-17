@@ -169,6 +169,56 @@ export function useShapePropertyHandlers({
     scheduleBatchUpdate(selectedId, { borderRadius: v }, 100)
   }, [selectedIds, recordPropChange, setShapes, wsRef, trackRecentlyModified, scheduleBatchUpdate])
 
+  const handleChangeX = useCallback((x: number) => {
+    const selectedId = selectedIds[0]
+    if (!selectedId || !wsRef.current) return
+    const v = Math.round(x)
+    setShapes(prev => prev.map(s => s.id === selectedId ? { ...s, x: v } : s))
+    trackRecentlyModified(selectedId, { x: v })
+    recordPropChange(selectedId, 'x', v)
+    scheduleBatchUpdate(selectedId, { x: v }, 100)
+  }, [selectedIds, recordPropChange, setShapes, wsRef, trackRecentlyModified, scheduleBatchUpdate])
+
+  const handleChangeY = useCallback((y: number) => {
+    const selectedId = selectedIds[0]
+    if (!selectedId || !wsRef.current) return
+    const v = Math.round(y)
+    setShapes(prev => prev.map(s => s.id === selectedId ? { ...s, y: v } : s))
+    trackRecentlyModified(selectedId, { y: v })
+    recordPropChange(selectedId, 'y', v)
+    scheduleBatchUpdate(selectedId, { y: v }, 100)
+  }, [selectedIds, recordPropChange, setShapes, wsRef, trackRecentlyModified, scheduleBatchUpdate])
+
+  const handleChangeWidth = useCallback((width: number) => {
+    const selectedId = selectedIds[0]
+    if (!selectedId || !wsRef.current) return
+    const v = Math.max(1, Math.round(width))
+    setShapes(prev => prev.map(s => s.id === selectedId ? { ...s, width: v } : s))
+    trackRecentlyModified(selectedId, { width: v })
+    recordPropChange(selectedId, 'width', v)
+    scheduleBatchUpdate(selectedId, { width: v }, 100)
+  }, [selectedIds, recordPropChange, setShapes, wsRef, trackRecentlyModified, scheduleBatchUpdate])
+
+  const handleChangeHeight = useCallback((height: number) => {
+    const selectedId = selectedIds[0]
+    if (!selectedId || !wsRef.current) return
+    const v = Math.max(1, Math.round(height))
+    setShapes(prev => prev.map(s => s.id === selectedId ? { ...s, height: v } : s))
+    trackRecentlyModified(selectedId, { height: v })
+    recordPropChange(selectedId, 'height', v)
+    scheduleBatchUpdate(selectedId, { height: v }, 100)
+  }, [selectedIds, recordPropChange, setShapes, wsRef, trackRecentlyModified, scheduleBatchUpdate])
+
+  const handleChangeRadius = useCallback((radius: number) => {
+    const selectedId = selectedIds[0]
+    if (!selectedId || !wsRef.current) return
+    const v = Math.max(1, Math.round(radius))
+    setShapes(prev => prev.map(s => s.id === selectedId ? { ...s, radius: v } : s))
+    trackRecentlyModified(selectedId, { radius: v })
+    recordPropChange(selectedId, 'radius', v)
+    scheduleBatchUpdate(selectedId, { radius: v }, 100)
+  }, [selectedIds, recordPropChange, setShapes, wsRef, trackRecentlyModified, scheduleBatchUpdate])
+
   return {
     handleChangeColor,
     handleChangeOpacity,
@@ -178,6 +228,11 @@ export function useShapePropertyHandlers({
     handleChangeBorderRadius,
     handleChangeFontFamily,
     handleChangeFontWeight,
+    handleChangeX,
+    handleChangeY,
+    handleChangeWidth,
+    handleChangeHeight,
+    handleChangeRadius,
   }
 }
 

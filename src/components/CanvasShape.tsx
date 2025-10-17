@@ -116,7 +116,7 @@ interface CanvasShapeProps {
     canResize?: boolean
     // isPanning removed: panning is always available via background drag
     remainingSeconds: number | null
-    onShapeClick: (id: string) => void
+    onShapeClick: (id: string, event?: any) => void
     onDragStart: (id: string) => void
     onDragMove: (id: string, x: number, y: number) => void
     onDragEnd: (id: string) => void
@@ -210,8 +210,8 @@ const CanvasShapeComponent = ({
                     shadowOffsetX={shape.shadowStrength ? 2 : 0}
                     shadowOffsetY={shape.shadowStrength ? 2 : 0}
                     shadowEnabled={true}
-                    onTap={() => isPressable && onShapeClick(shape.id)}
-                    onClick={() => isPressable && onShapeClick(shape.id)}
+                    onTap={(e) => isPressable && onShapeClick(shape.id, e)}
+                    onClick={(e) => isPressable && onShapeClick(shape.id, e)}
                     onContextMenu={(e) => onContextMenu && onContextMenu(e, shape.id)}
                     onDblClick={() => onTextDoubleClick && onTextDoubleClick(shape.id)}
                     onDblTap={() => onTextDoubleClick && onTextDoubleClick(shape.id)}
@@ -381,8 +381,8 @@ const CanvasShapeComponent = ({
                     shadowOffsetX={shape.shadowStrength ? 2 : 0}
                     shadowOffsetY={shape.shadowStrength ? 2 : 0}
                     shadowEnabled={true}
-                    onTap={() => isPressable && onShapeClick(shape.id)}
-                    onClick={() => isPressable && onShapeClick(shape.id)}
+                    onTap={(e) => isPressable && onShapeClick(shape.id, e)}
+                    onClick={(e) => isPressable && onShapeClick(shape.id, e)}
                     onContextMenu={(e) => onContextMenu && onContextMenu(e, shape.id)}
                     draggable={isDraggable}
                     onDragStart={() => onDragStart(shape.id)}
@@ -523,8 +523,8 @@ const CanvasShapeComponent = ({
                 shadowOffsetX={shape.shadowStrength ? 2 : 0}
                 shadowOffsetY={shape.shadowStrength ? 2 : 0}
                 shadowEnabled={true}
-                onTap={() => isPressable && onShapeClick(shape.id)}
-                onClick={() => isPressable && onShapeClick(shape.id)}
+                onTap={(e) => isPressable && onShapeClick(shape.id, e)}
+                onClick={(e) => isPressable && onShapeClick(shape.id, e)}
                 onContextMenu={(e) => onContextMenu && onContextMenu(e, shape.id)}
                 draggable={isDraggable}
                 onDragStart={() => onDragStart(shape.id)}

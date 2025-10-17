@@ -55,8 +55,8 @@ export function useShapeSelection({
             }
         }
 
-        // Check if this is a multi-select (shift/cmd key)
-        const isMultiSelect = event?.evt?.shiftKey || event?.evt?.metaKey
+        // Check if this is a multi-select (ctrl/cmd/shift key)
+        const isMultiSelect = event?.evt?.ctrlKey || event?.evt?.metaKey || event?.evt?.shiftKey
 
         if (isMultiSelect) {
             // Toggle selection

@@ -6,6 +6,11 @@ interface ShapeSelectionPanelProps {
         id: string
         type: string
         color: string
+        x: number
+        y: number
+        width?: number
+        height?: number
+        radius?: number
         rotation?: number
         opacity?: number
         shadowColor?: string
@@ -22,6 +27,11 @@ interface ShapeSelectionPanelProps {
     onChangeBorderRadius?: (borderRadius: number) => void
     onChangeFontFamily: (family: string) => void
     onChangeFontWeight: (weight: string) => void
+    onChangeX?: (x: number) => void
+    onChangeY?: (y: number) => void
+    onChangeWidth?: (width: number) => void
+    onChangeHeight?: (height: number) => void
+    onChangeRadius?: (radius: number) => void
     isDraggingOpacityRef?: React.MutableRefObject<boolean>
     isDraggingShadowStrengthRef?: React.MutableRefObject<boolean>
     isDraggingBorderRadiusRef?: React.MutableRefObject<boolean>
@@ -37,6 +47,11 @@ const ShapeSelectionPanel: React.FC<ShapeSelectionPanelProps> = ({
     onChangeBorderRadius,
     onChangeFontFamily,
     onChangeFontWeight,
+    onChangeX,
+    onChangeY,
+    onChangeWidth,
+    onChangeHeight,
+    onChangeRadius,
     isDraggingOpacityRef,
     isDraggingShadowStrengthRef,
     isDraggingBorderRadiusRef,
@@ -45,6 +60,11 @@ const ShapeSelectionPanel: React.FC<ShapeSelectionPanelProps> = ({
     const [opacityPct, setOpacityPct] = useState<number>(100)
     const [shadowStrength, setShadowStrength] = useState<number>(0)
     const [borderRadius, setBorderRadius] = useState<number>(0)
+    const [xInput, setXInput] = useState<string>('0')
+    const [yInput, setYInput] = useState<string>('0')
+    const [widthInput, setWidthInput] = useState<string>('0')
+    const [heightInput, setHeightInput] = useState<string>('0')
+    const [radiusInput, setRadiusInput] = useState<string>('0')
 
     // Track which sliders are currently being dragged
     const isDraggingOpacity = useRef<boolean>(false)
@@ -60,6 +80,11 @@ const ShapeSelectionPanel: React.FC<ShapeSelectionPanelProps> = ({
     const shapeId = selectedShape.id
     const shapeType = selectedShape.type
     const shapeColor = selectedShape.color
+    const shapeX = selectedShape.x
+    const shapeY = selectedShape.y
+    const shapeWidth = selectedShape.width
+    const shapeHeight = selectedShape.height
+    const shapeRadius = selectedShape.radius
     const shapeRotation = selectedShape.rotation ?? 0
     const shapeOpacity = selectedShape.opacity ?? 1
     const shapeShadowColor = selectedShape.shadowColor ?? '#1c1c1c'
@@ -70,6 +95,11 @@ const ShapeSelectionPanel: React.FC<ShapeSelectionPanelProps> = ({
 
     useEffect(() => {
         setRotationInput(String(Math.round(shapeRotation)))
+        setXInput(String(Math.round(shapeX)))
+        setYInput(String(Math.round(shapeY)))
+        if (shapeWidth !== undefined) setWidthInput(String(Math.round(shapeWidth)))
+        if (shapeHeight !== undefined) setHeightInput(String(Math.round(shapeHeight)))
+        if (shapeRadius !== undefined) setRadiusInput(String(Math.round(shapeRadius)))
 
         // Only update slider values if not actively dragging them or recently released
         if (!isDraggingOpacity.current) {
@@ -103,10 +133,11 @@ const ShapeSelectionPanel: React.FC<ShapeSelectionPanelProps> = ({
                 setBorderRadius(Math.max(0, Math.round(shapeBorderRadius)))
             }
         }
-    }, [shapeId, shapeRotation, shapeOpacity, shapeShadowStrength, shapeBorderRadius])
+    }, [shapeId, shapeRotation, shapeOpacity, shapeShadowStrength, shapeBorderRadius, shapeX, shapeY, shapeWidth, shapeHeight, shapeRadius])
 
     const isText = useMemo(() => shapeType === 'text', [shapeType])
     const isRectangle = useMemo(() => shapeType === 'rectangle', [shapeType])
+    const isCircle = useMemo(() => shapeType === 'circle', [shapeType])
 
     return (
         <div
@@ -126,6 +157,131 @@ const ShapeSelectionPanel: React.FC<ShapeSelectionPanelProps> = ({
             <div style={{ fontSize: '12px', fontWeight: 600, color: '#888', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>
                 Selection
             </div>
+
+            {/* Position */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '10px' }}>
+                <div style={{ fontSize: '12px', color: '#ccc', fontWeight: 600 }}>Position</div>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: 1 }}>
+                        <div style={{ fontSize: '12px', color: '#ccc', fontWeight: 600, minWidth: '15px' }}>X</div>
+                        <input
+                            type="number"
+                            value={xInput}
+                            onChange={(e) => {
+                                setXInput(e.target.value)
+                                const num = Number(e.target.value)
+                                if (!Number.isNaN(num) && onChangeX) onChangeX(num)
+                            }}
+                            style={{
+                                flex: 1,
+                                backgroundColor: '#333',
+                                color: '#fff',
+                                border: '1px solid #555',
+                                borderRadius: '4px',
+                                padding: '4px 8px',
+                                fontSize: '12px',
+                            }}
+                        />
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: 1 }}>
+                        <div style={{ fontSize: '12px', color: '#ccc', fontWeight: 600, minWidth: '15px' }}>Y</div>
+                        <input
+                            type="number"
+                            value={yInput}
+                            onChange={(e) => {
+                                setYInput(e.target.value)
+                                const num = Number(e.target.value)
+                                if (!Number.isNaN(num) && onChangeY) onChangeY(num)
+                            }}
+                            style={{
+                                flex: 1,
+                                backgroundColor: '#333',
+                                color: '#fff',
+                                border: '1px solid #555',
+                                borderRadius: '4px',
+                                padding: '4px 8px',
+                                fontSize: '12px',
+                            }}
+                        />
+                    </div>
+                </div>
+            </div>
+
+            {/* Dimensions - Width/Height for rectangles and text */}
+            {(isRectangle || isText) && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '10px' }}>
+                    <div style={{ fontSize: '12px', color: '#ccc', fontWeight: 600 }}>Dimensions</div>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: 1 }}>
+                            <div style={{ fontSize: '12px', color: '#ccc', fontWeight: 600, minWidth: '15px' }}>W</div>
+                            <input
+                                type="number"
+                                value={widthInput}
+                                onChange={(e) => {
+                                    setWidthInput(e.target.value)
+                                    const num = Number(e.target.value)
+                                    if (!Number.isNaN(num) && onChangeWidth) onChangeWidth(num)
+                                }}
+                                style={{
+                                    flex: 1,
+                                    backgroundColor: '#333',
+                                    color: '#fff',
+                                    border: '1px solid #555',
+                                    borderRadius: '4px',
+                                    padding: '4px 8px',
+                                    fontSize: '12px',
+                                }}
+                            />
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: 1 }}>
+                            <div style={{ fontSize: '12px', color: '#ccc', fontWeight: 600, minWidth: '15px' }}>H</div>
+                            <input
+                                type="number"
+                                value={heightInput}
+                                onChange={(e) => {
+                                    setHeightInput(e.target.value)
+                                    const num = Number(e.target.value)
+                                    if (!Number.isNaN(num) && onChangeHeight) onChangeHeight(num)
+                                }}
+                                style={{
+                                    flex: 1,
+                                    backgroundColor: '#333',
+                                    color: '#fff',
+                                    border: '1px solid #555',
+                                    borderRadius: '4px',
+                                    padding: '4px 8px',
+                                    fontSize: '12px',
+                                }}
+                            />
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Radius for circles */}
+            {isCircle && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
+                    <div style={{ fontSize: '12px', color: '#ccc', fontWeight: 600, minWidth: '70px' }}>Radius</div>
+                    <input
+                        type="number"
+                        value={radiusInput}
+                        onChange={(e) => {
+                            setRadiusInput(e.target.value)
+                            const num = Number(e.target.value)
+                            if (!Number.isNaN(num) && onChangeRadius) onChangeRadius(num)
+                        }}
+                        style={{
+                            flex: 1,
+                            backgroundColor: '#333',
+                            color: '#fff',
+                            border: '1px solid #555',
+                            borderRadius: '4px',
+                            padding: '4px 8px',
+                            fontSize: '12px',
+                        }}
+                    />
+                </div>
+            )}
 
             {/* Color */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
@@ -380,6 +536,11 @@ export default memo(ShapeSelectionPanel, (prevProps, nextProps) => {
         prevProps.selectedShape.id === nextProps.selectedShape.id &&
         prevProps.selectedShape.type === nextProps.selectedShape.type &&
         prevProps.selectedShape.color === nextProps.selectedShape.color &&
+        prevProps.selectedShape.x === nextProps.selectedShape.x &&
+        prevProps.selectedShape.y === nextProps.selectedShape.y &&
+        prevProps.selectedShape.width === nextProps.selectedShape.width &&
+        prevProps.selectedShape.height === nextProps.selectedShape.height &&
+        prevProps.selectedShape.radius === nextProps.selectedShape.radius &&
         prevProps.selectedShape.rotation === nextProps.selectedShape.rotation &&
         prevProps.selectedShape.opacity === nextProps.selectedShape.opacity &&
         prevProps.selectedShape.shadowColor === nextProps.selectedShape.shadowColor &&

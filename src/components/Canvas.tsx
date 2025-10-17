@@ -812,6 +812,11 @@ export default function Canvas({ onToolsReady, onViewportCenterChange, onCanvasS
     handleChangeBorderRadius,
     handleChangeFontFamily,
     handleChangeFontWeight,
+    handleChangeX,
+    handleChangeY,
+    handleChangeWidth,
+    handleChangeHeight,
+    handleChangeRadius,
   } = useShapePropertyHandlers({
     wsRef,
     selectedIds,
@@ -1307,6 +1312,11 @@ export default function Canvas({ onToolsReady, onViewportCenterChange, onCanvasS
             onChangeBorderRadius={handleChangeBorderRadius}
             onChangeFontFamily={handleChangeFontFamily}
             onChangeFontWeight={handleChangeFontWeight}
+            onChangeX={handleChangeX}
+            onChangeY={handleChangeY}
+            onChangeWidth={handleChangeWidth}
+            onChangeHeight={handleChangeHeight}
+            onChangeRadius={handleChangeRadius}
             isDraggingOpacityRef={isDraggingOpacityRef}
             isDraggingShadowStrengthRef={isDraggingShadowStrengthRef}
             isDraggingBorderRadiusRef={isDraggingBorderRadiusRef}

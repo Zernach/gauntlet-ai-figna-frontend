@@ -26,7 +26,7 @@ interface CanvasLayersProps {
   lassoEnd: { x: number; y: number } | null
   activeUsers: any[]
   currentUserId: string | null
-  onShapeClick: (id: string) => void
+  onShapeClick: (id: string, event?: any) => void
   onDragStart: (shapeId: string) => void
   onDragMove: (shapeId: string, x: number, y: number) => void
   onDragEnd: (shapeId: string) => void
