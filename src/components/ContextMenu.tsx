@@ -8,7 +8,8 @@ import {
     Scissors,
     Clipboard,
     CopyPlus,
-    Palette
+    Palette,
+    Trash2
 } from 'lucide-react'
 
 interface ContextMenuProps {
@@ -24,6 +25,7 @@ interface ContextMenuProps {
     onCut?: () => void
     onPaste: () => void
     onDuplicate?: () => void
+    onDelete?: () => void
     onChangeCanvasColor?: () => void
     hasPasteData: boolean
 }
@@ -100,6 +102,7 @@ const ContextMenu: React.FC<ContextMenuProps> = ({
     onCut,
     onPaste,
     onDuplicate,
+    onDelete,
     onChangeCanvasColor,
     hasPasteData
 }) => {
@@ -226,6 +229,11 @@ const ContextMenu: React.FC<ContextMenuProps> = ({
                         icon={<CopyPlus size={16} />}
                         label="Duplicate"
                         onClick={handleAction(onDuplicate!)}
+                    />
+                    <MenuItem
+                        icon={<Trash2 size={16} />}
+                        label="Delete"
+                        onClick={handleAction(onDelete!)}
                     />
                 </>
             ) : (

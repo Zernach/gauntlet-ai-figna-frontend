@@ -12,6 +12,7 @@ import PresencePanel from './PresencePanel'
 import CanvasBackgroundPanel from './CanvasBackgroundPanel'
 import CanvasLayers from './CanvasLayers'
 import Minimap from './Minimap'
+import LayersSidebar from './LayersSidebar'
 
 // Import types and constants
 import type { Shape, Cursor, ActiveUser } from '../types/canvas'
@@ -44,6 +45,7 @@ import { useWebSocketMessageHandler } from '../hooks/useWebSocketMessageHandler'
 import { useCanvasHistory } from '../hooks/useCanvasHistory'
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts'
 import { useAgenticTools } from '../hooks/useAgenticTools'
+import { useCanvasManagement } from '../hooks/useCanvasManagement'
 
 interface CanvasProps {
   onToolsReady?: (tools: any) => void
@@ -70,6 +72,23 @@ export default function Canvas({ onToolsReady, onViewportCenterChange, onCanvasS
 
   // Custom hooks for extracted logic
   const { toasts, showToast, dismissToast } = useToast()
+
+  // Canvas management hook - must be before other hooks that depend on canvasId
+  const {
+    canvases,
+    currentCanvasId: managedCanvasId,
+    isLoadingCanvases,
+    isCreating,
+    // isDeleting, // Not currently used
+    isSwitching,
+    // fetchCanvases, // Not currently used - auto-fetched on mount
+    createCanvas: createCanvasAPI,
+    deleteCanvas: deleteCanvasAPI,
+    switchCanvas: switchCanvasAPI,
+    // setCurrentCanvasId: setManagedCanvasId, // Not currently used - managed by switchCanvas
+    canvasSwitchResolverRef,
+  } = useCanvasManagement()
+
   const {
     connectionState,
     setConnectionState,
@@ -309,10 +328,46 @@ export default function Canvas({ onToolsReady, onViewportCenterChange, onCanvasS
   const handleMoveForward = handleMoveForwardFromHook
   const handleMoveBackward = handleMoveBackwardFromHook
 
-  // Color throttle ref
-  const colorThrottleRef = useRef<number>(0)
-  const opacityThrottleRef = useRef<number>(0)
-  const shadowThrottleRef = useRef<number>(0)
+  // Context menu delete handler
+  const handleContextMenuDelete = useCallback(() => {
+    const shapeId = contextMenuShapeIdRef.current
+    if (!shapeId) return
+
+    handleDeleteShape([shapeId])
+    contextMenuShapeIdRef.current = null
+  }, [handleDeleteShape, contextMenuShapeIdRef])
+
+  // Handle layer reordering from sidebar
+  const handleReorderLayers = useCallback((reorderedShapeIds: string[]) => {
+    if (!wsRef.current) return
+
+    // Optimistically update local state first for immediate visual feedback
+    setShapes(prevShapes => {
+      const updatedShapes = [...prevShapes]
+      const maxZ = reorderedShapeIds.length - 1
+
+      updatedShapes.forEach(shape => {
+        const index = reorderedShapeIds.indexOf(shape.id)
+        if (index !== -1) {
+          const newZIndex = maxZ - index
+          shape.zIndex = newZIndex
+          shape.z_index = newZIndex
+        }
+      })
+
+      return updatedShapes
+    })
+
+    // Then send updates to server in a single batch
+    const maxZ = reorderedShapeIds.length - 1
+    reorderedShapeIds.forEach((shapeId, index) => {
+      const newZIndex = maxZ - index
+      sendMessage({
+        type: 'SHAPE_UPDATE',
+        payload: { shapeId, updates: { zIndex: newZIndex } }
+      })
+    })
+  }, [sendMessage])
 
   // Handle moving shapes with arrow keys
   const handleMoveShapesWithKeys = useCallback((shapeIds: string[], deltaX: number, deltaY: number) => {
@@ -498,6 +553,12 @@ export default function Canvas({ onToolsReady, onViewportCenterChange, onCanvasS
     setCursors,
     setCurrentUserColor,
     pushHistory,
+    onCanvasSwitched: (payload) => {
+      // When CANVAS_SWITCHED is received, call the resolver if it exists
+      if (canvasSwitchResolverRef.current) {
+        canvasSwitchResolverRef.current(payload.success)
+      }
+    },
   })
 
   // WebSocket connection and initialization
@@ -512,13 +573,37 @@ export default function Canvas({ onToolsReady, onViewportCenterChange, onCanvasS
     onMessage: handleWebSocketMessage,
   })
 
-  // Initialize canvas and WebSocket
+  // Track if we've initialized to prevent re-initialization on canvas switches
+  const hasInitializedRef = useRef(false)
+
+  // Initialize canvas and WebSocket - runs only once when canvases are loaded
   useEffect(() => {
-    initializeCanvas((canvasId, token, userId, userEmail) => {
+    // Wait for canvas management to load canvases
+    if (isLoadingCanvases) {
+      console.log('⏳ [Canvas] Waiting for canvases to load...')
+      return
+    }
+
+    if (!managedCanvasId) {
+      console.error('❌ [Canvas] No canvas ID available after loading. User may have no canvases.')
+      return
+    }
+
+    // Only initialize once on mount
+    if (hasInitializedRef.current) {
+      return
+    }
+
+    console.log('🚀 [Canvas] Initial initialization with canvas ID:', managedCanvasId)
+    hasInitializedRef.current = true
+
+    initializeCanvas((_loadedCanvasId, token, userId, userEmail) => {
       setCurrentUserId(userId)
       setCurrentUserEmail(userEmail)
-      setCanvasId(canvasId)
-      canvasIdRef.current = canvasId
+
+      // Use the canvas ID from canvas management instead of the default one
+      setCanvasId(managedCanvasId)
+      canvasIdRef.current = managedCanvasId
 
       // Color will be assigned by server and received via CANVAS_SYNC
       // Calculate local fallback color in case server doesn't send one
@@ -530,7 +615,7 @@ export default function Canvas({ onToolsReady, onViewportCenterChange, onCanvasS
         try {
           const rawApiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001/api'
           const API_URL = rawApiUrl.endsWith('/') ? rawApiUrl.slice(0, -1) : rawApiUrl
-          const response = await fetch(`${API_URL}/canvas`, {
+          const response = await fetch(`${API_URL}/canvas/${managedCanvasId}`, {
             headers: {
               'Authorization': `Bearer ${token}`,
               'Accept': 'application/json',
@@ -545,16 +630,37 @@ export default function Canvas({ onToolsReady, onViewportCenterChange, onCanvasS
             }
           }
         } catch (error) {
-          // Handle error silently
+          console.error('Error fetching canvas data:', error)
         }
       }
       fetchCanvasData()
 
-      // Connect WebSocket
-      connectWebSocket(canvasId, token)
+      // Connect WebSocket with the target canvas
+      connectWebSocket(managedCanvasId, token)
     })
+    // Note: No cleanup function here - WebSocket lifecycle is managed separately
+    // The effect won't re-run after initialization thanks to hasInitializedRef
+  }, [isLoadingCanvases, managedCanvasId, initializeCanvas, connectWebSocket])
 
+  // Handle canvas ID changes after initialization (for canvas switching)
+  useEffect(() => {
+    if (!hasInitializedRef.current || !managedCanvasId) {
+      return
+    }
+
+    // If the managed canvas ID changed, update local state
+    // (The actual switch happens via SWITCH_CANVAS WebSocket message in handleSwitchCanvas)
+    if (canvasIdRef.current !== managedCanvasId) {
+      console.log('🔄 [Canvas] Canvas ID changed to:', managedCanvasId, '(using existing WebSocket connection)')
+      setCanvasId(managedCanvasId)
+      canvasIdRef.current = managedCanvasId
+    }
+  }, [managedCanvasId])
+
+  // Cleanup WebSocket on component unmount only
+  useEffect(() => {
     return () => {
+      console.log('🔌 [Canvas] Component unmounting, closing WebSocket')
       if (wsRef.current) {
         wsRef.current.close()
       }
@@ -562,7 +668,54 @@ export default function Canvas({ onToolsReady, onViewportCenterChange, onCanvasS
         clearTimeout(reconnectTimeoutRef.current)
       }
     }
-  }, [initializeCanvas, connectWebSocket])
+  }, [])
+
+  // Canvas management handlers
+  const handleCreateCanvas = useCallback(async (name: string) => {
+    const newCanvas = await createCanvasAPI(name)
+    if (newCanvas) {
+      showToast('Canvas created successfully', 'success')
+      // Switch to the new canvas
+      await handleSwitchCanvas(newCanvas.id)
+    } else {
+      showToast('Failed to create canvas', 'error')
+    }
+  }, [createCanvasAPI, showToast])
+
+  const handleDeleteCanvas = useCallback(async (canvasId: string) => {
+    const success = await deleteCanvasAPI(canvasId)
+    if (success) {
+      showToast('Canvas deleted successfully', 'success')
+      // If we deleted the current canvas, we'll automatically switch to the next available canvas
+      // The useCanvasManagement hook handles this automatically
+    } else {
+      showToast('Failed to delete canvas', 'error')
+    }
+  }, [deleteCanvasAPI, showToast])
+
+  const handleSwitchCanvas = useCallback(async (targetCanvasId: string) => {
+    console.log(`🎨 [Canvas] handleSwitchCanvas called for: ${targetCanvasId}`)
+
+    // Clear local state BEFORE switching to prevent showing stale data
+    console.log('🧹 [Canvas] Clearing local state before switch')
+    setShapes([])
+    setCursors(new Map())
+    setActiveUsers([])
+    setSelectedIds([])
+
+    const success = await switchCanvasAPI(targetCanvasId, wsRef, () => {
+      // On successful switch, just update refs and show confirmation
+      // The canvas state has already been rehydrated by the CANVAS_SYNC message from the server
+      console.log('✅ [Canvas] Canvas switch confirmed')
+      setCanvasId(targetCanvasId)
+      canvasIdRef.current = targetCanvasId
+      showToast('Switched canvas', 'success')
+    })
+
+    if (!success) {
+      showToast('Failed to switch canvas', 'error')
+    }
+  }, [switchCanvasAPI, wsRef, showToast])
 
 
   // Note: Shape creation, selection, and management logic now provided by hooks
@@ -696,9 +849,6 @@ export default function Canvas({ onToolsReady, onViewportCenterChange, onCanvasS
   } = useShapePropertyHandlers({
     wsRef,
     selectedIds,
-    colorThrottleRef,
-    opacityThrottleRef,
-    shadowThrottleRef,
     setShapes,
     recordPropChange,
     sendMessage,
@@ -709,15 +859,23 @@ export default function Canvas({ onToolsReady, onViewportCenterChange, onCanvasS
   // These handlers will be used by the control panel
   const handleZoomIn = useCallback(() => {
     const newScale = Math.min(stageScale * 1.2, 3)
-    const anchor = { x: viewportWidth / 2, y: viewportHeight / 2 }
+    // Use the current screen position of the canvas center as the anchor
+    const anchor = {
+      x: stagePos.x + (CANVAS_WIDTH / 2) * stageScale,
+      y: stagePos.y + (CANVAS_HEIGHT / 2) * stageScale
+    }
     animateZoomTo(newScale, anchor, 200)
-  }, [animateZoomTo, stageScale, viewportWidth, viewportHeight])
+  }, [animateZoomTo, stageScale, stagePos, viewportWidth, viewportHeight])
 
   const handleZoomOut = useCallback(() => {
     const newScale = Math.max(stageScale / 1.2, 0.1)
-    const anchor = { x: viewportWidth / 2, y: viewportHeight / 2 }
+    // Use the current screen position of the canvas center as the anchor
+    const anchor = {
+      x: stagePos.x + (CANVAS_WIDTH / 2) * stageScale,
+      y: stagePos.y + (CANVAS_HEIGHT / 2) * stageScale
+    }
     animateZoomTo(newScale, anchor, 200)
-  }, [animateZoomTo, stageScale, viewportWidth, viewportHeight])
+  }, [animateZoomTo, stageScale, stagePos, viewportWidth, viewportHeight])
 
   const handleResetView = useCallback(() => {
     // Center the canvas at 100% zoom
@@ -798,7 +956,7 @@ export default function Canvas({ onToolsReady, onViewportCenterChange, onCanvasS
     const viewportMaxY = (viewportHeight - stagePos.y) / stageScale + padding
 
     // Filter shapes that intersect with viewport
-    return shapes.filter(shape => {
+    const filtered = shapes.filter(shape => {
       let shapeMinX: number, shapeMaxX: number, shapeMinY: number, shapeMaxY: number
 
       if (shape.type === 'circle') {
@@ -828,6 +986,13 @@ export default function Canvas({ onToolsReady, onViewportCenterChange, onCanvasS
       // Check if shape bounds intersect with viewport bounds
       return !(shapeMaxX < viewportMinX || shapeMinX > viewportMaxX ||
         shapeMaxY < viewportMinY || shapeMinY > viewportMaxY)
+    })
+
+    // Sort by z-index (ascending order: lowest z-index renders first, highest renders last on top)
+    return filtered.sort((a, b) => {
+      const aZ = a.z_index ?? a.zIndex ?? 0
+      const bZ = b.z_index ?? b.zIndex ?? 0
+      return aZ - bZ
     })
   }, [shapes, stagePos.x, stagePos.y, stageScale, viewportWidth, viewportHeight])
 
@@ -1074,6 +1239,7 @@ export default function Canvas({ onToolsReady, onViewportCenterChange, onCanvasS
           onCut={handleCut}
           onPaste={handlePaste}
           onDuplicate={handleDuplicate}
+          onDelete={handleContextMenuDelete}
           onChangeCanvasColor={() => {
             setIsCanvasBgOpen(true)
           }}
@@ -1193,6 +1359,23 @@ export default function Canvas({ onToolsReady, onViewportCenterChange, onCanvasS
         viewportHeight={viewportHeight / stageScale}
         stageScale={stageScale}
         onNavigate={handleMinimapNavigate}
+      />
+
+      {/* Layers Sidebar (left side) */}
+      <LayersSidebar
+        shapes={shapes}
+        selectedIds={selectedIds}
+        onReorderLayers={handleReorderLayers}
+        onSelectShape={handleShapeClick}
+        currentUserId={currentUserId}
+        getUserColor={getUserColor}
+        canvases={canvases}
+        currentCanvasId={managedCanvasId}
+        onSwitchCanvas={handleSwitchCanvas}
+        onCreateCanvas={handleCreateCanvas}
+        onDeleteCanvas={handleDeleteCanvas}
+        isSwitching={isSwitching}
+        isCreating={isCreating}
       />
     </div>
   )

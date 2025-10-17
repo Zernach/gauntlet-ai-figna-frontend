@@ -42,20 +42,49 @@ export function useShapeManagement({
     const createShapes = useCallback((shapesData: any[]) => {
         console.log('🎨 [Canvas] createShapes called with:', shapesData.length, 'shape(s)')
 
-        if (!wsRef.current || !canvasIdRef.current || !currentUserIdRef.current) {
-            console.error('❌ [Canvas] Cannot create shapes - missing requirements:', {
-                hasWs: !!wsRef.current,
-                canvasId: canvasIdRef.current,
-                currentUserId: currentUserIdRef.current
-            })
+        // Check WebSocket connection
+        if (!wsRef.current) {
+            console.error('❌ [Canvas] Cannot create shapes - WebSocket not connected')
+            showToast('Cannot create shape: Not connected to server', 'error')
             return
         }
 
-        console.log('✅ [Canvas] Prerequisites met, processing shapes data')
+        // Check canvas ID
+        if (!canvasIdRef.current) {
+            console.error('❌ [Canvas] Cannot create shapes - No canvas ID available')
+            showToast('Cannot create shape: No canvas selected', 'error')
+            return
+        }
 
-        // Process each shape in the array
-        shapesData.forEach((shapeData, index) => {
-            console.log(`🎨 [Canvas] Processing shape ${index + 1}/${shapesData.length}:`, shapeData)
+        // Check user ID
+        if (!currentUserIdRef.current) {
+            console.error('❌ [Canvas] Cannot create shapes - No user ID available')
+            showToast('Cannot create shape: Not authenticated', 'error')
+            return
+        }
+
+        console.log('✅ [Canvas] Prerequisites met:', {
+            wsState: wsRef.current.readyState,
+            canvasId: canvasIdRef.current,
+            userId: currentUserIdRef.current
+        })
+
+        // Sort shapes by z-index (lowest first) to ensure proper rendering order
+        // Shapes without z-index will be treated as z-index 0
+        const sortedShapesData = [...shapesData].sort((a, b) => {
+            const zIndexA = a.zIndex !== undefined ? a.zIndex : 0
+            const zIndexB = b.zIndex !== undefined ? b.zIndex : 0
+            return zIndexA - zIndexB
+        })
+        console.log('🔢 [Canvas] Sorted shapes by z-index:', sortedShapesData.map((s, i) => ({
+            index: i,
+            type: s.type,
+            zIndex: s.zIndex !== undefined ? s.zIndex : 0
+        })))
+
+        // Process each shape in the array (now sorted by z-index)
+        sortedShapesData.forEach((shapeData, index) => {
+            console.log(`🎨 [Canvas] Processing shape ${index + 1}/${sortedShapesData.length}:`, shapeData)
 
             // Ensure coordinates are within canvas boundaries
             let x = shapeData.x !== undefined ? shapeData.x : -stagePos.x / stageScale + (viewportWidth / 2) / stageScale
@@ -107,15 +136,22 @@ export function useShapeManagement({
             }
 
             console.log(`📦 [Canvas] Final shape data for shape ${index + 1}:`, finalShapeData)
+            console.log(`📤 [Canvas] Sending SHAPE_CREATE message for shape ${index + 1} to canvas:`, canvasIdRef.current)
 
-            sendMessage({
-                type: 'SHAPE_CREATE',
-                payload: finalShapeData,
-            })
+            try {
+                sendMessage({
+                    type: 'SHAPE_CREATE',
+                    payload: finalShapeData,
+                })
+                console.log(`✅ [Canvas] Shape ${index + 1} creation message sent successfully`)
+            } catch (error) {
+                console.error(`❌ [Canvas] Failed to send shape ${index + 1} creation message:`, error)
+                showToast(`Failed to create shape ${index + 1}`, 'error')
+            }
         })
 
-        showToast(`${shapesData.length} shape(s) created!`, 'success', 2000)
-        console.log(`✅ [Canvas] All ${shapesData.length} shape creation message(s) sent`)
+        showToast(`${sortedShapesData.length} shape(s) created!`, 'success', 2000)
+        console.log(`✅ [Canvas] All ${sortedShapesData.length} shape creation message(s) sent`)
     }, [stagePos, stageScale, showToast, viewportWidth, viewportHeight, sendMessage, wsRef, canvasIdRef, currentUserIdRef])
 
     // Handle shape creation from UI (rectangle button)

@@ -69,8 +69,8 @@ const ColorSlider: React.FC<ColorSliderProps> = ({ valueHex, onChangeHex, label,
 
         // Check if we're in the grace period after releasing
         const recent = recentlyReleasedRef.current
-        if (recent && Date.now() - recent.timestamp < 500) {
-            // Within 500ms grace period, preserve the released value
+        if (recent && Date.now() - recent.timestamp < 1000) {
+            // Within 1000ms grace period, preserve the released value
             setHue(recent.hue)
             return
         }

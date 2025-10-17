@@ -59,16 +59,16 @@ const ControlButton: React.FC<{
             alignItems: 'center',
             justifyContent: 'center',
             gap: '8px',
-            padding: isExpanded ? '12px 16px' : '10px',
+            padding: isExpanded ? '12px 16px' : '12px',
             border: 'none',
             borderRadius: '8px',
             cursor: 'pointer',
             fontSize: '14px',
             fontWeight: '600',
             transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-            minWidth: isExpanded ? '120px' : '40px',
-            width: isExpanded ? 'auto' : '40px',
-            height: isExpanded ? '44px' : '40px',
+            minWidth: isExpanded ? '120px' : '44px',
+            width: isExpanded ? 'auto' : '44px',
+            height: '44px',
             position: 'relative',
             overflow: 'hidden',
         }
@@ -180,7 +180,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
     return (
         <div style={{
             position: 'absolute',
-            top: '20px',
+            top: '112px',
             left: '20px',
             zIndex: 10,
             display: 'flex',
@@ -195,33 +195,20 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                 style={{
                     backgroundColor: 'rgba(26, 26, 26, 0.95)',
                     backdropFilter: 'blur(10px)',
-                    padding: isExpanded ? '16px' : '8px',
+                    padding: '16px',
                     borderRadius: '12px',
                     boxShadow: '0 8px 32px #1c1c1c66',
                     border: '1px solid rgba(255, 255, 255, 0.1)',
                     display: 'flex',
                     flexDirection: 'column',
-                    gap: isExpanded ? '12px' : '8px',
+                    gap: '12px',
                     width: 'fit-content',
                     minWidth: isExpanded ? '200px' : 'auto',
-                    maxWidth: isExpanded ? 'auto' : '56px',
+                    maxWidth: isExpanded ? 'auto' : '76px',
                     transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
                 }}>
                 {/* Shape Tools Section */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: isExpanded ? '8px' : '6px' }}>
-                    <div style={{
-                        fontSize: '12px',
-                        fontWeight: '600',
-                        color: '#888',
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.5px',
-                        marginBottom: '4px',
-                        display: isExpanded ? 'block' : 'none',
-                        transition: 'opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-                    }}>
-                        Shapes
-                    </div>
-
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     <ControlButton
                         onClick={onAddRectangle}
                         icon={<Square size={18} />}
@@ -272,24 +259,11 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                     backgroundColor: 'rgba(255, 255, 255, 0.1)',
                     margin: '4px 0',
                     opacity: isExpanded ? 1 : 0.5,
-                    transition: 'opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                    transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
                 }} />
 
                 {/* Navigation Tools Section */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: isExpanded ? '8px' : '6px' }}>
-                    <div style={{
-                        fontSize: '12px',
-                        fontWeight: '600',
-                        color: '#888',
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.5px',
-                        marginBottom: '4px',
-                        display: isExpanded ? 'block' : 'none',
-                        transition: 'opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-                    }}>
-                        Navigation
-                    </div>
-
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     <ControlButton
                         onClick={onZoomIn}
                         onPointerDown={onZoomInHold}

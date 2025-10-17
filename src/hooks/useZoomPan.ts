@@ -27,8 +27,9 @@ export function useZoomPan({
     const zoomAnimStartRef = useRef<number>(0)
     const zoomFromScaleRef = useRef<number>(1)
     const zoomToScaleRef = useRef<number>(1)
-    const zoomFromPosRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 })
-    const zoomToPosRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 })
+    const zoomAnchorRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 })
+    const zoomPrevScaleRef = useRef<number>(1)
+    const zoomPrevPosRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 })
 
     // Continuous zoom (press-and-hold) refs
     const zoomHoldRafRef = useRef<number | null>(null)
@@ -46,26 +47,41 @@ export function useZoomPan({
         t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2
     ), [])
 
-    const clampStagePosition = useCallback((scale: number, desired: { x: number; y: number }) => {
+    const clampStagePosition = useCallback((scale: number, desired: { x: number; y: number }, preserveAnchor: boolean = false) => {
         const scaledWidth = CANVAS_WIDTH * scale
         const scaledHeight = CANVAS_HEIGHT * scale
 
-        // If content smaller than viewport, center it on that axis
         let x: number
         if (scaledWidth <= viewportWidth) {
-            x = (viewportWidth - scaledWidth) / 2
+            // Canvas is smaller than viewport
+            if (preserveAnchor) {
+                // During zoom, use desired position to maintain anchor point
+                x = desired.x
+            } else {
+                // During other operations (resize, etc), center it
+                x = (viewportWidth - scaledWidth) / 2
+            }
         } else {
-            const minX = viewportWidth - scaledWidth
-            const maxX = 0
+            // Canvas is larger than viewport - clamp to keep it visible
+            const minX = viewportWidth - scaledWidth  // Left edge of canvas at right edge of viewport
+            const maxX = 0  // Left edge of canvas at left edge of viewport
             x = Math.max(minX, Math.min(desired.x, maxX))
         }
 
         let y: number
         if (scaledHeight <= viewportHeight) {
-            y = (viewportHeight - scaledHeight) / 2
+            // Canvas is smaller than viewport
+            if (preserveAnchor) {
+                // During zoom, use desired position to maintain anchor point
+                y = desired.y
+            } else {
+                // During other operations (resize, etc), center it
+                y = (viewportHeight - scaledHeight) / 2
+            }
         } else {
-            const minY = viewportHeight - scaledHeight
-            const maxY = 0
+            // Canvas is larger than viewport - clamp to keep it visible
+            const minY = viewportHeight - scaledHeight  // Top edge of canvas at bottom edge of viewport
+            const maxY = 0  // Top edge of canvas at top edge of viewport
             y = Math.max(minY, Math.min(desired.y, maxY))
         }
 
@@ -84,7 +100,8 @@ export function useZoomPan({
         // Compute new stage position so that the same canvas point stays under anchorScreen
         const desiredX = anchorScreen.x - canvasPointX * newScale
         const desiredY = anchorScreen.y - canvasPointY * newScale
-        return clampStagePosition(newScale, { x: desiredX, y: desiredY })
+        // Preserve anchor point during zoom by preventing forced centering
+        return clampStagePosition(newScale, { x: desiredX, y: desiredY }, true)
     }, [clampStagePosition])
 
     const cancelZoomAnimation = useCallback(() => {
@@ -102,25 +119,39 @@ export function useZoomPan({
         cancelZoomAnimation()
         const startScale = stageScale
         const startPos = stagePos
-        const targetPos = computeAnchoredPosition(startScale, targetScale, startPos, anchor)
 
         zoomAnimStartRef.current = performance.now()
         zoomFromScaleRef.current = startScale
         zoomToScaleRef.current = targetScale
-        zoomFromPosRef.current = startPos
-        zoomToPosRef.current = targetPos
+        zoomAnchorRef.current = anchor
+
+        // Initialize previous scale and position for first frame
+        zoomPrevScaleRef.current = startScale
+        zoomPrevPosRef.current = startPos
 
         const step = () => {
             const now = performance.now()
             const t = Math.min(1, (now - zoomAnimStartRef.current) / durationMs)
             const k = easeInOutCubic(t)
 
-            const s = zoomFromScaleRef.current + (zoomToScaleRef.current - zoomFromScaleRef.current) * k
-            const x = zoomFromPosRef.current.x + (zoomToPosRef.current.x - zoomFromPosRef.current.x) * k
-            const y = zoomFromPosRef.current.y + (zoomToPosRef.current.y - zoomFromPosRef.current.y) * k
+            // Interpolate scale
+            const newScale = zoomFromScaleRef.current + (zoomToScaleRef.current - zoomFromScaleRef.current) * k
 
-            setStageScale(s)
-            setStagePos({ x, y })
+            // Compute position based on previous frame to maintain anchor point
+            const newPos = computeAnchoredPosition(
+                zoomPrevScaleRef.current,
+                newScale,
+                zoomPrevPosRef.current,
+                zoomAnchorRef.current
+            )
+
+            // Update state
+            setStageScale(newScale)
+            setStagePos(newPos)
+
+            // Store current values for next frame
+            zoomPrevScaleRef.current = newScale
+            zoomPrevPosRef.current = newPos
 
             if (t < 1) {
                 zoomAnimRafRef.current = requestAnimationFrame(step)
@@ -138,6 +169,9 @@ export function useZoomPan({
         zoomHoldLastTsRef.current = 0
         cancelZoomAnimation()
 
+        // Track scale for continuous zoom
+        let currentScale = stageScale
+
         const step = (ts: number) => {
             if (!zoomHoldActiveRef.current) {
                 zoomHoldRafRef.current = null
@@ -153,17 +187,27 @@ export function useZoomPan({
             const dt = ts - zoomHoldLastTsRef.current
             zoomHoldLastTsRef.current = ts
 
-            const oldScale = stageScale
+            const oldScale = currentScale
             const speedPerMs = 0.0007
             const factor = 1 + speedPerMs * dt
             let newScale = zoomHoldDirectionRef.current > 0 ? oldScale * factor : oldScale / factor
             newScale = Math.max(minScale, Math.min(maxScale, newScale))
 
-            const anchor = { x: viewportWidth / 2, y: viewportHeight / 2 }
+            // Use the current screen position of the canvas center as the anchor
+            const anchor = {
+                x: stagePosRef.current.x + (CANVAS_WIDTH / 2) * oldScale,
+                y: stagePosRef.current.y + (CANVAS_HEIGHT / 2) * oldScale
+            }
             const newPos = computeAnchoredPosition(oldScale, newScale, stagePosRef.current, anchor)
+
+            // Update current scale for next frame
+            currentScale = newScale
 
             setStageScale(newScale)
             setStagePos(newPos)
+            // Note: stagePosRef.current will be updated by useEffect, but for rapid updates
+            // we should ensure it's updated before next frame
+            stagePosRef.current = newPos
 
             zoomHoldRafRef.current = requestAnimationFrame(step)
         }

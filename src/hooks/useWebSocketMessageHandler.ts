@@ -25,6 +25,7 @@ interface UseWebSocketMessageHandlerParams {
   setCursors: React.Dispatch<React.SetStateAction<Map<string, any>>>
   setCurrentUserColor: React.Dispatch<React.SetStateAction<string>>
   pushHistory: (entry: any) => void
+  onCanvasSwitched?: (payload: { canvasId: string; success: boolean; error?: string }) => void
 }
 
 export function useWebSocketMessageHandler({
@@ -51,11 +52,17 @@ export function useWebSocketMessageHandler({
   setCursors,
   setCurrentUserColor,
   pushHistory,
+  onCanvasSwitched,
 }: UseWebSocketMessageHandlerParams) {
   const handleWebSocketMessage = useCallback((message: any) => {
     switch (message.type) {
       case 'CANVAS_SYNC':
         // Initial sync with all shapes and users
+        console.log('📥 [WS Handler] Processing CANVAS_SYNC:', {
+          shapesCount: message.payload.shapes?.length || 0,
+          activeUsersCount: message.payload.activeUsers?.length || 0,
+          hasCanvas: !!message.payload.canvas
+        })
         if (message.payload.shapes) {
           setShapes((message.payload.shapes as any[]).map(normalizeShape))
         }
@@ -80,6 +87,7 @@ export function useWebSocketMessageHandler({
             setCurrentUserColor(currentUserData.color)
           }
         }
+        console.log('✅ [WS Handler] CANVAS_SYNC processing complete')
         break
 
       case 'CANVAS_UPDATE':
@@ -143,13 +151,13 @@ export function useWebSocketMessageHandler({
                   y: s.y,
                 }
               }
-              // Check if this shape was recently dragged - preserve position for 500ms after drag ends
+              // Check if this shape was recently dragged - preserve position for 1000ms after drag ends
               // to prevent animation from delayed server updates
               const recentDrag = recentlyDraggedRef.current.get(shape.id)
               if (recentDrag) {
                 const timeSinceDrag = Date.now() - recentDrag.timestamp
-                // Within 500ms of drag end, preserve local position to prevent animation
-                if (timeSinceDrag < 500) {
+                // Within 1000ms of drag end, preserve local position to prevent animation
+                if (timeSinceDrag < 1000) {
                   return {
                     ...shape,
                     x: recentDrag.x,
@@ -160,13 +168,13 @@ export function useWebSocketMessageHandler({
                   recentlyDraggedRef.current.delete(shape.id)
                 }
               }
-              // Check if this shape was recently resized - preserve geometry for 500ms after resize ends
+              // Check if this shape was recently resized - preserve geometry for 1000ms after resize ends
               // to prevent animation from delayed server updates
               const recentResize = recentlyResizedRef.current.get(shape.id)
               if (recentResize) {
                 const timeSinceResize = Date.now() - recentResize.timestamp
-                // Within 500ms of resize end, preserve local geometry to prevent animation
-                if (timeSinceResize < 500) {
+                // Within 1000ms of resize end, preserve local geometry to prevent animation
+                if (timeSinceResize < 1000) {
                   return {
                     ...shape,
                     ...(recentResize.x !== undefined && { x: recentResize.x }),
@@ -181,13 +189,13 @@ export function useWebSocketMessageHandler({
                   recentlyResizedRef.current.delete(shape.id)
                 }
               }
-              // Check if this shape was recently rotated - preserve rotation for 500ms after rotation ends
+              // Check if this shape was recently rotated - preserve rotation for 1000ms after rotation ends
               // to prevent animation from delayed server updates
               const recentRotation = recentlyRotatedRef.current.get(shape.id)
               if (recentRotation) {
                 const timeSinceRotation = Date.now() - recentRotation.timestamp
-                // Within 500ms of rotation end, preserve local rotation to prevent animation
-                if (timeSinceRotation < 500) {
+                // Within 1000ms of rotation end, preserve local rotation to prevent animation
+                if (timeSinceRotation < 1000) {
                   return {
                     ...shape,
                     rotation: recentRotation.rotation,
@@ -229,12 +237,12 @@ export function useWebSocketMessageHandler({
                 preservedProps.borderRadius = s.borderRadius
               }
 
-              // Check if any properties were recently modified (grace period after release)
+              // Check if any properties were recently modified (extended grace period after release)
               const recentlyModified = recentlyModifiedPropsRef.current.get(shape.id)
               if (recentlyModified) {
                 const timeSinceModification = Date.now() - recentlyModified.timestamp
-                // Within 500ms grace period, preserve local properties to prevent glitch
-                if (timeSinceModification < 500) {
+                // Within 1000ms grace period, preserve local properties to prevent glitch
+                if (timeSinceModification < 1000) {
                   Object.assign(preservedProps, recentlyModified.props)
                 } else {
                   // Clean up old entry
@@ -337,6 +345,14 @@ export function useWebSocketMessageHandler({
         }
         break
 
+      case 'CANVAS_SWITCHED':
+        // Canvas switch completed - notify callback
+        console.log('🔄 [WS Handler] CANVAS_SWITCHED received:', message.payload)
+        if (onCanvasSwitched) {
+          onCanvasSwitched(message.payload)
+        }
+        break
+
       case 'ERROR':
         break
     }
@@ -364,6 +380,7 @@ export function useWebSocketMessageHandler({
     setCursors,
     setCurrentUserColor,
     pushHistory,
+    onCanvasSwitched,
   ])
 
   return { handleWebSocketMessage }

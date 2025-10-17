@@ -46,7 +46,7 @@ export function useStageEvents({
   sendMessage,
   animateZoomTo,
 }: UseStageEventsProps) {
-  
+
   const handleStageClick = useCallback((e: any) => {
     // Don't deselect if we just finished dragging a shape
     if (isDraggingShapeRef.current) {
@@ -110,7 +110,16 @@ export function useStageEvents({
     let newScale = direction > 0 ? oldScale * scaleBy : oldScale / scaleBy
     newScale = Math.max(0.1, Math.min(3, newScale))
 
-    const anchor = { x: viewportWidth / 2, y: viewportHeight / 2 }
+    // Use the current screen position of the canvas center as the anchor
+    // This keeps the canvas center fixed during zoom
+    const CANVAS_WIDTH = 4000
+    const CANVAS_HEIGHT = 3000
+    const stageX = stage.x()
+    const stageY = stage.y()
+    const anchor = {
+      x: stageX + (CANVAS_WIDTH / 2) * oldScale,
+      y: stageY + (CANVAS_HEIGHT / 2) * oldScale
+    }
     animateZoomTo(newScale, anchor, 150)
   }, [stageRef, viewportWidth, viewportHeight, animateZoomTo])
 

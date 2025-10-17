@@ -49,6 +49,7 @@ export function useCanvasUtils({
   const normalizeShape = useCallback((s: any): Shape => {
     const locked_at = s.locked_at !== undefined ? s.locked_at : (s.lockedAt !== undefined ? s.lockedAt : null)
     const locked_by = s.locked_by !== undefined ? s.locked_by : (s.lockedBy !== undefined ? s.lockedBy : null)
+    const z_index = s.z_index !== undefined ? s.z_index : (s.zIndex !== undefined ? s.zIndex : 0)
     const textContent = s.textContent !== undefined ? s.textContent : (s.text_content !== undefined ? s.text_content : undefined)
     const fontSize = s.fontSize !== undefined ? s.fontSize : (s.font_size !== undefined ? s.font_size : undefined)
     const opacity = s.opacity !== undefined ? s.opacity : undefined
@@ -59,6 +60,8 @@ export function useCanvasUtils({
       ...s,
       locked_at,
       locked_by,
+      z_index,
+      zIndex: z_index,
       textContent,
       fontSize,
       opacity,

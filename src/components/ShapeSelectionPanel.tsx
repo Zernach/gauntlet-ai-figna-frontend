@@ -74,8 +74,8 @@ const ShapeSelectionPanel: React.FC<ShapeSelectionPanelProps> = ({
         // Only update slider values if not actively dragging them or recently released
         if (!isDraggingOpacity.current) {
             const recent = recentlyReleasedOpacity.current
-            if (recent && Date.now() - recent.timestamp < 500) {
-                // Within 500ms grace period, preserve the released value
+            if (recent && Date.now() - recent.timestamp < 1000) {
+                // Within 1000ms grace period, preserve the released value
                 setOpacityPct(recent.value)
             } else {
                 // Clear old entries and update from server
@@ -86,7 +86,7 @@ const ShapeSelectionPanel: React.FC<ShapeSelectionPanelProps> = ({
 
         if (!isDraggingShadowStrength.current) {
             const recent = recentlyReleasedShadowStrength.current
-            if (recent && Date.now() - recent.timestamp < 500) {
+            if (recent && Date.now() - recent.timestamp < 1000) {
                 setShadowStrength(recent.value)
             } else {
                 recentlyReleasedShadowStrength.current = null
@@ -96,7 +96,7 @@ const ShapeSelectionPanel: React.FC<ShapeSelectionPanelProps> = ({
 
         if (!isDraggingBorderRadius.current) {
             const recent = recentlyReleasedBorderRadius.current
-            if (recent && Date.now() - recent.timestamp < 500) {
+            if (recent && Date.now() - recent.timestamp < 1000) {
                 setBorderRadius(recent.value)
             } else {
                 recentlyReleasedBorderRadius.current = null

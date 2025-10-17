@@ -177,7 +177,7 @@ function PresencePanel({
           {connectionState === 'connected' ? (
             <>
               Connected{' '}
-              <span style={{ fontSize: '11px', color: '#888', fontWeight: 400 }}>
+              <span style={{ fontSize: '11px', color: '#888', fontWeight: 400, display: 'inline-block', minWidth: '55px', fontFamily: 'monospace' }}>
                 ({fps} FPS)
               </span>
             </>
