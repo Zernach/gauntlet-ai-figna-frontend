@@ -74,12 +74,9 @@ export const VIEWPORT_HEIGHT = window.innerHeight
 export const DEFAULT_SHAPE_SIZE = 100
 export const SHAPE_COLOR = '#c1c1c1'
 
-// User color palette - Bright NEON colors
-// NOTE: #00ff00 (bright neon green) is reserved for FPS connectivity status and excluded from user colors
-// NOTE: #72fa41 is also excluded from user colors
 export const USER_COLORS = [
     '#24ccff', '#fbff00', '#ff69b4', '#00ffff',
     '#ff00ff', '#ff0080', '#80ff00', '#ff8000',
-    '#0080ff', '#ff0040', '#40ff00', '#00ff80', '#8000ff'
+    '#0080ff', '#ff0040', '#00ff80', '#8000ff'
 ]
 

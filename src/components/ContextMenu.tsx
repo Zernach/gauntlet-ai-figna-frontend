@@ -8,7 +8,6 @@ import {
     Scissors,
     Clipboard,
     CopyPlus,
-    Palette,
     Trash2
 } from 'lucide-react'
 
@@ -26,7 +25,6 @@ interface ContextMenuProps {
     onPaste: () => void
     onDuplicate?: () => void
     onDelete?: () => void
-    onChangeCanvasColor?: () => void
     hasPasteData: boolean
 }
 
@@ -103,7 +101,6 @@ const ContextMenu: React.FC<ContextMenuProps> = ({
     onPaste,
     onDuplicate,
     onDelete,
-    onChangeCanvasColor,
     hasPasteData
 }) => {
     const menuRef = React.useRef<HTMLDivElement>(null)
@@ -255,24 +252,8 @@ const ContextMenu: React.FC<ContextMenuProps> = ({
                                 label="Paste"
                                 onClick={handleAction(onPaste)}
                             />
-                            <Divider />
                         </>
                     )}
-                    <div style={{
-                        fontSize: '11px',
-                        fontWeight: '600',
-                        color: '#888',
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.5px',
-                        padding: '8px 16px 6px',
-                    }}>
-                        Canvas
-                    </div>
-                    <MenuItem
-                        icon={<Palette size={16} />}
-                        label="Change Canvas Color"
-                        onClick={handleAction(onChangeCanvasColor!)}
-                    />
                 </>
             )}
         </div>

@@ -85,7 +85,6 @@ export const NEON_COLORS = [
     '#ff8000',
     '#0080ff',
     '#ff0040',
-    '#40ff00',
     '#00ff80',
     '#8000ff'
 ] as const;

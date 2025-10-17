@@ -152,34 +152,6 @@ function Minimap({
                     cursor: 'pointer',
                 }}
             />
-            <a
-                href="https://archlife.org"
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{
-                    display: 'block',
-                    marginTop: '8px',
-                    fontSize: '8px',
-                    color: '#555',
-                    textAlign: 'center',
-                    lineHeight: '1.2',
-                    textDecoration: 'none',
-                    cursor: 'pointer',
-                    padding: '4px',
-                    borderRadius: '4px',
-                    transition: 'all 0.2s ease',
-                }}
-                onMouseEnter={(e) => {
-                    e.currentTarget.style.backgroundColor = '#2a2a2a'
-                    e.currentTarget.style.color = '#888'
-                }}
-                onMouseLeave={(e) => {
-                    e.currentTarget.style.backgroundColor = 'transparent'
-                    e.currentTarget.style.color = '#555'
-                }}
-            >
-                {new Date().getFullYear()}© Archlife Industries Software
-            </a>
         </div>
     )
 }

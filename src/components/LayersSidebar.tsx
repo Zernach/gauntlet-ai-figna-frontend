@@ -1,6 +1,53 @@
 import { useState, useRef, useEffect, useMemo } from 'react'
+import { FolderOpen, Edit3, Trash2 } from 'lucide-react'
 import type { Shape } from '../types/canvas'
 import type { Canvas } from '../hooks/useCanvasManagement'
+
+// Context Menu Item Component
+const ContextMenuItem: React.FC<{
+    icon: React.ReactNode
+    label: string
+    onClick: () => void
+    disabled?: boolean
+}> = ({ icon, label, onClick, disabled }) => {
+    const [isHovered, setIsHovered] = useState(false)
+
+    return (
+        <button
+            disabled={disabled}
+            onClick={onClick}
+            onMouseEnter={() => !disabled && setIsHovered(true)}
+            onMouseLeave={() => setIsHovered(false)}
+            style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '12px',
+                padding: '10px 16px',
+                width: '100%',
+                backgroundColor: isHovered && !disabled ? '#2a2a2a' : 'transparent',
+                border: 'none',
+                color: disabled ? '#666666' : '#ffffff',
+                fontSize: '13px',
+                fontWeight: '500',
+                cursor: disabled ? 'not-allowed' : 'pointer',
+                transition: 'background-color 0.15s ease',
+                textAlign: 'left',
+                opacity: disabled ? 0.5 : 1,
+            }}
+        >
+            <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: '16px',
+                height: '16px',
+            }}>
+                {icon}
+            </div>
+            <span>{label}</span>
+        </button>
+    )
+}
 
 interface LayersSidebarProps {
     shapes: Shape[]
@@ -45,6 +92,11 @@ export default function LayersSidebar({
     const [isCreatingCanvas, setIsCreatingCanvas] = useState(false)
     const [newCanvasName, setNewCanvasName] = useState('')
 
+    // Context menu state
+    const [contextMenu, setContextMenu] = useState<{ x: number; y: number; canvasId: string; canvasName: string } | null>(null)
+    const [renamingCanvasId, setRenamingCanvasId] = useState<string | null>(null)
+    const [renameValue, setRenameValue] = useState('')
+
     // Sort shapes by z-index (highest to lowest = top to bottom in UI)
     const sortedShapes = useMemo(() => {
         // Use optimistic order during drag, otherwise sort by z-index
@@ -67,6 +119,10 @@ export default function LayersSidebar({
     }
 
     const handleMouseLeave = () => {
+        // Don't close if context menu is open or renaming is active
+        if (contextMenu || renamingCanvasId) {
+            return
+        }
         timeoutRef.current = setTimeout(() => {
             setIsOpen(false)
         }, 300) // Small delay before closing
@@ -80,6 +136,17 @@ export default function LayersSidebar({
             }
         }
     }, [])
+
+    // Close context menu when clicking outside
+    useEffect(() => {
+        const handleClickOutside = () => {
+            setContextMenu(null)
+        }
+        if (contextMenu) {
+            document.addEventListener('click', handleClickOutside)
+            return () => document.removeEventListener('click', handleClickOutside)
+        }
+    }, [contextMenu])
 
     // Drag and drop handlers with optimistic updates
     const handleDragStart = (e: React.DragEvent, index: number) => {
@@ -152,8 +219,55 @@ export default function LayersSidebar({
         }
     }
 
+    // Handle canvas context menu
+    const handleCanvasContextMenu = (e: React.MouseEvent, canvasId: string, canvasName: string) => {
+        e.preventDefault()
+        e.stopPropagation()
+        setContextMenu({
+            x: e.clientX,
+            y: e.clientY,
+            canvasId,
+            canvasName,
+        })
+    }
+
+    // Handle rename canvas
+    const handleRenameCanvas = (canvasId: string, canvasName: string) => {
+        // Find the canvas to check if it's public
+        const canvas = canvases.find(c => c.id === canvasId)
+
+        // Prevent renaming of public canvas
+        if (canvas?.is_public) {
+            alert('The public canvas cannot be renamed')
+            setContextMenu(null)
+            return
+        }
+
+        setRenamingCanvasId(canvasId)
+        setRenameValue(canvasName)
+        setContextMenu(null)
+    }
+
+    const handleRenameSubmit = (canvasId: string) => {
+        // TODO: Add onRenameCanvas prop and handler
+        // For now, just close the rename input
+        console.log('Rename canvas:', canvasId, 'to:', renameValue)
+        setRenamingCanvasId(null)
+        setRenameValue('')
+    }
+
     // Handle canvas deletion with confirmation
     const handleDeleteCanvas = (canvasId: string, canvasName: string) => {
+        // Find the canvas to check if it's public
+        const canvas = canvases.find(c => c.id === canvasId)
+
+        // Prevent deletion of public canvas
+        if (canvas?.is_public) {
+            alert('The public canvas cannot be deleted')
+            setContextMenu(null)
+            return
+        }
+
         if (canvases.length <= 1) {
             alert('Cannot delete your last canvas.')
             return
@@ -162,6 +276,7 @@ export default function LayersSidebar({
         if (confirm(`Delete "${canvasName}"? This cannot be undone.`)) {
             onDeleteCanvas?.(canvasId)
         }
+        setContextMenu(null)
     }
 
     return (
@@ -186,7 +301,7 @@ export default function LayersSidebar({
                     top: '16px',
                     width: '28px',
                     height: '88px',
-                    background: 'linear-gradient(135deg, #1a1a1a 0%, #252525 100%)',
+                    background: '#1a1a1a',
                     border: '1px solid #404040',
                     borderLeft: 'none',
                     borderTopRightRadius: '12px',
@@ -202,11 +317,11 @@ export default function LayersSidebar({
                     backdropFilter: 'blur(8px)',
                 }}
                 onMouseEnter={(e) => {
-                    e.currentTarget.style.background = 'linear-gradient(135deg, #252525 0%, #2a2a2a 100%)'
+                    e.currentTarget.style.background = '#252525'
                     e.currentTarget.style.boxShadow = '4px 0 16px rgba(100, 50, 200, 0.3), 2px 0 12px rgba(0, 0, 0, 0.4)'
                 }}
                 onMouseLeave={(e) => {
-                    e.currentTarget.style.background = 'linear-gradient(135deg, #1a1a1a 0%, #252525 100%)'
+                    e.currentTarget.style.background = '#1a1a1a'
                     e.currentTarget.style.boxShadow = isOpen
                         ? '4px 0 16px rgba(100, 50, 200, 0.2), 2px 0 8px rgba(0, 0, 0, 0.4)'
                         : '2px 0 8px rgba(0, 0, 0, 0.3)'
@@ -235,7 +350,7 @@ export default function LayersSidebar({
                     top: 0,
                     width: '300px',
                     height: '100vh',
-                    background: 'linear-gradient(180deg, #1a1a1a 0%, #141414 100%)',
+                    background: '#1a1a1a',
                     borderRight: '1px solid rgba(100, 50, 200, 0.15)',
                     transition: 'left 0.35s cubic-bezier(0.4, 0, 0.2, 1)',
                     boxShadow: isOpen ? '8px 0 32px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(100, 50, 200, 0.1)' : 'none',
@@ -249,7 +364,7 @@ export default function LayersSidebar({
                     style={{
                         padding: '24px 20px 20px',
                         borderBottom: '1px solid rgba(64, 64, 64, 0.5)',
-                        background: 'linear-gradient(180deg, rgba(100, 50, 200, 0.08) 0%, rgba(50, 100, 255, 0.04) 50%, transparent 100%)',
+                        background: '#1a1a1a',
                     }}
                 >
                     {/* Figna Title */}
@@ -277,9 +392,9 @@ export default function LayersSidebar({
                                         style={{
                                             width: '4px',
                                             height: '20px',
-                                            background: 'linear-gradient(180deg, #ff6b35 0%, #f7931e 100%)',
+                                            background: 'linear-gradient(180deg, #06b6d4 0%, #0891b2 100%)',
                                             borderRadius: '2px',
-                                            boxShadow: '0 0 8px rgba(255, 107, 53, 0.5)',
+                                            boxShadow: '0 0 8px rgba(6, 182, 212, 0.5)',
                                         }}
                                     />
                                     <h3
@@ -298,7 +413,7 @@ export default function LayersSidebar({
                                     onClick={() => setIsCreatingCanvas(true)}
                                     disabled={isCreating}
                                     style={{
-                                        background: 'linear-gradient(135deg, #6432c8 0%, #3264ff 100%)',
+                                        background: 'linear-gradient(135deg, #06b6d4 0%, #0891b2 100%)',
                                         border: 'none',
                                         borderRadius: '6px',
                                         padding: '6px 12px',
@@ -312,7 +427,7 @@ export default function LayersSidebar({
                                     onMouseEnter={(e) => {
                                         if (!isCreating) {
                                             e.currentTarget.style.transform = 'scale(1.05)'
-                                            e.currentTarget.style.boxShadow = '0 4px 12px rgba(100, 50, 200, 0.4)'
+                                            e.currentTarget.style.boxShadow = '0 4px 12px rgba(6, 182, 212, 0.5)'
                                         }
                                     }}
                                     onMouseLeave={(e) => {
@@ -329,9 +444,9 @@ export default function LayersSidebar({
                                 <div style={{
                                     marginBottom: '12px',
                                     padding: '12px',
-                                    background: 'rgba(100, 50, 200, 0.1)',
+                                    background: '#1a1a1a',
                                     borderRadius: '8px',
-                                    border: '1px solid rgba(100, 50, 200, 0.3)',
+                                    border: '1px solid #404040',
                                 }}>
                                     <input
                                         type="text"
@@ -402,80 +517,157 @@ export default function LayersSidebar({
                             <div style={{ marginBottom: '20px', maxHeight: '200px', overflowY: 'auto' }}>
                                 {canvases.map((canvas) => {
                                     const isActive = canvas.id === currentCanvasId
+                                    const isRenaming = renamingCanvasId === canvas.id
+
                                     return (
-                                        <div
-                                            key={canvas.id}
-                                            onClick={() => !isSwitching && onSwitchCanvas?.(canvas.id)}
-                                            style={{
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                justifyContent: 'space-between',
-                                                padding: '10px 12px',
-                                                marginBottom: '6px',
-                                                background: isActive
-                                                    ? 'linear-gradient(135deg, rgba(255, 107, 53, 0.15) 0%, rgba(247, 147, 30, 0.1) 100%)'
-                                                    : 'transparent',
-                                                border: isActive
-                                                    ? '1px solid rgba(255, 107, 53, 0.4)'
-                                                    : '1px solid transparent',
-                                                borderRadius: '8px',
-                                                cursor: isSwitching ? 'wait' : 'pointer',
-                                                transition: 'all 0.2s',
-                                                boxShadow: isActive
-                                                    ? '0 2px 12px rgba(255, 107, 53, 0.2)'
-                                                    : 'none',
-                                            }}
-                                            onMouseEnter={(e) => {
-                                                if (!isActive && !isSwitching) {
-                                                    e.currentTarget.style.background = 'rgba(40, 40, 40, 0.8)'
-                                                    e.currentTarget.style.borderColor = 'rgba(64, 64, 64, 0.5)'
-                                                }
-                                            }}
-                                            onMouseLeave={(e) => {
-                                                if (!isActive) {
-                                                    e.currentTarget.style.background = 'transparent'
-                                                    e.currentTarget.style.borderColor = 'transparent'
-                                                }
-                                            }}
-                                        >
-                                            <div style={{ flex: 1, minWidth: 0 }}>
+                                        <div key={canvas.id}>
+                                            {isRenaming ? (
                                                 <div style={{
-                                                    color: '#ffffff',
-                                                    fontSize: '14px',
-                                                    fontWeight: 600,
-                                                    overflow: 'hidden',
-                                                    textOverflow: 'ellipsis',
-                                                    whiteSpace: 'nowrap',
+                                                    padding: '10px 12px',
+                                                    marginBottom: '6px',
+                                                    background: 'rgba(6, 182, 212, 0.1)',
+                                                    borderRadius: '8px',
+                                                    border: '1px solid rgba(6, 182, 212, 0.3)',
                                                 }}>
-                                                    {canvas.name}
-                                                    {isActive && ' ✓'}
+                                                    <input
+                                                        type="text"
+                                                        value={renameValue}
+                                                        onChange={(e) => setRenameValue(e.target.value)}
+                                                        onKeyDown={(e) => {
+                                                            if (e.key === 'Enter' && renameValue.trim()) {
+                                                                handleRenameSubmit(canvas.id)
+                                                            }
+                                                            if (e.key === 'Escape') {
+                                                                setRenamingCanvasId(null)
+                                                                setRenameValue('')
+                                                            }
+                                                        }}
+                                                        autoFocus
+                                                        style={{
+                                                            width: '100%',
+                                                            padding: '6px 8px',
+                                                            background: '#2a2a2a',
+                                                            border: '1px solid #404040',
+                                                            borderRadius: '4px',
+                                                            color: '#ffffff',
+                                                            fontSize: '14px',
+                                                            marginBottom: '8px',
+                                                        }}
+                                                    />
+                                                    <div style={{ display: 'flex', gap: '8px' }}>
+                                                        <button
+                                                            onClick={() => handleRenameSubmit(canvas.id)}
+                                                            disabled={!renameValue.trim()}
+                                                            style={{
+                                                                flex: 1,
+                                                                padding: '4px',
+                                                                background: renameValue.trim() ? '#06b6d4' : '#404040',
+                                                                border: 'none',
+                                                                borderRadius: '4px',
+                                                                color: '#ffffff',
+                                                                fontSize: '12px',
+                                                                fontWeight: 600,
+                                                                cursor: renameValue.trim() ? 'pointer' : 'not-allowed',
+                                                            }}
+                                                        >
+                                                            Save
+                                                        </button>
+                                                        <button
+                                                            onClick={() => {
+                                                                setRenamingCanvasId(null)
+                                                                setRenameValue('')
+                                                            }}
+                                                            style={{
+                                                                flex: 1,
+                                                                padding: '4px',
+                                                                background: '#404040',
+                                                                border: 'none',
+                                                                borderRadius: '4px',
+                                                                color: '#ffffff',
+                                                                fontSize: '12px',
+                                                                fontWeight: 600,
+                                                                cursor: 'pointer',
+                                                            }}
+                                                        >
+                                                            Cancel
+                                                        </button>
+                                                    </div>
                                                 </div>
-                                            </div>
-                                            {!isActive && canvases.length > 1 && (
-                                                <button
-                                                    onClick={(e) => {
-                                                        e.stopPropagation()
-                                                        handleDeleteCanvas(canvas.id, canvas.name)
-                                                    }}
+                                            ) : (
+                                                <div
+                                                    onClick={() => !isSwitching && onSwitchCanvas?.(canvas.id)}
+                                                    onContextMenu={(e) => handleCanvasContextMenu(e, canvas.id, canvas.name)}
                                                     style={{
-                                                        background: 'rgba(255, 68, 68, 0.2)',
-                                                        border: '1px solid rgba(255, 68, 68, 0.3)',
-                                                        borderRadius: '4px',
-                                                        padding: '4px 8px',
-                                                        color: '#ff4444',
-                                                        fontSize: '12px',
-                                                        cursor: 'pointer',
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        justifyContent: 'space-between',
+                                                        padding: '10px 12px',
+                                                        marginBottom: '6px',
+                                                        background: isActive
+                                                            ? 'rgba(6, 182, 212, 0.2)'
+                                                            : 'transparent',
+                                                        border: isActive
+                                                            ? '1px solid rgba(6, 182, 212, 0.5)'
+                                                            : '1px solid transparent',
+                                                        borderRadius: '8px',
+                                                        cursor: isSwitching ? 'wait' : 'pointer',
                                                         transition: 'all 0.2s',
+                                                        boxShadow: isActive
+                                                            ? '0 2px 12px rgba(6, 182, 212, 0.3)'
+                                                            : 'none',
                                                     }}
                                                     onMouseEnter={(e) => {
-                                                        e.currentTarget.style.background = 'rgba(255, 68, 68, 0.3)'
+                                                        if (!isActive && !isSwitching) {
+                                                            e.currentTarget.style.background = 'rgba(40, 40, 40, 0.8)'
+                                                            e.currentTarget.style.borderColor = 'rgba(64, 64, 64, 0.5)'
+                                                        }
                                                     }}
                                                     onMouseLeave={(e) => {
-                                                        e.currentTarget.style.background = 'rgba(255, 68, 68, 0.2)'
+                                                        if (!isActive) {
+                                                            e.currentTarget.style.background = 'transparent'
+                                                            e.currentTarget.style.borderColor = 'transparent'
+                                                        }
                                                     }}
                                                 >
-                                                    🗑️
-                                                </button>
+                                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                                        <div style={{
+                                                            color: '#ffffff',
+                                                            fontSize: '14px',
+                                                            fontWeight: 600,
+                                                            overflow: 'hidden',
+                                                            textOverflow: 'ellipsis',
+                                                            whiteSpace: 'nowrap',
+                                                        }}>
+                                                            {canvas.name}
+                                                            {isActive && ' ✓'}
+                                                        </div>
+                                                    </div>
+                                                    {!canvas.is_public && (
+                                                        <div style={{
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            gap: '6px',
+                                                            fontSize: '12px',
+                                                            color: '#888',
+                                                            marginLeft: '8px',
+                                                        }}>
+                                                            <svg
+                                                                width="14"
+                                                                height="14"
+                                                                viewBox="0 0 24 24"
+                                                                fill="none"
+                                                                stroke="currentColor"
+                                                                strokeWidth="2"
+                                                                strokeLinecap="round"
+                                                                strokeLinejoin="round"
+                                                            >
+                                                                <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                                                                <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                                                            </svg>
+                                                            <span>Private</span>
+                                                        </div>
+                                                    )}
+                                                </div>
                                             )}
                                         </div>
                                     )
@@ -497,9 +689,9 @@ export default function LayersSidebar({
                             style={{
                                 width: '4px',
                                 height: '20px',
-                                background: 'linear-gradient(180deg, #6432c8 0%, #3264ff 100%)',
+                                background: 'linear-gradient(180deg, #06b6d4 0%, #0891b2 100%)',
                                 borderRadius: '2px',
-                                boxShadow: '0 0 8px rgba(100, 50, 200, 0.5)',
+                                boxShadow: '0 0 8px rgba(6, 182, 212, 0.5)',
                             }}
                         />
                         <h3
@@ -597,10 +789,10 @@ export default function LayersSidebar({
                                             padding: '12px 14px',
                                             marginBottom: '6px',
                                             background: isSelected
-                                                ? 'linear-gradient(135deg, rgba(100, 50, 200, 0.15) 0%, rgba(50, 100, 255, 0.1) 100%)'
+                                                ? 'rgba(132, 204, 22, 0.2)'
                                                 : 'transparent',
                                             border: isSelected
-                                                ? '1px solid rgba(100, 50, 200, 0.4)'
+                                                ? '1px solid rgba(132, 204, 22, 0.5)'
                                                 : '1px solid transparent',
                                             borderRadius: '8px',
                                             cursor: isLocked && shape.locked_by !== currentUserId ? 'not-allowed' : 'grab',
@@ -609,12 +801,12 @@ export default function LayersSidebar({
                                             transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
                                             position: 'relative',
                                             boxShadow: isSelected
-                                                ? '0 2px 12px rgba(100, 50, 200, 0.3), 0 0 0 1px rgba(100, 50, 200, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.05)'
+                                                ? '0 2px 12px rgba(132, 204, 22, 0.3), 0 0 0 1px rgba(132, 204, 22, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.05)'
                                                 : 'none',
                                         }}
                                         onMouseEnter={(e) => {
                                             if (!isSelected && (!isLocked || shape.locked_by === currentUserId)) {
-                                                e.currentTarget.style.background = 'linear-gradient(135deg, rgba(40, 40, 40, 0.8) 0%, rgba(30, 30, 30, 0.6) 100%)'
+                                                e.currentTarget.style.background = 'rgba(40, 40, 40, 0.8)'
                                                 e.currentTarget.style.borderColor = 'rgba(64, 64, 64, 0.5)'
                                             }
                                         }}
@@ -725,7 +917,7 @@ export default function LayersSidebar({
                     style={{
                         padding: '16px 20px',
                         borderTop: '1px solid rgba(64, 64, 64, 0.5)',
-                        background: 'linear-gradient(180deg, transparent 0%, rgba(100, 50, 200, 0.04) 100%)',
+                        background: '#1a1a1a',
                         display: 'flex',
                         alignItems: 'center',
                         gap: '8px',
@@ -749,7 +941,109 @@ export default function LayersSidebar({
                         Drag layers to reorder
                     </div>
                 </div>
+
+                {/* Copyright */}
+                <a
+                    href="https://archlife.org"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{
+                        display: 'block',
+                        padding: '12px 20px',
+                        fontSize: '11px',
+                        color: '#777',
+                        textAlign: 'center',
+                        lineHeight: '1.2',
+                        textDecoration: 'none',
+                        cursor: 'pointer',
+                        background: '#1a1a1a',
+                        borderTop: '1px solid rgba(64, 64, 64, 0.3)',
+                        transition: 'all 0.2s ease',
+                    }}
+                    onMouseEnter={(e) => {
+                        e.currentTarget.style.backgroundColor = '#2a2a2a'
+                        e.currentTarget.style.color = '#aaa'
+                    }}
+                    onMouseLeave={(e) => {
+                        e.currentTarget.style.backgroundColor = '#1a1a1a'
+                        e.currentTarget.style.color = '#777'
+                    }}
+                >
+                    {new Date().getFullYear()}© Archlife Industries Software
+                </a>
             </div>
+
+            {/* Context Menu */}
+            {contextMenu && (
+                <div
+                    style={{
+                        position: 'fixed',
+                        left: `${contextMenu.x}px`,
+                        top: `${contextMenu.y}px`,
+                        backgroundColor: '#1a1a1a',
+                        border: '1px solid #404040',
+                        borderRadius: '8px',
+                        boxShadow: '0 8px 32px #1c1c1c99',
+                        minWidth: '200px',
+                        padding: '6px 0',
+                        backdropFilter: 'blur(10px)',
+                        zIndex: 9999,
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                >
+                    {/* Section Header */}
+                    <div style={{
+                        fontSize: '11px',
+                        fontWeight: '600',
+                        color: '#888',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.5px',
+                        padding: '8px 16px 6px',
+                    }}>
+                        Canvas
+                    </div>
+
+                    {/* Open Option */}
+                    <ContextMenuItem
+                        icon={<FolderOpen size={16} />}
+                        label="Open"
+                        onClick={() => {
+                            if (contextMenu.canvasId !== currentCanvasId && onSwitchCanvas) {
+                                onSwitchCanvas(contextMenu.canvasId)
+                            }
+                            setContextMenu(null)
+                        }}
+                        disabled={contextMenu.canvasId === currentCanvasId}
+                    />
+
+                    {/* Only show rename and delete options for non-public canvases */}
+                    {!canvases.find(c => c.id === contextMenu.canvasId)?.is_public && (
+                        <>
+                            {/* Rename Option */}
+                            <ContextMenuItem
+                                icon={<Edit3 size={16} />}
+                                label="Rename"
+                                onClick={() => handleRenameCanvas(contextMenu.canvasId, contextMenu.canvasName)}
+                            />
+
+                            {/* Separator */}
+                            <div style={{
+                                height: '1px',
+                                backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                                margin: '4px 0',
+                            }} />
+
+                            {/* Delete Option */}
+                            <ContextMenuItem
+                                icon={<Trash2 size={16} />}
+                                label="Delete"
+                                onClick={() => handleDeleteCanvas(contextMenu.canvasId, contextMenu.canvasName)}
+                                disabled={canvases.length <= 1}
+                            />
+                        </>
+                    )}
+                </div>
+            )}
         </div>
     )
 }

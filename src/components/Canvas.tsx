@@ -9,7 +9,6 @@ import ContextMenu from './ContextMenu'
 import { ToastContainer } from './Toast'
 import LoadingScreen from './LoadingScreen'
 import PresencePanel from './PresencePanel'
-import CanvasBackgroundPanel from './CanvasBackgroundPanel'
 import CanvasLayers from './CanvasLayers'
 import Minimap from './Minimap'
 import LayersSidebar from './LayersSidebar'
@@ -210,10 +209,6 @@ export default function Canvas({ onToolsReady, onViewportCenterChange, onCanvasS
   const {
     canvasBgHex,
     setCanvasBgHex,
-    isCanvasBgOpen,
-    setIsCanvasBgOpen,
-    canvasBgPanelPos,
-    setCanvasBgPanelPos,
     recordCanvasBgChange
   } = useCanvasBackground({
     pushHistory
@@ -489,24 +484,14 @@ export default function Canvas({ onToolsReady, onViewportCenterChange, onCanvasS
     getRemainingLockSeconds,
     getUserColor,
     normalizeShape,
-    computeCanvasBgPanelPosition,
   } = useCanvasUtils({
     containerRef,
     currentUserId,
     currentUserColor,
     currentTime,
     activeUsers,
-    setCanvasBgPanelPos,
   })
 
-  // Recompute canvas background panel position when opened or on resize
-  useEffect(() => {
-    if (!isCanvasBgOpen) return
-    computeCanvasBgPanelPosition()
-    const onResize = () => computeCanvasBgPanelPosition()
-    window.addEventListener('resize', onResize)
-    return () => window.removeEventListener('resize', onResize)
-  }, [isCanvasBgOpen, computeCanvasBgPanelPosition])
 
   // Memoize filtered and deduplicated active users (by email address)
   // Also ensure current user is excluded by email
@@ -1082,10 +1067,17 @@ export default function Canvas({ onToolsReady, onViewportCenterChange, onCanvasS
         onZoomOutHold={() => startZoomHold(-1)}
         onStopZoomHold={stopZoomHold}
         stageScale={stageScale}
-        onToggleCanvasBg={() => setIsCanvasBgOpen(v => !v)}
+        canvasBgHex={canvasBgHex}
+        onCanvasBgChange={(hex) => {
+          setCanvasBgHex(hex)
+          sendMessage({
+            type: 'CANVAS_UPDATE',
+            payload: { updates: { backgroundColor: hex } }
+          })
+          recordCanvasBgChange(hex)
+        }}
         lassoMode={lassoMode}
         onToggleLassoMode={() => setLassoMode(v => !v)}
-        onCollapse={() => setIsCanvasBgOpen(false)}
       />
 
       {/* Pan Mode Indicator removed */}
@@ -1240,9 +1232,6 @@ export default function Canvas({ onToolsReady, onViewportCenterChange, onCanvasS
           onPaste={handlePaste}
           onDuplicate={handleDuplicate}
           onDelete={handleContextMenuDelete}
-          onChangeCanvasColor={() => {
-            setIsCanvasBgOpen(true)
-          }}
           hasPasteData={clipboard.length > 0}
         />
       )}
@@ -1332,21 +1321,6 @@ export default function Canvas({ onToolsReady, onViewportCenterChange, onCanvasS
         </div>
       )}
       {/* Color Tooltip removed in favor of ShapeSelectionPanel */}
-
-      {/* Floating Canvas Background Color panel (right side) */}
-      <CanvasBackgroundPanel
-        isOpen={isCanvasBgOpen}
-        position={canvasBgPanelPos}
-        valueHex={canvasBgHex}
-        onChangeHex={(hex) => {
-          setCanvasBgHex(hex)
-          sendMessage({
-            type: 'CANVAS_UPDATE',
-            payload: { updates: { backgroundColor: hex } }
-          })
-          recordCanvasBgChange(hex)
-        }}
-      />
 
       {/* Minimap (lower-right) */}
       <Minimap

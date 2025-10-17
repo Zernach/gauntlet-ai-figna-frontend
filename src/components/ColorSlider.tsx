@@ -154,7 +154,7 @@ const ColorSlider: React.FC<ColorSliderProps> = ({ valueHex, onChangeHex, label,
                 }}
                 onChange={(e) => handleHueChange(Number(e.target.value))}
                 style={{
-                    width: '180px',
+                    width: '150px',
                     WebkitAppearance: 'none',
                     height: '6px',
                     borderRadius: '4px',

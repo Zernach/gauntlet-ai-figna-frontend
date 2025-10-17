@@ -7,8 +7,11 @@ import {
     ZoomOut,
     RotateCcw,
     MousePointer2,
-    Lasso
+    Lasso,
+    Grid3x3,
+    X
 } from 'lucide-react'
+import ColorSlider from './ColorSlider'
 
 interface ControlPanelProps {
     onAddRectangle: () => void
@@ -21,7 +24,8 @@ interface ControlPanelProps {
     onZoomOutHold: () => void
     onStopZoomHold: () => void
     stageScale: number
-    onToggleCanvasBg: () => void
+    canvasBgHex: string
+    onCanvasBgChange: (hex: string) => void
     lassoMode: boolean
     onToggleLassoMode: () => void
     onCollapse?: () => void
@@ -165,12 +169,21 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
     onZoomOutHold,
     onStopZoomHold,
     stageScale,
-    onToggleCanvasBg,
+    canvasBgHex,
+    onCanvasBgChange,
     lassoMode,
     onToggleLassoMode,
     onCollapse
 }) => {
     const [isExpanded, setIsExpanded] = React.useState(false)
+    const [showCanvasColorSlider, setShowCanvasColorSlider] = React.useState(false)
+
+    // Dismiss color slider when control panel collapses
+    React.useEffect(() => {
+        if (!isExpanded) {
+            setShowCanvasColorSlider(false)
+        }
+    }, [isExpanded])
 
     const handleMouseLeave = React.useCallback(() => {
         setIsExpanded(false)
@@ -234,14 +247,77 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                     />
 
                     {/* Canvas background color */}
-                    <ControlButton
-                        id="canvas-bg-btn"
-                        onClick={onToggleCanvasBg}
-                        icon={<Square size={18} />}
-                        label="Canvas"
-                        variant="secondary"
-                        isExpanded={isExpanded}
-                    />
+                    {!showCanvasColorSlider ? (
+                        <ControlButton
+                            id="canvas-bg-btn"
+                            onClick={() => setShowCanvasColorSlider(true)}
+                            icon={<Grid3x3 size={18} />}
+                            label="Canvas"
+                            variant="secondary"
+                            isExpanded={isExpanded}
+                        />
+                    ) : (
+                        <div style={{
+                            backgroundColor: '#1a1a1a',
+                            border: '1px solid #404040',
+                            borderRadius: '8px',
+                            padding: '12px',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '8px',
+                            transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                        }}>
+                            <div style={{
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center',
+                                marginBottom: '4px'
+                            }}>
+                                <div style={{
+                                    fontSize: '11px',
+                                    fontWeight: 600,
+                                    color: '#888',
+                                    textTransform: 'uppercase',
+                                    letterSpacing: '0.5px'
+                                }}>
+                                    Background
+                                </div>
+                                <button
+                                    onClick={() => setShowCanvasColorSlider(false)}
+                                    style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        width: '20px',
+                                        height: '20px',
+                                        backgroundColor: 'transparent',
+                                        border: 'none',
+                                        borderRadius: '4px',
+                                        cursor: 'pointer',
+                                        color: '#888',
+                                        transition: 'all 0.2s ease',
+                                    }}
+                                    onMouseEnter={(e) => {
+                                        e.currentTarget.style.backgroundColor = '#2a2a2a'
+                                        e.currentTarget.style.color = '#fff'
+                                    }}
+                                    onMouseLeave={(e) => {
+                                        e.currentTarget.style.backgroundColor = 'transparent'
+                                        e.currentTarget.style.color = '#888'
+                                    }}
+                                    title="Close"
+                                >
+                                    <X size={14} />
+                                </button>
+                            </div>
+                            <ColorSlider
+                                valueHex={canvasBgHex}
+                                onChangeHex={onCanvasBgChange}
+                                allowHexEdit={true}
+                                layout="column"
+                            />
+                        </div>
+                    )}
 
                     {/* Lasso Mode Toggle */}
                     <ControlButton
