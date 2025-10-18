@@ -75,104 +75,127 @@ export function useShapePropertyHandlers({
   }, [sendMessage])
 
   const handleChangeColor = useCallback((hex: string) => {
-    const selectedId = selectedIds[0]
-    if (!selectedId || !wsRef.current) return
-    // Optimistic local update
-    setShapes(prev => prev.map(s => s.id === selectedId ? { ...s, color: hex } : s))
-    // Track for extended grace period
-    trackRecentlyModified(selectedId, { color: hex })
-    // Debounced history
-    recordPropChange(selectedId, 'color', hex)
-    // Batch update with debouncing
-    scheduleBatchUpdate(selectedId, { color: hex }, 150)
+    if (selectedIds.length === 0 || !wsRef.current) return
+    // Optimistic local update for ALL selected shapes
+    setShapes(prev => prev.map(s => selectedIds.includes(s.id) ? { ...s, color: hex } : s))
+    // Apply to all selected shapes
+    selectedIds.forEach(selectedId => {
+      // Track for extended grace period
+      trackRecentlyModified(selectedId, { color: hex })
+      // Debounced history
+      recordPropChange(selectedId, 'color', hex)
+      // Batch update with debouncing
+      scheduleBatchUpdate(selectedId, { color: hex }, 150)
+    })
   }, [selectedIds, recordPropChange, setShapes, wsRef, trackRecentlyModified, scheduleBatchUpdate])
 
   const handleChangeOpacity = useCallback((opacity01: number) => {
-    const selectedId = selectedIds[0]
-    if (!selectedId || !wsRef.current) return
+    if (selectedIds.length === 0 || !wsRef.current) return
     const clamped = Math.max(0, Math.min(1, opacity01))
-    // Optimistic
-    setShapes(prev => prev.map(s => s.id === selectedId ? { ...s, opacity: clamped } : s))
-    // Track for extended grace period
-    trackRecentlyModified(selectedId, { opacity: clamped })
-    recordPropChange(selectedId, 'opacity', clamped)
-    // Batch update with debouncing
-    scheduleBatchUpdate(selectedId, { opacity: clamped }, 100)
+    // Optimistic local update for ALL selected shapes
+    setShapes(prev => prev.map(s => selectedIds.includes(s.id) ? { ...s, opacity: clamped } : s))
+    // Apply to all selected shapes
+    selectedIds.forEach(selectedId => {
+      // Track for extended grace period
+      trackRecentlyModified(selectedId, { opacity: clamped })
+      recordPropChange(selectedId, 'opacity', clamped)
+      // Batch update with debouncing
+      scheduleBatchUpdate(selectedId, { opacity: clamped }, 100)
+    })
   }, [selectedIds, recordPropChange, setShapes, wsRef, trackRecentlyModified, scheduleBatchUpdate])
 
   const handleCommitRotation = useCallback((rotationDeg: number) => {
-    const selectedId = selectedIds[0]
-    if (!selectedId || !wsRef.current) return
+    if (selectedIds.length === 0 || !wsRef.current) return
     const normalized = Math.round(rotationDeg)
-    setShapes(prev => prev.map(s => s.id === selectedId ? { ...s, rotation: normalized } : s))
-    // Track for extended grace period
-    trackRecentlyModified(selectedId, { rotation: normalized })
-    recordPropChange(selectedId, 'rotation', normalized)
-    // Batch update with debouncing for rotation changes
-    scheduleBatchUpdate(selectedId, { rotation: normalized }, 150)
+    // Optimistic local update for ALL selected shapes
+    setShapes(prev => prev.map(s => selectedIds.includes(s.id) ? { ...s, rotation: normalized } : s))
+    // Apply to all selected shapes
+    selectedIds.forEach(selectedId => {
+      // Track for extended grace period
+      trackRecentlyModified(selectedId, { rotation: normalized })
+      recordPropChange(selectedId, 'rotation', normalized)
+      // Batch update with debouncing for rotation changes
+      scheduleBatchUpdate(selectedId, { rotation: normalized }, 150)
+    })
   }, [selectedIds, recordPropChange, setShapes, wsRef, trackRecentlyModified, scheduleBatchUpdate])
 
   const handleChangeShadowColor = useCallback((hex: string) => {
-    const selectedId = selectedIds[0]
-    if (!selectedId || !wsRef.current) return
-    setShapes(prev => prev.map(s => s.id === selectedId ? { ...s, shadowColor: hex } : s))
-    // Track for extended grace period
-    trackRecentlyModified(selectedId, { shadowColor: hex })
-    recordPropChange(selectedId, 'shadowColor', hex)
-    // Batch update with debouncing
-    scheduleBatchUpdate(selectedId, { shadowColor: hex }, 150)
+    if (selectedIds.length === 0 || !wsRef.current) return
+    // Optimistic local update for ALL selected shapes
+    setShapes(prev => prev.map(s => selectedIds.includes(s.id) ? { ...s, shadowColor: hex } : s))
+    // Apply to all selected shapes
+    selectedIds.forEach(selectedId => {
+      // Track for extended grace period
+      trackRecentlyModified(selectedId, { shadowColor: hex })
+      recordPropChange(selectedId, 'shadowColor', hex)
+      // Batch update with debouncing
+      scheduleBatchUpdate(selectedId, { shadowColor: hex }, 150)
+    })
   }, [selectedIds, recordPropChange, setShapes, wsRef, trackRecentlyModified, scheduleBatchUpdate])
 
   const handleChangeShadowStrength = useCallback((strength: number) => {
-    const selectedId = selectedIds[0]
-    if (!selectedId || !wsRef.current) return
+    if (selectedIds.length === 0 || !wsRef.current) return
     const v = Math.max(0, Math.min(50, Math.round(strength)))
-    setShapes(prev => prev.map(s => s.id === selectedId ? { ...s, shadowStrength: v } : s))
-    // Track for extended grace period
-    trackRecentlyModified(selectedId, { shadowStrength: v })
-    recordPropChange(selectedId, 'shadowStrength', v)
-    // Batch update with debouncing
-    scheduleBatchUpdate(selectedId, { shadowStrength: v }, 100)
+    // Optimistic local update for ALL selected shapes
+    setShapes(prev => prev.map(s => selectedIds.includes(s.id) ? { ...s, shadowStrength: v } : s))
+    // Apply to all selected shapes
+    selectedIds.forEach(selectedId => {
+      // Track for extended grace period
+      trackRecentlyModified(selectedId, { shadowStrength: v })
+      recordPropChange(selectedId, 'shadowStrength', v)
+      // Batch update with debouncing
+      scheduleBatchUpdate(selectedId, { shadowStrength: v }, 100)
+    })
   }, [selectedIds, recordPropChange, setShapes, wsRef, trackRecentlyModified, scheduleBatchUpdate])
 
   const handleChangeFontFamily = useCallback((family: string) => {
-    const selectedId = selectedIds[0]
-    if (!selectedId || !wsRef.current) return
-    setShapes(prev => prev.map(s => s.id === selectedId ? { ...s, fontFamily: family } : s))
-    // Track for extended grace period
-    trackRecentlyModified(selectedId, { fontFamily: family })
-    recordPropChange(selectedId, 'fontFamily', family)
-    // Batch update with debouncing
-    scheduleBatchUpdate(selectedId, { fontFamily: family }, 150)
+    if (selectedIds.length === 0 || !wsRef.current) return
+    // Optimistic local update for ALL selected shapes
+    setShapes(prev => prev.map(s => selectedIds.includes(s.id) ? { ...s, fontFamily: family } : s))
+    // Apply to all selected shapes
+    selectedIds.forEach(selectedId => {
+      // Track for extended grace period
+      trackRecentlyModified(selectedId, { fontFamily: family })
+      recordPropChange(selectedId, 'fontFamily', family)
+      // Batch update with debouncing
+      scheduleBatchUpdate(selectedId, { fontFamily: family }, 150)
+    })
   }, [selectedIds, recordPropChange, setShapes, wsRef, trackRecentlyModified, scheduleBatchUpdate])
 
   const handleChangeFontWeight = useCallback((weight: string) => {
-    const selectedId = selectedIds[0]
-    if (!selectedId || !wsRef.current) return
-    setShapes(prev => prev.map(s => s.id === selectedId ? { ...s, fontWeight: weight } : s))
-    // Track for extended grace period
-    trackRecentlyModified(selectedId, { fontWeight: weight })
-    recordPropChange(selectedId, 'fontWeight', weight)
-    // Batch update with debouncing
-    scheduleBatchUpdate(selectedId, { fontWeight: weight }, 150)
+    if (selectedIds.length === 0 || !wsRef.current) return
+    // Optimistic local update for ALL selected shapes
+    setShapes(prev => prev.map(s => selectedIds.includes(s.id) ? { ...s, fontWeight: weight } : s))
+    // Apply to all selected shapes
+    selectedIds.forEach(selectedId => {
+      // Track for extended grace period
+      trackRecentlyModified(selectedId, { fontWeight: weight })
+      recordPropChange(selectedId, 'fontWeight', weight)
+      // Batch update with debouncing
+      scheduleBatchUpdate(selectedId, { fontWeight: weight }, 150)
+    })
   }, [selectedIds, recordPropChange, setShapes, wsRef, trackRecentlyModified, scheduleBatchUpdate])
 
   const handleChangeBorderRadius = useCallback((borderRadius: number) => {
-    const selectedId = selectedIds[0]
-    if (!selectedId || !wsRef.current) return
+    if (selectedIds.length === 0 || !wsRef.current) return
     const v = Math.max(0, Math.min(100, Math.round(borderRadius)))
-    setShapes(prev => prev.map(s => s.id === selectedId ? { ...s, borderRadius: v } : s))
-    // Track for extended grace period
-    trackRecentlyModified(selectedId, { borderRadius: v })
-    recordPropChange(selectedId, 'borderRadius', v)
-    // Batch update with debouncing
-    scheduleBatchUpdate(selectedId, { borderRadius: v }, 100)
+    // Optimistic local update for ALL selected shapes
+    setShapes(prev => prev.map(s => selectedIds.includes(s.id) ? { ...s, borderRadius: v } : s))
+    // Apply to all selected shapes
+    selectedIds.forEach(selectedId => {
+      // Track for extended grace period
+      trackRecentlyModified(selectedId, { borderRadius: v })
+      recordPropChange(selectedId, 'borderRadius', v)
+      // Batch update with debouncing
+      scheduleBatchUpdate(selectedId, { borderRadius: v }, 100)
+    })
   }, [selectedIds, recordPropChange, setShapes, wsRef, trackRecentlyModified, scheduleBatchUpdate])
 
   const handleChangeX = useCallback((x: number) => {
-    const selectedId = selectedIds[0]
-    if (!selectedId || !wsRef.current) return
+    if (selectedIds.length === 0 || !wsRef.current) return
     const v = Math.round(x)
+    // For position changes, only apply to first selected shape (primary)
+    const selectedId = selectedIds[0]
     setShapes(prev => prev.map(s => s.id === selectedId ? { ...s, x: v } : s))
     trackRecentlyModified(selectedId, { x: v })
     recordPropChange(selectedId, 'x', v)
@@ -180,9 +203,10 @@ export function useShapePropertyHandlers({
   }, [selectedIds, recordPropChange, setShapes, wsRef, trackRecentlyModified, scheduleBatchUpdate])
 
   const handleChangeY = useCallback((y: number) => {
-    const selectedId = selectedIds[0]
-    if (!selectedId || !wsRef.current) return
+    if (selectedIds.length === 0 || !wsRef.current) return
     const v = Math.round(y)
+    // For position changes, only apply to first selected shape (primary)
+    const selectedId = selectedIds[0]
     setShapes(prev => prev.map(s => s.id === selectedId ? { ...s, y: v } : s))
     trackRecentlyModified(selectedId, { y: v })
     recordPropChange(selectedId, 'y', v)
@@ -190,9 +214,10 @@ export function useShapePropertyHandlers({
   }, [selectedIds, recordPropChange, setShapes, wsRef, trackRecentlyModified, scheduleBatchUpdate])
 
   const handleChangeWidth = useCallback((width: number) => {
-    const selectedId = selectedIds[0]
-    if (!selectedId || !wsRef.current) return
+    if (selectedIds.length === 0 || !wsRef.current) return
     const v = Math.max(1, Math.round(width))
+    // For dimension changes, only apply to first selected shape (primary)
+    const selectedId = selectedIds[0]
     setShapes(prev => prev.map(s => s.id === selectedId ? { ...s, width: v } : s))
     trackRecentlyModified(selectedId, { width: v })
     recordPropChange(selectedId, 'width', v)
@@ -200,9 +225,10 @@ export function useShapePropertyHandlers({
   }, [selectedIds, recordPropChange, setShapes, wsRef, trackRecentlyModified, scheduleBatchUpdate])
 
   const handleChangeHeight = useCallback((height: number) => {
-    const selectedId = selectedIds[0]
-    if (!selectedId || !wsRef.current) return
+    if (selectedIds.length === 0 || !wsRef.current) return
     const v = Math.max(1, Math.round(height))
+    // For dimension changes, only apply to first selected shape (primary)
+    const selectedId = selectedIds[0]
     setShapes(prev => prev.map(s => s.id === selectedId ? { ...s, height: v } : s))
     trackRecentlyModified(selectedId, { height: v })
     recordPropChange(selectedId, 'height', v)
@@ -210,9 +236,10 @@ export function useShapePropertyHandlers({
   }, [selectedIds, recordPropChange, setShapes, wsRef, trackRecentlyModified, scheduleBatchUpdate])
 
   const handleChangeRadius = useCallback((radius: number) => {
-    const selectedId = selectedIds[0]
-    if (!selectedId || !wsRef.current) return
+    if (selectedIds.length === 0 || !wsRef.current) return
     const v = Math.max(1, Math.round(radius))
+    // For dimension changes, only apply to first selected shape (primary)
+    const selectedId = selectedIds[0]
     setShapes(prev => prev.map(s => s.id === selectedId ? { ...s, radius: v } : s))
     trackRecentlyModified(selectedId, { radius: v })
     recordPropChange(selectedId, 'radius', v)

@@ -123,15 +123,15 @@ Be enthusiastic and explain your design decisions!`
         }
     }, [viewportCenter, canvasShapes, isConnected])
 
-    // Handle function call from OpenAI - optimized for <50ms execution
-    const handleFunctionCall = useCallback((callId: string, name: string, args: string) => {
+    // Handle function call from OpenAI - supports async tools like generateComplexDesign
+    const handleFunctionCall = useCallback(async (callId: string, name: string, args: string) => {
         // Start performance monitoring
         performanceMonitor.startTimer(`voiceAgent_${name}`);
 
         try {
             // Fast path: parse and execute immediately
             const parsedArgs = JSON.parse(args);
-            const result = executeTool(name, parsedArgs);
+            const result = await executeTool(name, parsedArgs);
 
             // Send response immediately if channel is ready
             const dc = dataChannelRef.current;

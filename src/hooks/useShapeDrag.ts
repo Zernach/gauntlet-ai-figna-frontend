@@ -104,13 +104,25 @@ export function useShapeDrag({
     isDragMoveRef.current = false // Reset drag move flag
     justFinishedMultiDragRef.current = false // Reset multi-drag flag when starting new drag
 
+    // Get all shapes in the same group as the dragged shape (if it has a group)
+    const groupShapeIds: string[] = []
+    if (shape && shape.group_id) {
+      shapesRef.current.forEach(s => {
+        if (s.group_id === shape.group_id) {
+          groupShapeIds.push(s.id)
+        }
+      })
+    }
+
     // Select the shape being dragged if not already selected
+    // If shape is part of a group, select all group members
     if (!selectedIdsRef.current.includes(id)) {
       // Unlock previously selected shapes
       if (selectedIdsRef.current.length > 0) {
         unlockShapes(selectedIdsRef.current)
       }
-      setSelectedIds([id])
+      const shapesToSelect = groupShapeIds.length > 0 ? groupShapeIds : [id]
+      setSelectedIds(shapesToSelect)
     }
 
     // Store baseline positions for all selected shapes
@@ -269,8 +281,12 @@ export function useShapeDrag({
         })
       }
 
-      // Store the primary drag position
-      dragPositionRef.current = { shapeId: id, x: constrainedX, y: constrainedY }
+      // Store the primary drag position - use the actual position from newPositions
+      // to ensure perfect sync with what we stored in pendingDragUpdatesRef
+      const primaryFinalPos = newPositions.get(id)
+      if (primaryFinalPos) {
+        dragPositionRef.current = { shapeId: id, x: primaryFinalPos.x, y: primaryFinalPos.y }
+      }
     } else {
       // Single shape drag (original behavior)
       pendingDragUpdatesRef.current.set(id, { x: constrainedX, y: constrainedY })
@@ -335,19 +351,47 @@ export function useShapeDrag({
     const selectedShapes = shapesRef.current.filter(s => selectedIdsRef.current.includes(s.id))
 
     if (selectedShapes.length > 1) {
-      // Multi-shape drag end: send final positions and create undo/redo entry
-      const undoMessages: any[] = []
-      const redoMessages: any[] = []
+      // Multi-shape drag end: Get actual final position from the dragged shape
+      // and calculate final positions for all other shapes based on their offsets
+      const primaryShape = shapesRef.current.find(s => s.id === id)
+
+      if (!primaryShape) return
+
+      // Get the actual final position - prefer dragPositionRef as it has the latest position
+      const primaryFinalPos = dragPositionRef.current?.shapeId === id
+        ? { x: dragPositionRef.current.x, y: dragPositionRef.current.y }
+        : { x: primaryShape.x, y: primaryShape.y }
+
+      // Calculate final positions for all shapes using the stored offsets
+      const finalPositions = new Map<string, { x: number; y: number }>()
+      finalPositions.set(id, primaryFinalPos)
 
       selectedShapes.forEach(shape => {
-        const currentPos = pendingDragUpdatesRef.current.get(shape.id) || { x: shape.x, y: shape.y }
+        if (shape.id !== id) {
+          const offset = multiDragOffsetsRef.current.get(shape.id)
+          if (offset) {
+            const finalX = primaryFinalPos.x + offset.dx
+            const finalY = primaryFinalPos.y + offset.dy
+            finalPositions.set(shape.id, { x: finalX, y: finalY })
+          }
+        }
+      })
+
+      // Now process all shapes with their calculated final positions
+      const undoMessages: any[] = []
+      const redoMessages: any[] = []
+      const timestamp = Date.now()
+
+      selectedShapes.forEach(shape => {
+        const finalPos = finalPositions.get(shape.id) || { x: shape.x, y: shape.y }
         const baseline = dragBaselineRef.current.get(shape.id)
 
         // Record the final position to prevent animation from server updates
+        // Use a longer timestamp to ensure all updates are preserved
         recentlyDraggedRef.current.set(shape.id, {
-          x: currentPos.x,
-          y: currentPos.y,
-          timestamp: Date.now(),
+          x: finalPos.x,
+          y: finalPos.y,
+          timestamp: timestamp,
         })
 
         // Send final position
@@ -356,21 +400,21 @@ export function useShapeDrag({
           payload: {
             shapeId: shape.id,
             updates: {
-              x: currentPos.x,
-              y: currentPos.y,
+              x: finalPos.x,
+              y: finalPos.y,
             },
           },
         }))
 
         // Build undo/redo if position changed
-        if (baseline && (baseline.x !== currentPos.x || baseline.y !== currentPos.y)) {
+        if (baseline && (baseline.x !== finalPos.x || baseline.y !== finalPos.y)) {
           undoMessages.push({
             type: 'SHAPE_UPDATE',
             payload: { shapeId: shape.id, updates: { x: baseline.x, y: baseline.y } },
           })
           redoMessages.push({
             type: 'SHAPE_UPDATE',
-            payload: { shapeId: shape.id, updates: { x: currentPos.x, y: currentPos.y } },
+            payload: { shapeId: shape.id, updates: { x: finalPos.x, y: finalPos.y } },
           })
         }
 
@@ -388,9 +432,9 @@ export function useShapeDrag({
         })
       }
 
-      // Update React state with final positions (especially for primary shape which wasn't updated during drag)
+      // Update React state with final positions atomically for all shapes at once
       setShapes(prev => prev.map(s => {
-        const finalPos = pendingDragUpdatesRef.current.get(s.id)
+        const finalPos = finalPositions.get(s.id)
         return finalPos ? { ...s, x: finalPos.x, y: finalPos.y } : s
       }))
 

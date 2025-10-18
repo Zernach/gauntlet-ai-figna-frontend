@@ -67,7 +67,7 @@ async function getCSRFToken(): Promise<string | null> {
     }
 
     try {
-        const response = await secureRequest('/api/auth/csrf-token', { method: 'GET', requiresCSRF: false })
+        const response = await secureRequest('/auth/csrf-token', { method: 'GET', requiresCSRF: false })
 
         if (response.csrfToken) {
             csrfToken = response.csrfToken
@@ -183,14 +183,14 @@ export const api = {
  * Get current user
  */
 export async function getCurrentUser() {
-    return api.get('/api/auth/me')
+    return api.get('/auth/me')
 }
 
 /**
  * Get token information
  */
 export async function getTokenInfo() {
-    return api.get('/api/auth/token-info')
+    return api.get('/auth/token-info')
 }
 
 /**
@@ -201,7 +201,7 @@ export async function validateTokenRefresh() {
     if (error) {
         throw error
     }
-    return api.post('/api/auth/refresh')
+    return api.post('/auth/refresh')
 }
 
 /**

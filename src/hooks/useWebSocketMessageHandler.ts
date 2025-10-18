@@ -145,13 +145,13 @@ export function useWebSocketMessageHandler({
                   y: s.y,
                 }
               }
-              // Check if this shape was recently dragged - preserve position for 1000ms after drag ends
-              // to prevent animation from delayed server updates
+              // Check if this shape was recently dragged - preserve position for 1500ms after drag ends
+              // to prevent animation from delayed server updates (especially for multi-shape drags)
               const recentDrag = recentlyDraggedRef.current.get(shape.id)
               if (recentDrag) {
                 const timeSinceDrag = Date.now() - recentDrag.timestamp
-                // Within 1000ms of drag end, preserve local position to prevent animation
-                if (timeSinceDrag < 1000) {
+                // Within 1500ms of drag end, preserve local position to prevent animation
+                if (timeSinceDrag < 1500) {
                   return {
                     ...shape,
                     x: recentDrag.x,

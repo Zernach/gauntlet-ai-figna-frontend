@@ -66,40 +66,57 @@ export function useShapeSelection({
         // Check if this is a multi-select (ctrl/cmd/shift key)
         const isMultiSelect = event?.evt?.ctrlKey || event?.evt?.metaKey || event?.evt?.shiftKey
 
+        // Get all shapes in the same group as the clicked shape (if it has a group)
+        const groupShapeIds: string[] = []
+        if (shape && shape.group_id) {
+            shapesRef.current.forEach(s => {
+                if (s.group_id === shape.group_id) {
+                    groupShapeIds.push(s.id)
+                }
+            })
+        }
+
         if (isMultiSelect) {
             // Toggle selection
             if (selectedIdsRef.current.includes(id)) {
-                // Deselect and unlock
-                unlockShapes([id])
-                setSelectedIds(prev => prev.filter(sid => sid !== id))
+                // Deselect - if shape is part of a group, deselect all group members
+                const shapesToDeselect = groupShapeIds.length > 0 ? groupShapeIds : [id]
+                unlockShapes(shapesToDeselect)
+                setSelectedIds(prev => prev.filter(sid => !shapesToDeselect.includes(sid)))
             } else {
-                // Add to selection and lock
-                setSelectedIds(prev => [...prev, id])
-                sendMessage({
-                    type: 'SHAPE_UPDATE',
-                    payload: {
-                        shapeId: id,
-                        updates: { isLocked: true },
-                    },
+                // Add to selection - if shape is part of a group, add all group members
+                const shapesToAdd = groupShapeIds.length > 0 ? groupShapeIds : [id]
+                setSelectedIds(prev => [...prev, ...shapesToAdd])
+                shapesToAdd.forEach(shapeId => {
+                    sendMessage({
+                        type: 'SHAPE_UPDATE',
+                        payload: {
+                            shapeId,
+                            updates: { isLocked: true },
+                        },
+                    })
                 })
             }
         } else {
             // Single selection - unlock all previously selected shapes
-            const shapesToUnlock = selectedIdsRef.current.filter(sid => sid !== id)
+            const shapesToUnlock = selectedIdsRef.current.filter(sid => !groupShapeIds.includes(sid) && sid !== id)
             if (shapesToUnlock.length > 0) {
                 unlockShapes(shapesToUnlock)
             }
 
-            // Set selected locally
-            setSelectedIds([id])
+            // If shape is part of a group, select all group members
+            const shapesToSelect = groupShapeIds.length > 0 ? groupShapeIds : [id]
+            setSelectedIds(shapesToSelect)
 
-            // Send lock message to server to notify other users
-            sendMessage({
-                type: 'SHAPE_UPDATE',
-                payload: {
-                    shapeId: id,
-                    updates: { isLocked: true },
-                },
+            // Send lock messages for all selected shapes
+            shapesToSelect.forEach(shapeId => {
+                sendMessage({
+                    type: 'SHAPE_UPDATE',
+                    payload: {
+                        shapeId,
+                        updates: { isLocked: true },
+                    },
+                })
             })
         }
     }, [isDragMoveRef, shapesRef, currentUserIdRef, activeUsers, showToast, sendMessage, unlockShapes, selectedIdsRef])

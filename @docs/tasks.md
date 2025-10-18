@@ -813,3 +813,10 @@ figna/
 - Executes by re-sending appropriate WebSocket messages to mirror prior states; no backend changes required.
 - UI: `UndoRedoPanel` renders below the active users panel and only appears after the first action.
 - Shortcuts: Cmd/Ctrl+Z (undo), Shift+Cmd/Ctrl+Z or Ctrl+Y (redo).
+
+### Note: Canvas Persistence on Page Refresh
+- Implemented localStorage-based canvas persistence in `src/hooks/useCanvasManagement.ts`.
+- Automatically saves the current canvas ID to localStorage whenever the user views or switches canvases.
+- On page refresh, the user returns to their last viewed canvas instead of defaulting to the first canvas.
+- If the saved canvas no longer exists (was deleted), falls back to the first available canvas.
+- Storage key: `figna_last_canvas_id`

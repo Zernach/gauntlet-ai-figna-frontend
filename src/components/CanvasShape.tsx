@@ -107,6 +107,7 @@ interface CanvasShapeProps {
         locked_at?: string | null
         locked_by?: string | null
         created_by?: string
+        group_id?: string | null
     }
     strokeColor: string
     strokeWidth: number
@@ -155,8 +156,13 @@ const CanvasShapeComponent = ({
     onContextMenu,
 }: CanvasShapeProps) => {
     const isLocked = remainingSeconds !== null
+    const isGrouped = !!shape.group_id
     const BASE_HANDLE_PX = 16
     const handleSize = BASE_HANDLE_PX / stageScale
+
+    // Use special stroke for grouped shapes
+    const effectiveStrokeColor = isGrouped && !isSelected ? '#8b5cf6' : strokeColor // Purple for grouped shapes
+    const effectiveStrokeWidth = isGrouped && !isSelected ? strokeWidth * 1.5 : strokeWidth
     const handleStrokeThin = 1 / stageScale
     const handleStrokeThick = 2 / stageScale
     const ROTATION_OFFSET_PX = 28
@@ -254,7 +260,7 @@ const CanvasShapeComponent = ({
                                 width={handleSize}
                                 height={handleSize}
                                 fill="#ffffff"
-                                stroke={strokeColor}
+                                stroke={effectiveStrokeColor}
                                 strokeWidth={handleStrokeThin}
                                 draggable
                                 onDragStart={(e) => {
@@ -371,8 +377,8 @@ const CanvasShapeComponent = ({
                     y={shape.y}
                     radius={shape.radius || DEFAULT_SHAPE_SIZE / 2}
                     fill={shape.color}
-                    stroke={strokeColor}
-                    strokeWidth={strokeWidth}
+                    stroke={effectiveStrokeColor}
+                    strokeWidth={effectiveStrokeWidth}
                     rotation={shape.rotation || 0}
                     opacity={shape.opacity ?? 1}
                     shadowColor={shape.shadowColor ?? 'transparent'}
@@ -405,7 +411,7 @@ const CanvasShapeComponent = ({
                             width={handleSize}
                             height={handleSize}
                             fill="#ffffff"
-                            stroke={strokeColor}
+                            stroke={effectiveStrokeColor}
                             strokeWidth={handleStrokeThin}
                             draggable
                             onDragStart={(e) => {
@@ -513,8 +519,8 @@ const CanvasShapeComponent = ({
                 height={shape.height || DEFAULT_SHAPE_SIZE}
                 cornerRadius={borderRadius}
                 fill={shape.color}
-                stroke={strokeColor}
-                strokeWidth={strokeWidth}
+                stroke={effectiveStrokeColor}
+                strokeWidth={effectiveStrokeWidth}
                 rotation={shape.rotation || 0}
                 opacity={shape.opacity ?? 1}
                 shadowColor={shape.shadowColor ?? 'transparent'}
@@ -567,7 +573,7 @@ const CanvasShapeComponent = ({
                             width={handleSize}
                             height={handleSize}
                             fill="#ffffff"
-                            stroke={strokeColor}
+                            stroke={effectiveStrokeColor}
                             strokeWidth={handleStrokeThin}
                             draggable
                             onDragStart={(e) => {
@@ -612,7 +618,7 @@ const CanvasShapeComponent = ({
                             width={handleSize}
                             height={handleSize}
                             fill="#ffffff"
-                            stroke={strokeColor}
+                            stroke={effectiveStrokeColor}
                             strokeWidth={handleStrokeThin}
                             draggable
                             onDragStart={(e) => {
@@ -657,7 +663,7 @@ const CanvasShapeComponent = ({
                             width={handleSize}
                             height={handleSize}
                             fill="#ffffff"
-                            stroke={strokeColor}
+                            stroke={effectiveStrokeColor}
                             strokeWidth={handleStrokeThin}
                             draggable
                             onDragStart={(e) => {
@@ -702,7 +708,7 @@ const CanvasShapeComponent = ({
                             width={handleSize}
                             height={handleSize}
                             fill="#ffffff"
-                            stroke={strokeColor}
+                            stroke={effectiveStrokeColor}
                             strokeWidth={handleStrokeThin}
                             draggable
                             onDragStart={(e) => {

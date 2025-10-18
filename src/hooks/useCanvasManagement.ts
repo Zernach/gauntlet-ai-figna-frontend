@@ -31,6 +31,8 @@ interface UseCanvasManagementReturn {
     canvasSwitchResolverRef: React.MutableRefObject<((success: boolean) => void) | null>
 }
 
+const LAST_CANVAS_KEY = 'figna_last_canvas_id'
+
 export function useCanvasManagement(): UseCanvasManagementReturn {
     const [canvases, setCanvases] = useState<Canvas[]>([])
     const [currentCanvasId, setCurrentCanvasId] = useState<string | null>(null)
@@ -80,10 +82,19 @@ export function useCanvasManagement(): UseCanvasManagementReturn {
 
             setCanvases(fetchedCanvases)
 
-            // If no current canvas is set and we have canvases, set the first one
+            // If no current canvas is set and we have canvases, check localStorage first
             // Use functional update to avoid dependency on currentCanvasId
             setCurrentCanvasId(prevId => {
                 if (!prevId && fetchedCanvases.length > 0) {
+                    // Try to load last viewed canvas from localStorage
+                    const lastCanvasId = localStorage.getItem(LAST_CANVAS_KEY)
+
+                    // If last canvas exists in fetched canvases, use it
+                    if (lastCanvasId && fetchedCanvases.some((c: Canvas) => c.id === lastCanvasId)) {
+                        return lastCanvasId
+                    }
+
+                    // Otherwise, default to first canvas
                     return fetchedCanvases[0].id
                 }
                 return prevId
@@ -176,9 +187,12 @@ export function useCanvasManagement(): UseCanvasManagementReturn {
             if (currentCanvasId === canvasId) {
                 const remaining = canvases.filter(c => c.id !== canvasId)
                 if (remaining.length > 0) {
-                    setCurrentCanvasId(remaining[0].id)
+                    const newCanvasId = remaining[0].id
+                    setCurrentCanvasId(newCanvasId)
+                    localStorage.setItem(LAST_CANVAS_KEY, newCanvasId)
                 } else {
                     setCurrentCanvasId(null)
+                    localStorage.removeItem(LAST_CANVAS_KEY)
                 }
             }
 
@@ -251,6 +265,13 @@ export function useCanvasManagement(): UseCanvasManagementReturn {
     useEffect(() => {
         fetchCanvases()
     }, [fetchCanvases])
+
+    // Save current canvas ID to localStorage whenever it changes
+    useEffect(() => {
+        if (currentCanvasId) {
+            localStorage.setItem(LAST_CANVAS_KEY, currentCanvasId)
+        }
+    }, [currentCanvasId])
 
     return {
         canvases,
