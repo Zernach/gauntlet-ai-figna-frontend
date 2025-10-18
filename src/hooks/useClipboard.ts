@@ -42,7 +42,7 @@ export function useClipboard() {
   }, [])
 
   const handleCut = useCallback((
-    shapes: Shape[], 
+    shapes: Shape[],
     selectedIds: string[],
     onSendMessage: (msg: WSMessage) => void,
     onShowToast: (message: string, type: 'info' | 'warning' | 'error' | 'success') => void
@@ -50,12 +50,10 @@ export function useClipboard() {
     const selectedShapes = shapes.filter(s => selectedIds.includes(s.id))
     if (selectedShapes.length > 0) {
       setClipboard(selectedShapes)
-      
-      // Delete the selected shapes
-      selectedIds.forEach(id => {
-        onSendMessage({ type: 'SHAPE_DELETE', payload: { shapeId: id } })
-      })
-      
+
+      // Delete the selected shapes in a single batch
+      onSendMessage({ type: 'SHAPE_DELETE', payload: { shapeIds: selectedIds } })
+
       onShowToast(`Cut ${selectedShapes.length} shape(s)`, 'info')
       return selectedShapes.length
     }

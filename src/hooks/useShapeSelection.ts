@@ -9,7 +9,7 @@ interface UseShapeSelectionProps {
     lastCursorActivityRef: React.MutableRefObject<number>
     showToast: (message: string, type?: 'info' | 'warning' | 'error' | 'success', duration?: number) => void
     sendMessage: (message: any) => void
-    unlockShape: (shapeId: string) => void
+    unlockShapes: (shapeIds: string[]) => void
 }
 
 export function useShapeSelection({
@@ -21,7 +21,7 @@ export function useShapeSelection({
     lastCursorActivityRef,
     showToast,
     sendMessage,
-    unlockShape
+    unlockShapes
 }: UseShapeSelectionProps) {
 
     const [selectedIds, setSelectedIds] = useState<string[]>([])
@@ -37,6 +37,14 @@ export function useShapeSelection({
     const handleShapeClick = useCallback((id: string, event?: any) => {
         // Don't select if we just finished a drag move
         if (isDragMoveRef.current) {
+            return
+        }
+
+        // Check if this is a right-click (context menu)
+        // If right-clicking on an already-selected shape, preserve the multi-selection
+        const isRightClick = event?.evt?.button === 2
+        if (isRightClick && selectedIdsRef.current.includes(id)) {
+            // Right-clicked on a shape that's already selected - keep selection as-is
             return
         }
 
@@ -62,7 +70,7 @@ export function useShapeSelection({
             // Toggle selection
             if (selectedIdsRef.current.includes(id)) {
                 // Deselect and unlock
-                unlockShape(id)
+                unlockShapes([id])
                 setSelectedIds(prev => prev.filter(sid => sid !== id))
             } else {
                 // Add to selection and lock
@@ -77,11 +85,10 @@ export function useShapeSelection({
             }
         } else {
             // Single selection - unlock all previously selected shapes
-            selectedIdsRef.current.forEach(sid => {
-                if (sid !== id) {
-                    unlockShape(sid)
-                }
-            })
+            const shapesToUnlock = selectedIdsRef.current.filter(sid => sid !== id)
+            if (shapesToUnlock.length > 0) {
+                unlockShapes(shapesToUnlock)
+            }
 
             // Set selected locally
             setSelectedIds([id])
@@ -95,16 +102,16 @@ export function useShapeSelection({
                 },
             })
         }
-    }, [isDragMoveRef, shapesRef, currentUserIdRef, activeUsers, showToast, sendMessage, unlockShape, selectedIdsRef])
+    }, [isDragMoveRef, shapesRef, currentUserIdRef, activeUsers, showToast, sendMessage, unlockShapes, selectedIdsRef])
 
     // Deselect all shapes
     const handleDeselectAll = useCallback(() => {
         // Unlock all currently selected shapes
-        selectedIdsRef.current.forEach(sid => {
-            unlockShape(sid)
-        })
+        if (selectedIdsRef.current.length > 0) {
+            unlockShapes(selectedIdsRef.current)
+        }
         setSelectedIds([])
-    }, [unlockShape, selectedIdsRef])
+    }, [unlockShapes, selectedIdsRef])
 
     // Start lasso selection
     const handleLassoStart = useCallback((x: number, y: number) => {
@@ -170,11 +177,10 @@ export function useShapeSelection({
 
         // Unlock previously selected shapes that are not in the new selection
         const newSelectedIds = selectableShapes.map(s => s.id)
-        selectedIdsRef.current.forEach(sid => {
-            if (!newSelectedIds.includes(sid)) {
-                unlockShape(sid)
-            }
-        })
+        const shapesToUnlock = selectedIdsRef.current.filter(sid => !newSelectedIds.includes(sid))
+        if (shapesToUnlock.length > 0) {
+            unlockShapes(shapesToUnlock)
+        }
 
         // Lock newly selected shapes
         selectableShapes.forEach(shape => {
@@ -193,7 +199,7 @@ export function useShapeSelection({
         setIsDrawingLasso(false)
         setLassoStart(null)
         setLassoEnd(null)
-    }, [isDrawingLasso, lassoStart, lassoEnd, shapes, currentUserIdRef, showToast, unlockShape, sendMessage, selectedIdsRef])
+    }, [isDrawingLasso, lassoStart, lassoEnd, shapes, currentUserIdRef, showToast, unlockShapes, sendMessage, selectedIdsRef])
 
     // Keep selectedIdsRef in sync
     selectedIdsRef.current = selectedIds
@@ -232,13 +238,13 @@ export function useShapeSelection({
 
             // If any selections have expired, deselect them
             if (expiredSelections.length > 0) {
-                expiredSelections.forEach(id => unlockShape(id))
+                unlockShapes(expiredSelections)
                 setSelectedIds(prev => prev.filter(id => !expiredSelections.includes(id)))
             }
         }, 100)
 
         return () => clearInterval(interval)
-    }, [selectedIds, shapesRef, currentUserIdRef, lastCursorActivityRef, unlockShape, setSelectedIds])
+    }, [selectedIds, shapesRef, currentUserIdRef, lastCursorActivityRef, unlockShapes, setSelectedIds])
 
     return {
         selectedIds,

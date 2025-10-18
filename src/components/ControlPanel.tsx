@@ -9,7 +9,8 @@ import {
     MousePointer2,
     Lasso,
     Grid3x3,
-    X
+    X,
+    SquareDashedMousePointer
 } from 'lucide-react'
 import ColorSlider from './ColorSlider'
 
@@ -28,6 +29,8 @@ interface ControlPanelProps {
     onCanvasBgChange: (hex: string) => void
     lassoMode: boolean
     onToggleLassoMode: () => void
+    rectMode: boolean
+    onToggleRectMode: () => void
     onCollapse?: () => void
 }
 
@@ -173,6 +176,8 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
     onCanvasBgChange,
     lassoMode,
     onToggleLassoMode,
+    rectMode,
+    onToggleRectMode,
     onCollapse
 }) => {
     const [isExpanded, setIsExpanded] = React.useState(false)
@@ -325,6 +330,15 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                         icon={<Lasso size={18} />}
                         label={lassoMode ? "Lasso: ON" : "Lasso: OFF"}
                         variant={lassoMode ? "accent" : "secondary"}
+                        isExpanded={isExpanded}
+                    />
+
+                    {/* Rectangle Selection Mode Toggle */}
+                    <ControlButton
+                        onClick={onToggleRectMode}
+                        icon={<SquareDashedMousePointer size={18} />}
+                        label={rectMode ? "Rect: ON" : "Rect: OFF"}
+                        variant={rectMode ? "accent" : "secondary"}
                         isExpanded={isExpanded}
                     />
                 </div>

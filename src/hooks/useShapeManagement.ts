@@ -35,8 +35,8 @@ export function useShapeManagement({
 
     // Refs to keep stable function references for external use
     const createShapesRef = useRef<((shapesData: any[]) => void) | null>(null)
-    const unlockShapeRef = useRef<((shapeId: string) => void) | null>(null)
-    const handleDeleteShapeRef = useRef<((shapeIds?: string[]) => void) | null>(null)
+    const unlockShapesRef = useRef<((shapeIds: string[]) => void) | null>(null)
+    const handleDeleteShapesRef = useRef<((shapeIds: string[]) => void) | null>(null)
 
     // Handle shape creation (generic version for voice and UI) - now supports arrays
     const createShapes = useCallback((shapesData: any[]) => {
@@ -208,33 +208,32 @@ export function useShapeManagement({
         }
     }, [pushHistory, sendMessage, shapesRef, currentUserIdRef, wsRef])
 
-    // Helper function to unlock a shape
-    const unlockShape = useCallback((shapeId: string) => {
-        sendMessage({
-            type: 'SHAPE_UPDATE',
-            payload: {
-                shapeId,
-                updates: {
-                    isLocked: false,
+    // Helper function to unlock shapes (plural, accepts array)
+    const unlockShapes = useCallback((shapeIds: string[]) => {
+        if (shapeIds.length === 0) return
+
+        shapeIds.forEach(shapeId => {
+            sendMessage({
+                type: 'SHAPE_UPDATE',
+                payload: {
+                    shapeId,
+                    updates: {
+                        isLocked: false,
+                    },
                 },
-            },
+            })
         })
     }, [sendMessage])
 
-    // Handle shape deletion
-    const handleDeleteShape = useCallback((shapeIds?: string[]) => {
+    // Handle shape deletion (plural, accepts array)
+    const handleDeleteShapes = useCallback((shapeIds: string[]) => {
         if (!wsRef.current) return
+        if (shapeIds.length === 0) return
 
-        const idsToDelete = shapeIds || []
-
-        if (idsToDelete.length === 0) return
-
-        // Send delete message for each shape
-        idsToDelete.forEach(shapeId => {
-            sendMessage({
-                type: 'SHAPE_DELETE',
-                payload: { shapeId }
-            })
+        // Send single delete message with array of shape IDs
+        sendMessage({
+            type: 'SHAPE_DELETE',
+            payload: { shapeIds }
         })
     }, [sendMessage, wsRef])
 
@@ -244,12 +243,12 @@ export function useShapeManagement({
     }, [createShapes])
 
     useEffect(() => {
-        unlockShapeRef.current = unlockShape
-    }, [unlockShape])
+        unlockShapesRef.current = unlockShapes
+    }, [unlockShapes])
 
     useEffect(() => {
-        handleDeleteShapeRef.current = handleDeleteShape
-    }, [handleDeleteShape])
+        handleDeleteShapesRef.current = handleDeleteShapes
+    }, [handleDeleteShapes])
 
     return {
         createShapes,
@@ -257,11 +256,11 @@ export function useShapeManagement({
         handleAddCircle,
         handleAddText,
         handleTextDoubleClick,
-        unlockShape,
-        handleDeleteShape,
+        unlockShapes,
+        handleDeleteShapes,
         createShapesRef,
-        unlockShapeRef,
-        handleDeleteShapeRef
+        unlockShapesRef,
+        handleDeleteShapesRef
     }
 }
 

@@ -21,7 +21,7 @@ interface UseShapeResizeProps {
   recentlyResizedRef: React.MutableRefObject<Map<string, { x?: number; y?: number; width?: number; height?: number; radius?: number; fontSize?: number; timestamp: number }>>
   setShapes: React.Dispatch<React.SetStateAction<Shape[]>>
   setSelectedIds: React.Dispatch<React.SetStateAction<string[]>>
-  unlockShape: (shapeId: string) => void
+  unlockShapes: (shapeIds: string[]) => void
   pushHistory: (entry: HistoryEntry) => void
   sendMessage: (message: any) => void
 }
@@ -37,7 +37,7 @@ export function useShapeResize({
   recentlyResizedRef,
   setShapes,
   setSelectedIds,
-  unlockShape,
+  unlockShapes,
   pushHistory,
   sendMessage,
 }: UseShapeResizeProps) {
@@ -53,7 +53,9 @@ export function useShapeResize({
     resizingShapeIdRef.current = id
     // Select and lock immediately
     if (!selectedIdsRef.current.includes(id)) {
-      selectedIdsRef.current.forEach(sid => unlockShape(sid))
+      if (selectedIdsRef.current.length > 0) {
+        unlockShapes(selectedIdsRef.current)
+      }
       setSelectedIds([id])
     }
     const s = shapesRef.current.find(sh => sh.id === id)
@@ -81,7 +83,7 @@ export function useShapeResize({
     selectedIdsRef,
     shapesRef,
     resizeBaselineRef,
-    unlockShape,
+    unlockShapes,
     setSelectedIds,
     sendMessage,
   ])
@@ -234,7 +236,7 @@ export function useShapeResize({
     }, 100)
 
     // Unlock and deselect
-    unlockShape(id)
+    unlockShapes([id])
     setSelectedIds([])
   }, [
     wsRef,
@@ -246,7 +248,7 @@ export function useShapeResize({
     resizeThrottleRef,
     sendMessage,
     pushHistory,
-    unlockShape,
+    unlockShapes,
     setSelectedIds,
   ])
 

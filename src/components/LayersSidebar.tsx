@@ -97,15 +97,82 @@ export default function LayersSidebar({
     const [renamingCanvasId, setRenamingCanvasId] = useState<string | null>(null)
     const [renameValue, setRenameValue] = useState('')
 
-    // Sort shapes by z-index (highest to lowest = top to bottom in UI)
-    const sortedShapes = useMemo(() => {
-        // Use optimistic order during drag, otherwise sort by z-index
-        if (optimisticOrder) return optimisticOrder
+    // State for expanded groups
+    const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
 
-        return [...shapes].sort((a, b) => {
+    // Toggle group expansion
+    const toggleGroup = (groupId: string) => {
+        setExpandedGroups(prev => {
+            const newSet = new Set(prev)
+            if (newSet.has(groupId)) {
+                newSet.delete(groupId)
+            } else {
+                newSet.add(groupId)
+            }
+            return newSet
+        })
+    }
+
+    // Organize shapes into groups and sort by z-index
+    const organizedShapes = useMemo(() => {
+        // Use optimistic order during drag, otherwise organize shapes
+        const shapesToOrganize = optimisticOrder || shapes
+
+        // First, sort all shapes by z-index (highest to lowest)
+        const sorted = [...shapesToOrganize].sort((a, b) => {
             const aZ = a.z_index ?? a.zIndex ?? 0
             const bZ = b.z_index ?? b.zIndex ?? 0
             return bZ - aZ // Descending order
+        })
+
+        // Group shapes by group_id
+        const groups = new Map<string, Shape[]>()
+        const ungrouped: Shape[] = []
+
+        sorted.forEach(shape => {
+            if (shape.group_id) {
+                if (!groups.has(shape.group_id)) {
+                    groups.set(shape.group_id, [])
+                }
+                groups.get(shape.group_id)!.push(shape)
+            } else {
+                ungrouped.push(shape)
+            }
+        })
+
+        // Create organized structure
+        const organized: Array<{ type: 'shape' | 'group'; shape?: Shape; groupId?: string; shapes?: Shape[] }> = []
+
+        // Add ungrouped shapes and groups in z-index order
+        let processedGroups = new Set<string>()
+
+        sorted.forEach(shape => {
+            if (shape.group_id && !processedGroups.has(shape.group_id)) {
+                // Add group
+                organized.push({
+                    type: 'group',
+                    groupId: shape.group_id,
+                    shapes: groups.get(shape.group_id) || []
+                })
+                processedGroups.add(shape.group_id)
+            } else if (!shape.group_id) {
+                // Add ungrouped shape
+                organized.push({
+                    type: 'shape',
+                    shape
+                })
+            }
+        })
+
+        return organized
+    }, [shapes, optimisticOrder])
+
+    // For backward compatibility with drag and drop
+    const sortedShapes = useMemo(() => {
+        return optimisticOrder || [...shapes].sort((a, b) => {
+            const aZ = a.z_index ?? a.zIndex ?? 0
+            const bZ = b.z_index ?? b.zIndex ?? 0
+            return bZ - aZ
         })
     }, [shapes, optimisticOrder])
 
@@ -478,10 +545,10 @@ export default function LayersSidebar({
                                             style={{
                                                 flex: 1,
                                                 padding: '6px',
-                                                background: newCanvasName.trim() ? '#6432c8' : '#404040',
+                                                background: newCanvasName.trim() ? '#72fa41' : '#404040',
                                                 border: 'none',
                                                 borderRadius: '4px',
-                                                color: '#ffffff',
+                                                color: '#000000',
                                                 fontSize: '12px',
                                                 fontWeight: 600,
                                                 cursor: newCanvasName.trim() ? 'pointer' : 'not-allowed',
@@ -740,7 +807,168 @@ export default function LayersSidebar({
                             Add shapes to see them here.
                         </div>
                     ) : (
-                        sortedShapes.map((shape, index) => {
+                        organizedShapes.map((item, index) => {
+                            // Render group
+                            if (item.type === 'group' && item.groupId && item.shapes) {
+                                const groupShapes = item.shapes
+                                const isExpanded = expandedGroups.has(item.groupId)
+                                const hasSelectedShape = groupShapes.some(s => selectedIds.includes(s.id))
+
+                                return (
+                                    <div key={`group-${item.groupId}`} style={{ marginBottom: '6px' }}>
+                                        {/* Group header */}
+                                        <div
+                                            onClick={() => toggleGroup(item.groupId!)}
+                                            style={{
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: '12px',
+                                                padding: '10px 14px',
+                                                background: hasSelectedShape ? 'rgba(132, 204, 22, 0.15)' : 'rgba(100, 50, 200, 0.1)',
+                                                border: hasSelectedShape ? '1px solid rgba(132, 204, 22, 0.4)' : '1px solid rgba(100, 50, 200, 0.3)',
+                                                borderRadius: '8px',
+                                                cursor: 'pointer',
+                                                transition: 'all 0.2s',
+                                            }}
+                                            onMouseEnter={(e) => {
+                                                e.currentTarget.style.background = hasSelectedShape ? 'rgba(132, 204, 22, 0.2)' : 'rgba(100, 50, 200, 0.15)'
+                                            }}
+                                            onMouseLeave={(e) => {
+                                                e.currentTarget.style.background = hasSelectedShape ? 'rgba(132, 204, 22, 0.15)' : 'rgba(100, 50, 200, 0.1)'
+                                            }}
+                                        >
+                                            {/* Expand/collapse icon */}
+                                            <div style={{
+                                                fontSize: '12px',
+                                                transition: 'transform 0.2s',
+                                                transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
+                                                color: '#888'
+                                            }}>
+                                                ▶
+                                            </div>
+
+                                            {/* Group icon */}
+                                            <div style={{
+                                                width: '32px',
+                                                height: '32px',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                background: 'linear-gradient(135deg, #6432c8 0%, #8b5cf6 100%)',
+                                                borderRadius: '6px',
+                                                fontSize: '14px',
+                                                color: '#ffffff',
+                                                fontWeight: 700,
+                                            }}>
+                                                ⬚
+                                            </div>
+
+                                            {/* Group info */}
+                                            <div style={{ flex: 1 }}>
+                                                <div style={{
+                                                    color: '#ffffff',
+                                                    fontSize: '14px',
+                                                    fontWeight: 600,
+                                                }}>
+                                                    Group ({groupShapes.length} items)
+                                                </div>
+                                                <div style={{
+                                                    color: '#808080',
+                                                    fontSize: '11px',
+                                                    marginTop: '2px',
+                                                }}>
+                                                    {groupShapes.map(s => s.type).join(', ')}
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Group children (when expanded) */}
+                                        {isExpanded && (
+                                            <div style={{ marginLeft: '20px', marginTop: '4px' }}>
+                                                {groupShapes.map((shape) => {
+                                                    const isSelected = selectedIds.includes(shape.id)
+                                                    const isLocked = !!shape.locked_at && !!shape.locked_by
+                                                    const lockColor = isLocked && shape.locked_by ? getUserColor(shape.locked_by) : undefined
+
+                                                    return (
+                                                        <div
+                                                            key={shape.id}
+                                                            onClick={() => onSelectShape(shape.id)}
+                                                            style={{
+                                                                display: 'flex',
+                                                                alignItems: 'center',
+                                                                gap: '12px',
+                                                                padding: '8px 12px',
+                                                                marginBottom: '4px',
+                                                                background: isSelected ? 'rgba(132, 204, 22, 0.2)' : 'transparent',
+                                                                border: isSelected ? '1px solid rgba(132, 204, 22, 0.5)' : '1px solid transparent',
+                                                                borderRadius: '6px',
+                                                                cursor: 'pointer',
+                                                                transition: 'all 0.2s',
+                                                            }}
+                                                            onMouseEnter={(e) => {
+                                                                if (!isSelected) {
+                                                                    e.currentTarget.style.background = 'rgba(40, 40, 40, 0.8)'
+                                                                    e.currentTarget.style.borderColor = 'rgba(64, 64, 64, 0.5)'
+                                                                }
+                                                            }}
+                                                            onMouseLeave={(e) => {
+                                                                if (!isSelected) {
+                                                                    e.currentTarget.style.background = 'transparent'
+                                                                    e.currentTarget.style.borderColor = 'transparent'
+                                                                }
+                                                            }}
+                                                        >
+                                                            {/* Shape icon */}
+                                                            <div style={{
+                                                                width: '28px',
+                                                                height: '28px',
+                                                                display: 'flex',
+                                                                alignItems: 'center',
+                                                                justifyContent: 'center',
+                                                                background: `linear-gradient(135deg, ${shape.color} 0%, ${shape.color}dd 100%)`,
+                                                                borderRadius: shape.type === 'circle' ? '50%' : '4px',
+                                                                fontSize: '14px',
+                                                                color: '#ffffff',
+                                                                fontWeight: 700,
+                                                            }}>
+                                                                {getShapeIcon(shape)}
+                                                            </div>
+
+                                                            {/* Shape info */}
+                                                            <div style={{ flex: 1, minWidth: 0 }}>
+                                                                <div style={{
+                                                                    color: '#ffffff',
+                                                                    fontSize: '13px',
+                                                                    fontWeight: 600,
+                                                                    overflow: 'hidden',
+                                                                    textOverflow: 'ellipsis',
+                                                                    whiteSpace: 'nowrap',
+                                                                }}>
+                                                                    {getShapeDisplayName(shape)}
+                                                                </div>
+                                                            </div>
+
+                                                            {/* Lock indicator */}
+                                                            {isLocked && (
+                                                                <div style={{ color: lockColor || '#ff4444', flexShrink: 0 }}>
+                                                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                                                        <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                                                                        <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                                                                    </svg>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    )
+                                                })}
+                                            </div>
+                                        )}
+                                    </div>
+                                )
+                            }
+
+                            // Render individual shape
+                            const shape = item.shape!
                             const isSelected = selectedIds.includes(shape.id)
                             const isLocked = !!shape.locked_at && !!shape.locked_by
                             const lockColor = isLocked && shape.locked_by ? getUserColor(shape.locked_by) : undefined

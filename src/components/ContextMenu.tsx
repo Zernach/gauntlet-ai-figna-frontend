@@ -9,7 +9,9 @@ import {
     Clipboard,
     CopyPlus,
     Trash2,
-    Palette
+    Palette,
+    Group,
+    Ungroup
 } from 'lucide-react'
 import ColorSlider from './ColorSlider'
 
@@ -27,9 +29,13 @@ interface ContextMenuProps {
     onPaste: () => void
     onDuplicate?: () => void
     onDelete?: () => void
+    onGroup?: () => void
+    onUngroup?: () => void
     hasPasteData: boolean
     canvasBgHex?: string
     onChangeCanvasBg?: (hex: string) => void
+    selectedCount?: number
+    hasGroupedShapes?: boolean
 }
 
 // Move MenuItem outside to prevent recreation on every render
@@ -105,9 +111,13 @@ const ContextMenu: React.FC<ContextMenuProps> = ({
     onPaste,
     onDuplicate,
     onDelete,
+    onGroup,
+    onUngroup,
     hasPasteData,
     canvasBgHex,
-    onChangeCanvasBg
+    onChangeCanvasBg,
+    selectedCount = 1,
+    hasGroupedShapes = false
 }) => {
     const menuRef = React.useRef<HTMLDivElement>(null)
     const [showBgColorPicker, setShowBgColorPicker] = React.useState(false)
@@ -203,6 +213,39 @@ const ContextMenu: React.FC<ContextMenuProps> = ({
 
                     <Divider />
 
+                    {/* Group/Ungroup section */}
+                    {(selectedCount >= 2 || hasGroupedShapes) && (
+                        <>
+                            <div style={{
+                                fontSize: '11px',
+                                fontWeight: '600',
+                                color: '#888',
+                                textTransform: 'uppercase',
+                                letterSpacing: '0.5px',
+                                padding: '8px 16px 6px',
+                            }}>
+                                Group
+                            </div>
+                            {selectedCount >= 2 && (
+                                <MenuItem
+                                    icon={<Group size={16} />}
+                                    label="Group"
+                                    onClick={handleAction(onGroup!)}
+                                />
+                            )}
+                            {hasGroupedShapes && (
+                                <MenuItem
+                                    icon={<Ungroup size={16} />}
+                                    label="Ungroup"
+                                    onClick={handleAction(onUngroup!)}
+                                />
+                            )}
+                            <Divider />
+                        </>
+                    )}
+
+                    <Divider />
+
                     <div style={{
                         fontSize: '11px',
                         fontWeight: '600',
@@ -258,7 +301,7 @@ const ContextMenu: React.FC<ContextMenuProps> = ({
                         label="Background Color"
                         onClick={() => setShowBgColorPicker(!showBgColorPicker)}
                     />
-                    
+
                     {/* Color Picker - Inline */}
                     {showBgColorPicker && canvasBgHex && onChangeCanvasBg && (
                         <div style={{

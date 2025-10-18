@@ -135,8 +135,22 @@ export function useZoomControls({
       y: (pointer.y - stage.y()) / oldScale,
     }
 
-    const direction = e.evt.deltaY > 0 ? -1 : 1
-    const newScale = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, oldScale + direction * ZOOM_STEP))
+    // Use deltaY to determine zoom intensity for proportional zooming
+    // Different browsers/devices report deltaY differently:
+    // - Normal mouse wheel: typically ~100 per notch
+    // - Trackpad pinch: can be 1-100+ depending on pinch speed/intensity
+    const deltaY = e.evt.deltaY
+
+    // Calculate zoom factor based on deltaY magnitude
+    // Use exponential scaling that works well for both mouse and trackpad
+    const baseFactor = 1.05
+    const scaleFactor = Math.pow(baseFactor, Math.abs(deltaY) / 40)
+
+    // Apply zoom in the correct direction
+    const direction = deltaY > 0 ? -1 : 1
+    const newScale = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX,
+      direction > 0 ? oldScale * scaleFactor : oldScale / scaleFactor
+    ))
 
     const newPos = {
       x: pointer.x - mousePointTo.x * newScale,
@@ -175,7 +189,7 @@ export function useZoomControls({
   const startZoomHold = useCallback((direction: number) => {
     continuousZoomDirectionRef.current = direction
     continuousZoomAccumRef.current = 0
-    
+
     if (continuousZoomIntervalRef.current) {
       clearInterval(continuousZoomIntervalRef.current)
     }
@@ -189,7 +203,7 @@ export function useZoomControls({
   const stopZoomHold = useCallback(() => {
     continuousZoomDirectionRef.current = 0
     continuousZoomAccumRef.current = 0
-    
+
     if (continuousZoomIntervalRef.current) {
       clearInterval(continuousZoomIntervalRef.current)
       continuousZoomIntervalRef.current = null
@@ -204,12 +218,12 @@ export function useZoomControls({
   const clampStagePosition = useCallback((scale: number, pos: { x: number; y: number }) => {
     // Allow some overflow to make panning feel natural
     const padding = 200
-    
+
     const minX = -canvasWidth * scale + padding
     const maxX = viewportWidth - padding
     const minY = -canvasHeight * scale + padding
     const maxY = viewportHeight - padding
-    
+
     return {
       x: Math.max(minX, Math.min(maxX, pos.x)),
       y: Math.max(minY, Math.min(maxY, pos.y))

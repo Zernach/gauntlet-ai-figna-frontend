@@ -3,6 +3,8 @@ import type { Shape } from '../types/canvas'
 import Konva from 'konva'
 import { arrangeInRow, arrangeInColumn, arrangeInGrid, alignHorizontally, alignVertically } from '../utils/layoutUtils'
 import { PATTERN_REGISTRY } from '../utils/patternTemplates'
+import { secureRequest } from '../lib/secureApi'
+import type { GenerateComplexDesignParams, GenerateComplexDesignResult } from './useAgenticToolCalling'
 
 interface UseAgenticToolsParams {
   onToolsReady?: (tools: any) => void
@@ -13,8 +15,8 @@ interface UseAgenticToolsParams {
   shapesRef: React.MutableRefObject<Shape[]>
   selectedIdsRef: React.MutableRefObject<string[]>
   createShapesRef: React.MutableRefObject<((shapesData: any[]) => void) | null>
-  handleDeleteShapeRef: React.MutableRefObject<((shapeIds?: string[]) => void) | null>
-  unlockShapeRef: React.MutableRefObject<((shapeId: string) => void) | null>
+  handleDeleteShapesRef: React.MutableRefObject<((shapeIds: string[]) => void) | null>
+  unlockShapesRef: React.MutableRefObject<((shapeIds: string[]) => void) | null>
   sendMessage: (message: any) => void
   setSelectedIds: React.Dispatch<React.SetStateAction<string[]>>
   viewportWidth: number
@@ -30,8 +32,8 @@ export function useAgenticTools({
   shapesRef,
   selectedIdsRef,
   createShapesRef,
-  handleDeleteShapeRef,
-  unlockShapeRef,
+  handleDeleteShapesRef,
+  unlockShapesRef,
   sendMessage,
   setSelectedIds,
   viewportWidth,
@@ -82,18 +84,18 @@ export function useAgenticTools({
           });
         },
         deleteShape: (params: any) => {
-          if (!wsRef.current || !handleDeleteShapeRef.current) {
+          if (!wsRef.current || !handleDeleteShapesRef.current) {
             throw new Error('Cannot delete shape: Canvas not ready');
           }
-          handleDeleteShapeRef.current(params.shapeIds);
+          handleDeleteShapesRef.current(params.shapeIds);
         },
         deleteAllShapes: () => {
-          if (!wsRef.current || !handleDeleteShapeRef.current) {
+          if (!wsRef.current || !handleDeleteShapesRef.current) {
             throw new Error('Cannot delete shapes: Canvas not ready');
           }
           const allShapeIds = shapesRef.current.map(s => s.id);
           if (allShapeIds.length > 0) {
-            handleDeleteShapeRef.current(allShapeIds);
+            handleDeleteShapesRef.current(allShapeIds);
           }
         },
         selectShapes: (params: any) => {
@@ -107,8 +109,8 @@ export function useAgenticTools({
           });
         },
         clearSelection: () => {
-          if (unlockShapeRef.current) {
-            selectedIdsRef.current.forEach(id => unlockShapeRef.current!(id));
+          if (unlockShapesRef.current && selectedIdsRef.current.length > 0) {
+            unlockShapesRef.current(selectedIdsRef.current);
           }
           setSelectedIds([]);
         },
@@ -319,11 +321,74 @@ export function useAgenticTools({
               });
             });
           }
+        },
+        generateComplexDesign: async (params: GenerateComplexDesignParams): Promise<GenerateComplexDesignResult> => {
+          if (!wsRef.current || !createShapesRef.current) {
+            return { success: false, error: 'Canvas not ready' };
+          }
+
+          try {
+            // Get current viewport center
+            const viewportCenterX = stageRef.current ?
+              (-stageRef.current.x() + viewportWidth / 2) / stageRef.current.scaleX() : 25000;
+            const viewportCenterY = stageRef.current ?
+              (-stageRef.current.y() + viewportHeight / 2) / stageRef.current.scaleY() : 25000;
+
+            // Call the backend API to generate the complex design
+            const response = await secureRequest<{
+              success: boolean;
+              design: {
+                shapes: any[];
+                description: string;
+                metadata: {
+                  shapeCount: number;
+                  estimatedComplexity: string;
+                  designStyle: string;
+                };
+              };
+            }>('/voice/create-complex-design', {
+              method: 'POST',
+              body: {
+                description: params.description,
+                style: params.style,
+                colorScheme: params.colorScheme,
+                complexity: params.complexity,
+                viewport: {
+                  centerX: viewportCenterX,
+                  centerY: viewportCenterY
+                }
+              },
+              requiresCSRF: true
+            });
+
+            if (response.success && response.design) {
+              // Create all the shapes from the design
+              if (createShapesRef.current) {
+                createShapesRef.current(response.design.shapes);
+              }
+
+              return {
+                success: true,
+                shapeCount: response.design.metadata.shapeCount
+              };
+            } else {
+              return {
+                success: false,
+                error: 'Failed to generate design'
+              };
+            }
+          } catch (error) {
+            console.error('Error generating complex design:', error);
+            return {
+              success: false,
+              error: error instanceof Error ? error.message : 'Unknown error'
+            };
+          }
         }
       }
 
       onToolsReady(tools);
     }
-  }, [onToolsReady, currentUserId, canvasId, viewportWidth, viewportHeight])
+  }, [onToolsReady, currentUserId, canvasId, viewportWidth, viewportHeight, wsRef, stageRef, createShapesRef, sendMessage])
 }
 

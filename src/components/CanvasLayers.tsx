@@ -24,6 +24,9 @@ interface CanvasLayersProps {
   isDrawingLasso: boolean
   lassoStart: { x: number; y: number } | null
   lassoEnd: { x: number; y: number } | null
+  isDrawingRect: boolean
+  rectStart: { x: number; y: number } | null
+  rectEnd: { x: number; y: number } | null
   activeUsers: any[]
   currentUserId: string | null
   onShapeClick: (id: string, event?: any) => void
@@ -53,6 +56,9 @@ function CanvasLayers({
   isDrawingLasso,
   lassoStart,
   lassoEnd,
+  isDrawingRect,
+  rectStart,
+  rectEnd,
   activeUsers,
   currentUserId,
   onShapeClick,
@@ -190,6 +196,29 @@ function CanvasLayers({
             y={lassoStart.y}
             radius={5 / stageScale}
             fill="#24ccff"
+            listening={false}
+          />
+        </Layer>
+      )}
+
+      {/* Rectangle Selection Layer - visualization for rectangular selection */}
+      {isDrawingRect && rectStart && rectEnd && (
+        <Layer listening={false}>
+          <Rect
+            x={Math.min(rectStart.x, rectEnd.x)}
+            y={Math.min(rectStart.y, rectEnd.y)}
+            width={Math.abs(rectEnd.x - rectStart.x)}
+            height={Math.abs(rectEnd.y - rectStart.y)}
+            stroke="#72fa41"
+            strokeWidth={2 / stageScale}
+            dash={[10 / stageScale, 5 / stageScale]}
+            listening={false}
+          />
+          <KonvaCircle
+            x={rectStart.x}
+            y={rectStart.y}
+            radius={5 / stageScale}
+            fill="#72fa41"
             listening={false}
           />
         </Layer>

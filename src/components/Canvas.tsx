@@ -45,6 +45,7 @@ import { useCanvasHistory } from '../hooks/useCanvasHistory'
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts'
 import { useAgenticTools } from '../hooks/useAgenticTools'
 import { useCanvasManagement } from '../hooks/useCanvasManagement'
+import { useRectSelection } from '../hooks/useRectSelection'
 
 interface CanvasProps {
   onToolsReady?: (tools: any) => void
@@ -162,8 +163,8 @@ export default function Canvas({ onToolsReady, onViewportCenterChange, onCanvasS
   const dragFrameScheduledRef = useRef<boolean>(false)
   // Tool function refs - keep stable references for agentic tool calling
   const createShapesRef = useRef<((shapesData: any[]) => void) | null>(null)
-  const handleDeleteShapeRef = useRef<((shapeIds?: string[]) => void) | null>(null)
-  const unlockShapeRef = useRef<((shapeId: string) => void) | null>(null)
+  const handleDeleteShapesRef = useRef<((shapeIds: string[]) => void) | null>(null)
+  const unlockShapesRef = useRef<((shapeIds: string[]) => void) | null>(null)
   // Track recently dragged shapes to prevent animation on position updates
   const recentlyDraggedRef = useRef<Map<string, { x: number; y: number; timestamp: number }>>(new Map())
   // Track recently resized shapes to prevent animation on geometry updates
@@ -204,17 +205,17 @@ export default function Canvas({ onToolsReady, onViewportCenterChange, onCanvasS
     pushHistory
   })
 
-  // Shape management hook (must be before useShapeSelection to provide unlockShape)
+  // Shape management hook (must be before useShapeSelection to provide unlockShapes)
   const {
     handleAddShape,
     handleAddCircle,
     handleAddText,
     handleTextDoubleClick,
-    unlockShape,
-    handleDeleteShape,
+    unlockShapes,
+    handleDeleteShapes,
     createShapesRef: createShapesRefFromHook,
-    unlockShapeRef: unlockShapeRefFromHook,
-    handleDeleteShapeRef: handleDeleteShapeRefFromHook
+    unlockShapesRef: unlockShapesRefFromHook,
+    handleDeleteShapesRef: handleDeleteShapesRefFromHook
   } = useShapeManagement({
     wsRef,
     canvasId,
@@ -253,8 +254,20 @@ export default function Canvas({ onToolsReady, onViewportCenterChange, onCanvasS
     lastCursorActivityRef,
     showToast,
     sendMessage,
-    unlockShape
+    unlockShapes
   })
+
+  // Rectangular selection hook
+  const {
+    rectMode,
+    setRectMode,
+    isDrawingRect,
+    setIsDrawingRect,
+    rectStart,
+    setRectStart,
+    rectEnd,
+    setRectEnd,
+  } = useRectSelection()
 
   // Sync the selectedIdsRef from the hook
   useEffect(() => {
@@ -267,12 +280,12 @@ export default function Canvas({ onToolsReady, onViewportCenterChange, onCanvasS
   }, [createShapesRefFromHook])
 
   useEffect(() => {
-    unlockShapeRef.current = unlockShapeRefFromHook.current
-  }, [unlockShapeRefFromHook])
+    unlockShapesRef.current = unlockShapesRefFromHook.current
+  }, [unlockShapesRefFromHook])
 
   useEffect(() => {
-    handleDeleteShapeRef.current = handleDeleteShapeRefFromHook.current
-  }, [handleDeleteShapeRefFromHook])
+    handleDeleteShapesRef.current = handleDeleteShapesRefFromHook.current
+  }, [handleDeleteShapesRefFromHook])
 
   // Clipboard operations hook
   const {
@@ -283,6 +296,7 @@ export default function Canvas({ onToolsReady, onViewportCenterChange, onCanvasS
     handleDuplicate: handleDuplicateFromHook
   } = useShapeClipboard({
     shapes,
+    selectedIds,
     contextMenuShapeIdRef,
     contextMenuCanvasPositionRef,
     wsRef,
@@ -314,14 +328,50 @@ export default function Canvas({ onToolsReady, onViewportCenterChange, onCanvasS
   const handleMoveForward = handleMoveForwardFromHook
   const handleMoveBackward = handleMoveBackwardFromHook
 
-  // Context menu delete handler
+  // Context menu delete handler - delete all selected shapes
   const handleContextMenuDelete = useCallback(() => {
-    const shapeId = contextMenuShapeIdRef.current
-    if (!shapeId) return
+    // Use selected shapes if multiple are selected, otherwise use the context menu shape
+    const shapeIdsToDelete = selectedIds.length > 0
+      ? selectedIds
+      : contextMenuShapeIdRef.current
+        ? [contextMenuShapeIdRef.current]
+        : []
 
-    handleDeleteShape([shapeId])
+    if (shapeIdsToDelete.length === 0) return
+
+    handleDeleteShapes(shapeIdsToDelete)
     contextMenuShapeIdRef.current = null
-  }, [handleDeleteShape, contextMenuShapeIdRef])
+  }, [selectedIds, handleDeleteShapes, contextMenuShapeIdRef])
+
+  // Group selected shapes
+  const handleGroupShapes = useCallback(() => {
+    if (selectedIds.length < 2) {
+      console.warn('At least 2 shapes must be selected to group')
+      return
+    }
+
+    sendMessage({
+      type: 'GROUP_SHAPES',
+      payload: { shapeIds: selectedIds }
+    })
+
+    closeContextMenu()
+  }, [selectedIds, sendMessage, closeContextMenu])
+
+  // Ungroup selected shapes
+  const handleUngroupShapes = useCallback(() => {
+    if (selectedIds.length === 0) {
+      console.warn('At least 1 shape must be selected to ungroup')
+      return
+    }
+
+    sendMessage({
+      type: 'UNGROUP_SHAPES',
+      payload: { shapeIds: selectedIds }
+    })
+
+    closeContextMenu()
+  }, [selectedIds, sendMessage, closeContextMenu])
 
   // Handle layer reordering from sidebar
   const handleReorderLayers = useCallback((reorderedShapeIds: string[]) => {
@@ -711,7 +761,7 @@ export default function Canvas({ onToolsReady, onViewportCenterChange, onCanvasS
     activeUsers,
     setShapes,
     setSelectedIds,
-    unlockShape,
+    unlockShapes,
     pushHistory,
     showToast,
     sendMessage,
@@ -733,7 +783,7 @@ export default function Canvas({ onToolsReady, onViewportCenterChange, onCanvasS
     recentlyResizedRef,
     setShapes,
     setSelectedIds,
-    unlockShape,
+    unlockShapes,
     pushHistory,
     sendMessage,
   })
@@ -757,7 +807,7 @@ export default function Canvas({ onToolsReady, onViewportCenterChange, onCanvasS
     recentlyRotatedRef,
     setShapes,
     setSelectedIds,
-    unlockShape,
+    unlockShapes,
     pushHistory,
     sendMessage,
   })
@@ -775,8 +825,8 @@ export default function Canvas({ onToolsReady, onViewportCenterChange, onCanvasS
     shapesRef,
     selectedIdsRef,
     createShapesRef,
-    handleDeleteShapeRef,
-    unlockShapeRef,
+    handleDeleteShapesRef,
+    unlockShapesRef,
     sendMessage,
     setSelectedIds,
     viewportWidth,
@@ -794,8 +844,8 @@ export default function Canvas({ onToolsReady, onViewportCenterChange, onCanvasS
   useKeyboardShortcuts({
     shapes,
     selectedIdsRef,
-    handleDeleteShape,
-    unlockShape,
+    handleDeleteShapes,
+    unlockShapes,
     setSelectedIds,
     performUndo,
     performRedo,
@@ -905,14 +955,22 @@ export default function Canvas({ onToolsReady, onViewportCenterChange, onCanvasS
     lassoMode,
     lassoStart,
     lassoEnd,
+    isDrawingRect,
+    rectMode,
+    rectStart,
+    rectEnd,
     shapes,
     setIsDrawingLasso,
     setLassoStart,
     setLassoEnd,
+    setIsDrawingRect,
+    setRectStart,
+    setRectEnd,
     setSelectedIds,
-    unlockShape,
+    unlockShapes,
     sendMessage,
-    animateZoomTo,
+    setStageScale,
+    setStagePos,
   })
 
 
@@ -1067,6 +1125,8 @@ export default function Canvas({ onToolsReady, onViewportCenterChange, onCanvasS
         }}
         lassoMode={lassoMode}
         onToggleLassoMode={() => setLassoMode(v => !v)}
+        rectMode={rectMode}
+        onToggleRectMode={() => setRectMode(v => !v)}
       />
 
       {/* Pan Mode Indicator removed */}
@@ -1152,7 +1212,7 @@ export default function Canvas({ onToolsReady, onViewportCenterChange, onCanvasS
         scaleY={stageScale}
         x={stagePos.x}
         y={stagePos.y}
-        draggable={!isShapeDragActiveRef.current && !isResizingShapeRef.current && !isRotatingShapeRef.current && !isDrawingLasso}
+        draggable={!isShapeDragActiveRef.current && !isResizingShapeRef.current && !isRotatingShapeRef.current && !isDrawingLasso && !isDrawingRect}
         onWheel={handleWheel}
         onClick={handleStageClick}
         onMouseDown={handleStageMouseDown}
@@ -1186,6 +1246,9 @@ export default function Canvas({ onToolsReady, onViewportCenterChange, onCanvasS
           isDrawingLasso={isDrawingLasso}
           lassoStart={lassoStart}
           lassoEnd={lassoEnd}
+          isDrawingRect={isDrawingRect}
+          rectStart={rectStart}
+          rectEnd={rectEnd}
           activeUsers={activeUsers}
           currentUserId={currentUserId}
           onShapeClick={handleShapeClick}
@@ -1221,6 +1284,8 @@ export default function Canvas({ onToolsReady, onViewportCenterChange, onCanvasS
           onPaste={handlePaste}
           onDuplicate={handleDuplicate}
           onDelete={handleContextMenuDelete}
+          onGroup={handleGroupShapes}
+          onUngroup={handleUngroupShapes}
           hasPasteData={clipboard.length > 0}
           canvasBgHex={canvasBgHex}
           onChangeCanvasBg={(hex) => {
@@ -1231,6 +1296,8 @@ export default function Canvas({ onToolsReady, onViewportCenterChange, onCanvasS
             })
             recordCanvasBgChange(hex)
           }}
+          selectedCount={selectedIds.length}
+          hasGroupedShapes={shapes.filter(s => selectedIds.includes(s.id)).some(s => s.group_id)}
         />
       )}
 

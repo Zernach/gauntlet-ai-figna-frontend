@@ -22,6 +22,7 @@ export interface CanvasTools {
     arrangeInGrid: (params: ArrangeGridParams) => void
     createPattern: (params: CreatePatternParams) => void
     alignShapes: (params: AlignShapesParams) => void
+    generateComplexDesign: (params: GenerateComplexDesignParams) => Promise<GenerateComplexDesignResult>
 }
 
 export interface CanvasState {
@@ -126,6 +127,19 @@ export interface CreatePatternParams {
 export interface AlignShapesParams {
     shapeIds: string[]
     alignment: 'left' | 'center' | 'right' | 'top' | 'middle' | 'bottom'
+}
+
+export interface GenerateComplexDesignParams {
+    description: string
+    style?: 'modern' | 'minimalist' | 'vibrant' | 'elegant' | 'professional'
+    colorScheme?: 'dark' | 'light' | 'colorful' | 'monochrome'
+    complexity?: 'simple' | 'moderate' | 'complex'
+}
+
+export interface GenerateComplexDesignResult {
+    success: boolean
+    shapeCount?: number
+    error?: string
 }
 
 /**
@@ -570,6 +584,36 @@ export const CANVAS_TOOLS = [
             },
             required: ['shapeIds', 'alignment']
         }
+    },
+    {
+        type: 'function' as const,
+        name: 'generateComplexDesign',
+        description: 'Generates a complete, professional design using AI. Use this when the user requests something highly complex or comprehensive that would require many shapes, such as: complete app screens, full website pages, detailed dashboards, elaborate UI components, multi-section layouts. This tool is powered by advanced AI design capabilities and can create sophisticated designs that would be tedious to build shape-by-shape.',
+        parameters: {
+            type: 'object',
+            properties: {
+                description: {
+                    type: 'string',
+                    description: 'Detailed description of the design to create (e.g., "e-commerce product page with hero image, product details, reviews section, and related products")'
+                },
+                style: {
+                    type: 'string',
+                    enum: ['modern', 'minimalist', 'vibrant', 'elegant', 'professional'],
+                    description: 'The design style to apply. Default: modern'
+                },
+                colorScheme: {
+                    type: 'string',
+                    enum: ['dark', 'light', 'colorful', 'monochrome'],
+                    description: 'The color scheme to use. Default: dark'
+                },
+                complexity: {
+                    type: 'string',
+                    enum: ['simple', 'moderate', 'complex'],
+                    description: 'The level of detail and complexity. Default: moderate'
+                }
+            },
+            required: ['description']
+        }
     }
 ]
 
@@ -589,7 +633,7 @@ export function useAgenticToolCalling() {
     /**
      * Execute a tool call from OpenAI - optimized for speed (<50ms target)
      */
-    const executeTool = useCallback((toolName: string, args: any) => {
+    const executeTool = useCallback(async (toolName: string, args: any) => {
         if (!toolsRef.current) {
             return { success: false, error: 'Canvas tools not registered' }
         }
@@ -605,6 +649,12 @@ export function useAgenticToolCalling() {
             if (toolName === 'getCanvasState') {
                 const state = (tool as any)();
                 return { success: true, data: state }
+            }
+
+            // Handle async tool (generateComplexDesign)
+            if (toolName === 'generateComplexDesign') {
+                const result = await (tool as any)(args);
+                return result;
             }
 
             // Execute tool with args

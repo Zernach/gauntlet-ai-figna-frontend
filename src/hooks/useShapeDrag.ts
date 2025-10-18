@@ -30,7 +30,7 @@ interface UseShapeDragProps {
   activeUsers: ActiveUser[]
   setShapes: React.Dispatch<React.SetStateAction<Shape[]>>
   setSelectedIds: React.Dispatch<React.SetStateAction<string[]>>
-  unlockShape: (shapeId: string) => void
+  unlockShapes: (shapeIds: string[]) => void
   pushHistory: (entry: HistoryEntry) => void
   showToast: (message: string, type: 'success' | 'error' | 'info', duration?: number) => void
   sendMessage: (message: any) => void
@@ -56,7 +56,7 @@ export function useShapeDrag({
   activeUsers,
   setShapes,
   setSelectedIds,
-  unlockShape,
+  unlockShapes,
   pushHistory,
   showToast,
   sendMessage,
@@ -107,7 +107,9 @@ export function useShapeDrag({
     // Select the shape being dragged if not already selected
     if (!selectedIdsRef.current.includes(id)) {
       // Unlock previously selected shapes
-      selectedIdsRef.current.forEach(sid => unlockShape(sid))
+      if (selectedIdsRef.current.length > 0) {
+        unlockShapes(selectedIdsRef.current)
+      }
       setSelectedIds([id])
     }
 
@@ -154,7 +156,7 @@ export function useShapeDrag({
     dragBaselineRef,
     multiDragOffsetsRef,
     activeUsers,
-    unlockShape,
+    unlockShapes,
     setSelectedIds,
     showToast,
   ])
@@ -393,7 +395,7 @@ export function useShapeDrag({
       }))
 
       // Unlock all selected shapes
-      selectedShapes.forEach(shape => unlockShape(shape.id))
+      unlockShapes(selectedShapes.map(shape => shape.id))
 
       // Mark that we just finished a multi-shape drag to prevent stage click from deselecting
       justFinishedMultiDragRef.current = true
@@ -434,7 +436,7 @@ export function useShapeDrag({
       }
 
       dragBaselineRef.current.delete(id)
-      unlockShape(id)
+      unlockShapes([id])
     }
 
     // Clear drag position
@@ -473,7 +475,7 @@ export function useShapeDrag({
     justFinishedMultiDragRef,
     pushHistory,
     setShapes,
-    unlockShape,
+    unlockShapes,
     setSelectedIds,
     sendMessage,
   ])

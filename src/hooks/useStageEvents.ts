@@ -15,14 +15,22 @@ interface UseStageEventsProps {
   lassoMode: boolean
   lassoStart: { x: number; y: number } | null
   lassoEnd: { x: number; y: number } | null
+  isDrawingRect: boolean
+  rectMode: boolean
+  rectStart: { x: number; y: number } | null
+  rectEnd: { x: number; y: number } | null
   shapes: Shape[]
   setIsDrawingLasso: React.Dispatch<React.SetStateAction<boolean>>
   setLassoStart: React.Dispatch<React.SetStateAction<{ x: number; y: number } | null>>
   setLassoEnd: React.Dispatch<React.SetStateAction<{ x: number; y: number } | null>>
+  setIsDrawingRect: React.Dispatch<React.SetStateAction<boolean>>
+  setRectStart: React.Dispatch<React.SetStateAction<{ x: number; y: number } | null>>
+  setRectEnd: React.Dispatch<React.SetStateAction<{ x: number; y: number } | null>>
   setSelectedIds: React.Dispatch<React.SetStateAction<string[]>>
-  unlockShape: (shapeId: string) => void
+  unlockShapes: (shapeIds: string[]) => void
   sendMessage: (message: any) => void
-  animateZoomTo: (targetScale: number, anchor: { x: number; y: number }, duration: number) => void
+  setStageScale: React.Dispatch<React.SetStateAction<number>>
+  setStagePos: React.Dispatch<React.SetStateAction<{ x: number; y: number }>>
 }
 
 export function useStageEvents({
@@ -39,14 +47,22 @@ export function useStageEvents({
   lassoMode,
   lassoStart,
   lassoEnd,
+  isDrawingRect,
+  rectMode,
+  rectStart,
+  rectEnd,
   shapes,
   setIsDrawingLasso,
   setLassoStart,
   setLassoEnd,
+  setIsDrawingRect,
+  setRectStart,
+  setRectEnd,
   setSelectedIds,
-  unlockShape,
+  unlockShapes,
   sendMessage,
-  animateZoomTo,
+  setStageScale,
+  setStagePos,
 }: UseStageEventsProps) {
 
   const handleStageClick = useCallback((e: any) => {
@@ -60,8 +76,8 @@ export function useStageEvents({
       return
     }
 
-    // Don't deselect if we're in lasso mode
-    if (isDrawingLasso) {
+    // Don't deselect if we're in lasso or rect selection mode
+    if (isDrawingLasso || isDrawingRect) {
       return
     }
 
@@ -71,10 +87,12 @@ export function useStageEvents({
 
     if (isStageOrBackground) {
       // Unlock shapes before deselecting
-      selectedIdsRef.current.forEach(id => unlockShape(id))
+      if (selectedIdsRef.current.length > 0) {
+        unlockShapes(selectedIdsRef.current)
+      }
       setSelectedIds([])
     }
-  }, [isDraggingShapeRef, justFinishedMultiDragRef, isDrawingLasso, selectedIdsRef, unlockShape, setSelectedIds])
+  }, [isDraggingShapeRef, justFinishedMultiDragRef, isDrawingLasso, isDrawingRect, selectedIdsRef, unlockShapes, setSelectedIds])
 
   const handleMouseMove = useCallback((e: any) => {
     if (!wsRef.current) return
@@ -110,9 +128,23 @@ export function useStageEvents({
     if (!stage) return
 
     const oldScale = stage.scaleX()
-    const direction = e.evt.deltaY > 0 ? -1 : 1
-    const scaleBy = 1.05
-    let newScale = direction > 0 ? oldScale * scaleBy : oldScale / scaleBy
+    const oldPos = { x: stage.x(), y: stage.y() }
+
+    // Use deltaY to determine zoom intensity for proportional zooming
+    // Different browsers/devices report deltaY differently:
+    // - Normal mouse wheel: typically ~100 per notch
+    // - Trackpad pinch: can be 1-100+ depending on pinch speed/intensity
+    const deltaY = e.evt.deltaY
+
+    // Calculate zoom factor based on deltaY magnitude
+    // Use exponential scaling that works well for both mouse and trackpad
+    // Base zoom factor is 1.05, scaled by the deltaY magnitude
+    const baseFactor = 1.05
+    const scaleFactor = Math.pow(baseFactor, Math.abs(deltaY) / 40)
+
+    // Apply zoom in the correct direction
+    const direction = deltaY > 0 ? -1 : 1
+    let newScale = direction > 0 ? oldScale * scaleFactor : oldScale / scaleFactor
     newScale = Math.max(0.1, Math.min(3, newScale))
 
     // Use the viewport center as the anchor point
@@ -121,41 +153,68 @@ export function useStageEvents({
       x: viewportWidth / 2,
       y: viewportHeight / 2
     }
-    animateZoomTo(newScale, anchor, 150)
-  }, [stageRef, viewportWidth, viewportHeight, animateZoomTo])
+
+    // Calculate the canvas point under the anchor
+    const canvasPointX = (anchor.x - oldPos.x) / oldScale
+    const canvasPointY = (anchor.y - oldPos.y) / oldScale
+
+    // Calculate new position to keep the same canvas point under the anchor
+    const newPos = {
+      x: anchor.x - canvasPointX * newScale,
+      y: anchor.y - canvasPointY * newScale
+    }
+
+    // Apply directly to stage for immediate feedback
+    stage.scale({ x: newScale, y: newScale })
+    stage.position(newPos)
+    stage.batchDraw()
+
+    // Update React state so UI reflects the zoom level
+    setStageScale(newScale)
+    setStagePos(newPos)
+  }, [stageRef, viewportWidth, viewportHeight, setStageScale, setStagePos])
 
   const handleStageMouseDown = useCallback((e: any) => {
-    // Check if shift/cmd is pressed or lasso mode is active
-    const isLassoKey = e.evt?.shiftKey || e.evt?.metaKey
     const targetId = e.target.attrs?.id
     const isStageOrBackground = e.target === e.target.getStage() || targetId === 'canvas-background'
 
-    if ((lassoMode || isLassoKey) && isStageOrBackground) {
-      const stage = e.target.getStage()
-      const pos = stage.getPointerPosition()
-      if (!pos) return
+    if (!isStageOrBackground) return
 
-      const canvasX = (pos.x - stage.x()) / stage.scaleX()
-      const canvasY = (pos.y - stage.y()) / stage.scaleY()
+    const stage = e.target.getStage()
+    const pos = stage.getPointerPosition()
+    if (!pos) return
 
+    const canvasX = (pos.x - stage.x()) / stage.scaleX()
+    const canvasY = (pos.y - stage.y()) / stage.scaleY()
+
+    // Check if shift/cmd is pressed or lasso mode is active
+    const isLassoKey = e.evt?.shiftKey || e.evt?.metaKey
+
+    if ((lassoMode || isLassoKey) && !rectMode) {
       setIsDrawingLasso(true)
       setLassoStart({ x: canvasX, y: canvasY })
       setLassoEnd({ x: canvasX, y: canvasY })
+    } else if (rectMode) {
+      setIsDrawingRect(true)
+      setRectStart({ x: canvasX, y: canvasY })
+      setRectEnd({ x: canvasX, y: canvasY })
     }
-  }, [lassoMode, setIsDrawingLasso, setLassoStart, setLassoEnd])
+  }, [lassoMode, rectMode, setIsDrawingLasso, setLassoStart, setLassoEnd, setIsDrawingRect, setRectStart, setRectEnd])
 
   const handleStageMouseMove = useCallback((e: any) => {
+    const stage = e.target.getStage()
+    const pos = stage.getPointerPosition()
+    if (!pos) return
+
+    const canvasX = (pos.x - stage.x()) / stage.scaleX()
+    const canvasY = (pos.y - stage.y()) / stage.scaleY()
+
     if (isDrawingLasso && lassoStart) {
-      const stage = e.target.getStage()
-      const pos = stage.getPointerPosition()
-      if (!pos) return
-
-      const canvasX = (pos.x - stage.x()) / stage.scaleX()
-      const canvasY = (pos.y - stage.y()) / stage.scaleY()
-
       setLassoEnd({ x: canvasX, y: canvasY })
+    } else if (isDrawingRect && rectStart) {
+      setRectEnd({ x: canvasX, y: canvasY })
     }
-  }, [isDrawingLasso, lassoStart, setLassoEnd])
+  }, [isDrawingLasso, lassoStart, setLassoEnd, isDrawingRect, rectStart, setRectEnd])
 
   const handleStageMouseUp = useCallback(() => {
     if (isDrawingLasso && lassoStart && lassoEnd) {
@@ -189,7 +248,9 @@ export function useStageEvents({
       })
 
       // Unlock previously selected shapes
-      selectedIdsRef.current.forEach(id => unlockShape(id))
+      if (selectedIdsRef.current.length > 0) {
+        unlockShapes(selectedIdsRef.current)
+      }
 
       // Set new selection and lock
       const newSelectedIds = selectedShapes.map(s => s.id)
@@ -202,24 +263,80 @@ export function useStageEvents({
           payload: { shapeId: id, updates: { isLocked: true } },
         })
       })
+
+      // Reset lasso state
+      setIsDrawingLasso(false)
+      setLassoStart(null)
+      setLassoEnd(null)
     }
 
-    // Reset lasso state
-    setIsDrawingLasso(false)
-    setLassoStart(null)
-    setLassoEnd(null)
+    if (isDrawingRect && rectStart && rectEnd) {
+      // Calculate rectangle bounds
+      const minX = Math.min(rectStart.x, rectEnd.x)
+      const maxX = Math.max(rectStart.x, rectEnd.x)
+      const minY = Math.min(rectStart.y, rectEnd.y)
+      const maxY = Math.max(rectStart.y, rectEnd.y)
+
+      // Find shapes within the rectangle
+      const selectedShapes = shapes.filter(shape => {
+        // Get shape center point
+        let centerX: number, centerY: number
+        if (shape.type === 'circle') {
+          centerX = shape.x
+          centerY = shape.y
+        } else if (shape.type === 'text') {
+          centerX = shape.x
+          centerY = shape.y
+        } else {
+          // Rectangle
+          centerX = shape.x + (shape.width || 100) / 2
+          centerY = shape.y + (shape.height || 100) / 2
+        }
+
+        // Check if center is within rectangle bounds
+        return centerX >= minX && centerX <= maxX && centerY >= minY && centerY <= maxY
+      })
+
+      // Unlock previously selected shapes
+      if (selectedIdsRef.current.length > 0) {
+        unlockShapes(selectedIdsRef.current)
+      }
+
+      // Set new selection and lock
+      const newSelectedIds = selectedShapes.map(s => s.id)
+      setSelectedIds(newSelectedIds)
+
+      // Lock all newly selected shapes
+      newSelectedIds.forEach(id => {
+        sendMessage({
+          type: 'SHAPE_UPDATE',
+          payload: { shapeId: id, updates: { isLocked: true } },
+        })
+      })
+
+      // Reset rect state
+      setIsDrawingRect(false)
+      setRectStart(null)
+      setRectEnd(null)
+    }
   }, [
     isDrawingLasso,
     lassoStart,
     lassoEnd,
+    isDrawingRect,
+    rectStart,
+    rectEnd,
     shapes,
     selectedIdsRef,
-    unlockShape,
+    unlockShapes,
     setSelectedIds,
     sendMessage,
     setIsDrawingLasso,
     setLassoStart,
     setLassoEnd,
+    setIsDrawingRect,
+    setRectStart,
+    setRectEnd,
   ])
 
   return {

@@ -131,8 +131,10 @@ export function useWebSocketConnection({
         break
 
       case 'SHAPE_DELETE':
-        if (onShapeDelete && message.payload.shapeId) {
-          onShapeDelete(message.payload.shapeId)
+        // Support both singular shapeId (legacy) and plural shapeIds (new)
+        if (onShapeDelete) {
+          const deletedIds = message.payload.shapeIds || (message.payload.shapeId ? [message.payload.shapeId] : [])
+          deletedIds.forEach((id: string) => onShapeDelete(id))
         }
         break
 

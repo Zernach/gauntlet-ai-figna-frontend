@@ -3,6 +3,7 @@ import type { Shape } from '../types/canvas'
 
 interface UseShapeClipboardProps {
     shapes: Shape[]
+    selectedIds: string[]
     contextMenuShapeIdRef: React.MutableRefObject<string | null>
     contextMenuCanvasPositionRef: React.MutableRefObject<{ x: number; y: number } | null>
     wsRef: React.MutableRefObject<WebSocket | null>
@@ -12,6 +13,7 @@ interface UseShapeClipboardProps {
 
 export function useShapeClipboard({
     shapes,
+    selectedIds,
     contextMenuShapeIdRef,
     contextMenuCanvasPositionRef,
     wsRef,
@@ -21,42 +23,54 @@ export function useShapeClipboard({
 
     const [clipboard, setClipboard] = useState<Shape[]>([])
 
-    // Handle copy
+    // Handle copy - copy all selected shapes
     const handleCopy = useCallback(() => {
-        const shapeId = contextMenuShapeIdRef.current
-        if (!shapeId) return
+        // Use selected shapes if multiple are selected, otherwise use the context menu shape
+        const shapesToCopy = selectedIds.length > 0
+            ? shapes.filter(s => selectedIds.includes(s.id))
+            : contextMenuShapeIdRef.current
+                ? shapes.filter(s => s.id === contextMenuShapeIdRef.current)
+                : []
 
-        const shape = shapes.find(s => s.id === shapeId)
-        if (!shape) return
+        if (shapesToCopy.length === 0) return
 
-        setClipboard([shape])
+        setClipboard(shapesToCopy)
         contextMenuShapeIdRef.current = null
-    }, [shapes, contextMenuShapeIdRef])
+    }, [shapes, selectedIds, contextMenuShapeIdRef])
 
-    // Handle cut
+    // Handle cut - cut all selected shapes
     const handleCut = useCallback(() => {
-        const shapeId = contextMenuShapeIdRef.current
-        if (!shapeId || !wsRef.current) return
+        if (!wsRef.current) return
 
-        const shape = shapes.find(s => s.id === shapeId)
-        if (!shape) return
+        // Use selected shapes if multiple are selected, otherwise use the context menu shape
+        const shapesToCut = selectedIds.length > 0
+            ? shapes.filter(s => selectedIds.includes(s.id))
+            : contextMenuShapeIdRef.current
+                ? shapes.filter(s => s.id === contextMenuShapeIdRef.current)
+                : []
 
-        setClipboard([shape])
+        if (shapesToCut.length === 0) return
 
-        // Delete the shape
+        setClipboard(shapesToCut)
+
+        // Delete all the shapes in a single batch
+        const shapeIds = shapesToCut.map(s => s.id)
         sendMessage({
             type: 'SHAPE_DELETE',
-            payload: { shapeId },
+            payload: { shapeIds },
         })
 
-        pushHistory({
-            undo: { type: 'SHAPE_CREATE', payload: shape },
-            redo: { type: 'SHAPE_DELETE', payload: { shapeId: shape.id } },
-            label: 'Cut shape',
+        // Record undo/redo for each shape
+        shapesToCut.forEach(shape => {
+            pushHistory({
+                undo: { type: 'SHAPE_CREATE', payload: shape },
+                redo: { type: 'SHAPE_DELETE', payload: { shapeIds: [shape.id] } },
+                label: `Cut ${shapesToCut.length > 1 ? shapesToCut.length + ' shapes' : 'shape'}`,
+            })
         })
 
         contextMenuShapeIdRef.current = null
-    }, [shapes, pushHistory, sendMessage, contextMenuShapeIdRef, wsRef])
+    }, [shapes, selectedIds, pushHistory, sendMessage, contextMenuShapeIdRef, wsRef])
 
     // Handle paste
     const handlePaste = useCallback(() => {
@@ -113,36 +127,43 @@ export function useShapeClipboard({
         contextMenuCanvasPositionRef.current = null
     }, [clipboard, sendMessage, contextMenuShapeIdRef, contextMenuCanvasPositionRef, wsRef])
 
-    // Handle duplicate
+    // Handle duplicate - duplicate all selected shapes
     const handleDuplicate = useCallback(() => {
-        const shapeId = contextMenuShapeIdRef.current
-        if (!shapeId || !wsRef.current) return
+        if (!wsRef.current) return
 
-        const shape = shapes.find(s => s.id === shapeId)
-        if (!shape) return
+        // Use selected shapes if multiple are selected, otherwise use the context menu shape
+        const shapesToDuplicate = selectedIds.length > 0
+            ? shapes.filter(s => selectedIds.includes(s.id))
+            : contextMenuShapeIdRef.current
+                ? shapes.filter(s => s.id === contextMenuShapeIdRef.current)
+                : []
+
+        if (shapesToDuplicate.length === 0) return
 
         // Duplicate with offset
         const offsetX = 50
         const offsetY = 50
 
-        const newShape = {
-            ...shape,
-            x: shape.x + offsetX,
-            y: shape.y + offsetY,
-        }
-        delete (newShape as any).id
-        delete (newShape as any).locked_at
-        delete (newShape as any).locked_by
-        delete (newShape as any).created_at
-        delete (newShape as any).updated_at
+        shapesToDuplicate.forEach(shape => {
+            const newShape = {
+                ...shape,
+                x: shape.x + offsetX,
+                y: shape.y + offsetY,
+            }
+            delete (newShape as any).id
+            delete (newShape as any).locked_at
+            delete (newShape as any).locked_by
+            delete (newShape as any).created_at
+            delete (newShape as any).updated_at
 
-        sendMessage({
-            type: 'SHAPE_CREATE',
-            payload: newShape,
+            sendMessage({
+                type: 'SHAPE_CREATE',
+                payload: newShape,
+            })
         })
 
         contextMenuShapeIdRef.current = null
-    }, [shapes, sendMessage, contextMenuShapeIdRef, wsRef])
+    }, [shapes, selectedIds, sendMessage, contextMenuShapeIdRef, wsRef])
 
     return {
         clipboard,

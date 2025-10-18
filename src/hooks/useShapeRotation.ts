@@ -23,7 +23,7 @@ interface UseShapeRotationProps {
   recentlyRotatedRef: React.MutableRefObject<Map<string, { rotation: number; timestamp: number }>>
   setShapes: React.Dispatch<React.SetStateAction<Shape[]>>
   setSelectedIds: React.Dispatch<React.SetStateAction<string[]>>
-  unlockShape: (shapeId: string) => void
+  unlockShapes: (shapeIds: string[]) => void
   pushHistory: (entry: HistoryEntry) => void
   sendMessage: (message: any) => void
 }
@@ -42,7 +42,7 @@ export function useShapeRotation({
   recentlyRotatedRef,
   setShapes,
   setSelectedIds,
-  unlockShape,
+  unlockShapes,
   pushHistory,
   sendMessage,
 }: UseShapeRotationProps) {
@@ -87,7 +87,9 @@ export function useShapeRotation({
 
     // Select and lock immediately
     if (!selectedIdsRef.current.includes(id)) {
-      selectedIdsRef.current.forEach(sid => unlockShape(sid))
+      if (selectedIdsRef.current.length > 0) {
+        unlockShapes(selectedIdsRef.current)
+      }
       setSelectedIds([id])
     }
     isRotatingShapeRef.current = true
@@ -107,7 +109,7 @@ export function useShapeRotation({
     isRotatingShapeRef,
     rotatingShapeIdRef,
     rotateBaselineRef,
-    unlockShape,
+    unlockShapes,
     setSelectedIds,
     sendMessage,
   ])
@@ -190,7 +192,7 @@ export function useShapeRotation({
     }, 100)
 
     // Unlock and deselect
-    unlockShape(id)
+    unlockShapes([id])
     setSelectedIds([])
   }, [
     wsRef,
@@ -203,7 +205,7 @@ export function useShapeRotation({
     rotatingShapeIdRef,
     isRotatingShapeRef,
     rotateBaselineRef,
-    unlockShape,
+    unlockShapes,
     setSelectedIds,
     sendMessage,
     pushHistory,

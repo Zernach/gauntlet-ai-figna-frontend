@@ -4,8 +4,8 @@ import type { Shape } from '../types/canvas'
 interface UseKeyboardShortcutsParams {
   shapes: Shape[]
   selectedIdsRef: React.MutableRefObject<string[]>
-  handleDeleteShape: () => void
-  unlockShape: (shapeId: string) => void
+  handleDeleteShapes: (shapeIds: string[]) => void
+  unlockShapes: (shapeIds: string[]) => void
   setSelectedIds: React.Dispatch<React.SetStateAction<string[]>>
   performUndo: () => void
   performRedo: () => void
@@ -15,8 +15,8 @@ interface UseKeyboardShortcutsParams {
 export function useKeyboardShortcuts({
   shapes,
   selectedIdsRef,
-  handleDeleteShape,
-  unlockShape,
+  handleDeleteShapes,
+  unlockShapes,
   setSelectedIds,
   performUndo,
   performRedo,
@@ -106,11 +106,13 @@ export function useKeyboardShortcuts({
         e.preventDefault()
         // Use the ref to get current selectedIds
         if (selectedIdsRef.current.length > 0) {
-          handleDeleteShape()
+          handleDeleteShapes(selectedIdsRef.current)
         }
       } else if (e.key === 'Escape') {
         // Unlock shapes before deselecting
-        selectedIdsRef.current.forEach(id => unlockShape(id))
+        if (selectedIdsRef.current.length > 0) {
+          unlockShapes(selectedIdsRef.current)
+        }
         setSelectedIds([])
       }
     }
@@ -120,6 +122,6 @@ export function useKeyboardShortcuts({
       window.removeEventListener('keydown', handleKeyDown)
       document.body.style.cursor = 'default'
     }
-  }, [handleDeleteShape, unlockShape, performUndo, performRedo, shapes, sendMessage, selectedIdsRef, setSelectedIds])
+  }, [handleDeleteShapes, unlockShapes, performUndo, performRedo, shapes, sendMessage, selectedIdsRef, setSelectedIds])
 }
 

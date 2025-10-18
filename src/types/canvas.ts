@@ -30,6 +30,7 @@ export interface Shape {
     created_by?: string
     last_modified_by?: string
     last_modified_at?: number
+    group_id?: string | null
 }
 
 // Alias for compatibility with websocket types

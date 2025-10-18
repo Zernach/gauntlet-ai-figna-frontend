@@ -109,7 +109,7 @@ export function useWebSocketMessageHandler({
             if (createdBy && createdBy === currentUserIdRef.current) {
               const fullShape = normalizeShape(message.payload.shape)
               pushHistory({
-                undo: { type: 'SHAPE_DELETE', payload: { shapeId: fullShape.id } },
+                undo: { type: 'SHAPE_DELETE', payload: { shapeIds: [fullShape.id] } },
                 redo: { type: 'SHAPE_CREATE', payload: { ...fullShape } },
                 label: 'Create shape',
               })
@@ -259,11 +259,47 @@ export function useWebSocketMessageHandler({
         break
 
       case 'SHAPE_DELETE':
-        // Shape deleted
-        if (message.payload.shapeId) {
-          setShapes(prev => prev.filter(s => s.id !== message.payload.shapeId))
-          // Remove from selection if it was selected
-          setSelectedIds(prev => prev.filter(id => id !== message.payload.shapeId))
+        // Shape(s) deleted
+        // Support both singular shapeId (legacy) and plural shapeIds (new)
+        const deletedIds = message.payload.shapeIds || (message.payload.shapeId ? [message.payload.shapeId] : [])
+        if (deletedIds.length > 0) {
+          setShapes(prev => prev.filter(s => !deletedIds.includes(s.id)))
+          // Remove from selection if they were selected
+          setSelectedIds(prev => prev.filter(id => !deletedIds.includes(id)))
+        }
+        break
+
+      case 'SHAPES_GROUPED':
+        // Shapes grouped together
+        if (message.payload.shapes && Array.isArray(message.payload.shapes)) {
+          setShapes(prev => {
+            const updated = [...prev]
+            message.payload.shapes.forEach((groupedShape: any) => {
+              const normalized = normalizeShape(groupedShape)
+              const index = updated.findIndex(s => s.id === normalized.id)
+              if (index !== -1) {
+                updated[index] = { ...updated[index], ...normalized }
+              }
+            })
+            return updated
+          })
+        }
+        break
+
+      case 'SHAPES_UNGROUPED':
+        // Shapes ungrouped
+        if (message.payload.shapes && Array.isArray(message.payload.shapes)) {
+          setShapes(prev => {
+            const updated = [...prev]
+            message.payload.shapes.forEach((ungroupedShape: any) => {
+              const normalized = normalizeShape(ungroupedShape)
+              const index = updated.findIndex(s => s.id === normalized.id)
+              if (index !== -1) {
+                updated[index] = { ...updated[index], ...normalized }
+              }
+            })
+            return updated
+          })
         }
         break
 
