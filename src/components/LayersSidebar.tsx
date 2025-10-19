@@ -120,8 +120,8 @@ export default function LayersSidebar({
 
         // First, sort all shapes by z-index (highest to lowest)
         const sorted = [...shapesToOrganize].sort((a, b) => {
-            const aZ = a.z_index ?? a.zIndex ?? 0
-            const bZ = b.z_index ?? b.zIndex ?? 0
+            const aZ = a.zIndex ?? 0
+            const bZ = b.zIndex ?? 0
             return bZ - aZ // Descending order
         })
 
@@ -170,8 +170,8 @@ export default function LayersSidebar({
     // For backward compatibility with drag and drop
     const sortedShapes = useMemo(() => {
         return optimisticOrder || [...shapes].sort((a, b) => {
-            const aZ = a.z_index ?? a.zIndex ?? 0
-            const bZ = b.z_index ?? b.zIndex ?? 0
+            const aZ = a.zIndex ?? 0
+            const bZ = b.zIndex ?? 0
             return bZ - aZ
         })
     }, [shapes, optimisticOrder])
@@ -261,7 +261,7 @@ export default function LayersSidebar({
     // Get shape display name
     const getShapeDisplayName = (shape: Shape): string => {
         if (shape.type === 'text') {
-            const text = shape.text_content || shape.textContent || 'Text'
+            const text = shape.textContent || 'Text'
             return text.length > 20 ? text.substring(0, 20) + '...' : text
         }
         return shape.type.charAt(0).toUpperCase() + shape.type.slice(1)
@@ -1114,7 +1114,7 @@ export default function LayersSidebar({
                                                     fontWeight: 500,
                                                 }}
                                             >
-                                                {shape.type} • z:{shape.z_index ?? shape.zIndex ?? 0}
+                                                {shape.type} • z:{shape.zIndex ?? 0}
                                             </div>
                                         </div>
 

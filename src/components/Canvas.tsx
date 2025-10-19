@@ -210,6 +210,8 @@ export default function Canvas({ onToolsReady, onViewportCenterChange, onCanvasS
     handleAddShape,
     handleAddCircle,
     handleAddText,
+    handleAddImage,
+    handleAddIcon,
     handleTextDoubleClick,
     unlockShapes,
     handleDeleteShapes,
@@ -387,7 +389,6 @@ export default function Canvas({ onToolsReady, onViewportCenterChange, onCanvasS
         if (index !== -1) {
           const newZIndex = maxZ - index
           shape.zIndex = newZIndex
-          shape.z_index = newZIndex
         }
       })
 
@@ -862,6 +863,8 @@ export default function Canvas({ onToolsReady, onViewportCenterChange, onCanvasS
     handleChangeBorderRadius,
     handleChangeFontFamily,
     handleChangeFontWeight,
+    handleChangeImageUrl,
+    handleChangeIconName,
     handleChangeX,
     handleChangeY,
     handleChangeWidth,
@@ -1022,8 +1025,8 @@ export default function Canvas({ onToolsReady, onViewportCenterChange, onCanvasS
 
     // Sort by z-index (ascending order: lowest z-index renders first, highest renders last on top)
     return filtered.sort((a, b) => {
-      const aZ = a.z_index ?? a.zIndex ?? 0
-      const bZ = b.z_index ?? b.zIndex ?? 0
+      const aZ = a.zIndex ?? 0
+      const bZ = b.zIndex ?? 0
       return aZ - bZ
     })
   }, [shapes, stagePos.x, stagePos.y, stageScale, viewportWidth, viewportHeight])
@@ -1107,6 +1110,8 @@ export default function Canvas({ onToolsReady, onViewportCenterChange, onCanvasS
         onAddRectangle={handleAddShape}
         onAddCircle={handleAddCircle}
         onAddText={handleAddText}
+        onAddImage={handleAddImage}
+        onAddIcon={handleAddIcon}
         onZoomIn={handleZoomIn}
         onZoomOut={handleZoomOut}
         onResetView={handleResetView}
@@ -1379,6 +1384,8 @@ export default function Canvas({ onToolsReady, onViewportCenterChange, onCanvasS
             onChangeBorderRadius={handleChangeBorderRadius}
             onChangeFontFamily={handleChangeFontFamily}
             onChangeFontWeight={handleChangeFontWeight}
+            onChangeImageUrl={handleChangeImageUrl}
+            onChangeIconName={handleChangeIconName}
             onChangeX={handleChangeX}
             onChangeY={handleChangeY}
             onChangeWidth={handleChangeWidth}

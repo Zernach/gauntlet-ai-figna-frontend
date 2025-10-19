@@ -176,7 +176,7 @@ export function useWebSocketMessageHandler({
                     ...(recentResize.width !== undefined && { width: recentResize.width }),
                     ...(recentResize.height !== undefined && { height: recentResize.height }),
                     ...(recentResize.radius !== undefined && { radius: recentResize.radius }),
-                    ...(recentResize.fontSize !== undefined && { fontSize: recentResize.fontSize, font_size: recentResize.fontSize }),
+                    ...(recentResize.fontSize !== undefined && { fontSize: recentResize.fontSize }),
                   }
                 } else {
                   // Clean up old entry
@@ -208,8 +208,7 @@ export function useWebSocketMessageHandler({
                   width: s.width,
                   height: s.height,
                   radius: s.radius,
-                  fontSize: s.fontSize ?? (s as any).font_size,
-                  font_size: s.fontSize ?? (s as any).font_size,
+                  fontSize: s.fontSize,
                 }
               }
               // If we're currently rotating this shape, preserve local rotation to avoid flicker
@@ -325,8 +324,7 @@ export function useWebSocketMessageHandler({
                   width: s.width,
                   height: s.height,
                   radius: s.radius,
-                  fontSize: s.fontSize ?? (s as any).font_size,
-                  font_size: s.fontSize ?? (s as any).font_size,
+                  fontSize: s.fontSize,
                 }
               }
 

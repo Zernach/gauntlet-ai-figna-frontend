@@ -162,7 +162,7 @@ export function useAgenticTools({
         },
         bringToFront: (params: any) => {
           if (!wsRef.current) throw new Error('WebSocket not ready');
-          const maxZ = Math.max(...shapesRef.current.map(s => s.z_index || s.zIndex || 0), 0);
+          const maxZ = Math.max(...shapesRef.current.map(s => s.zIndex || 0), 0);
           params.shapeIds.forEach((shapeId: string, index: number) => {
             sendMessage({
               type: 'SHAPE_UPDATE',
@@ -172,7 +172,7 @@ export function useAgenticTools({
         },
         sendToBack: (params: any) => {
           if (!wsRef.current) throw new Error('WebSocket not ready');
-          const minZ = Math.min(...shapesRef.current.map(s => s.z_index || s.zIndex || 0), 0);
+          const minZ = Math.min(...shapesRef.current.map(s => s.zIndex || 0), 0);
           params.shapeIds.forEach((shapeId: string, index: number) => {
             sendMessage({
               type: 'SHAPE_UPDATE',
@@ -187,7 +187,7 @@ export function useAgenticTools({
             if (shape) {
               sendMessage({
                 type: 'SHAPE_UPDATE',
-                payload: { shapeId, updates: { zIndex: (shape.z_index || shape.zIndex || 0) + 1 } }
+                payload: { shapeId, updates: { zIndex: (shape.zIndex || 0) + 1 } }
               });
             }
           });
@@ -199,7 +199,7 @@ export function useAgenticTools({
             if (shape) {
               sendMessage({
                 type: 'SHAPE_UPDATE',
-                payload: { shapeId, updates: { zIndex: (shape.z_index || shape.zIndex || 0) - 1 } }
+                payload: { shapeId, updates: { zIndex: (shape.zIndex || 0) - 1 } }
               });
             }
           });
@@ -364,7 +364,7 @@ export function useAgenticTools({
             if (response.success && response.design) {
               // Create all the shapes from the design
               if (createShapesRef.current) {
-                createShapesRef.current(response.design.shapes);
+                await createShapesRef.current(response.design.shapes);
               }
 
               return {
@@ -407,7 +407,7 @@ export function useAgenticTools({
               opacity: shape.opacity,
               rotation: shape.rotation,
               borderRadius: shape.borderRadius || shape.border_radius,
-              zIndex: shape.zIndex || shape.z_index
+              zIndex: shape.zIndex
             }));
 
             // Call the backend API to generate the variation
@@ -445,7 +445,7 @@ export function useAgenticTools({
 
               // Create all the new shapes from the variation
               if (createShapesRef.current) {
-                createShapesRef.current(response.design.shapes);
+                await createShapesRef.current(response.design.shapes);
               }
 
               return {

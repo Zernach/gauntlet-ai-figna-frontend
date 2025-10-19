@@ -246,6 +246,26 @@ export function useShapePropertyHandlers({
     scheduleBatchUpdate(selectedId, { radius: v }, 100)
   }, [selectedIds, recordPropChange, setShapes, wsRef, trackRecentlyModified, scheduleBatchUpdate])
 
+  const handleChangeImageUrl = useCallback((url: string) => {
+    if (selectedIds.length === 0 || !wsRef.current) return
+    // For image URL changes, only apply to first selected shape (primary)
+    const selectedId = selectedIds[0]
+    setShapes(prev => prev.map(s => s.id === selectedId ? { ...s, imageUrl: url } : s))
+    trackRecentlyModified(selectedId, { imageUrl: url })
+    recordPropChange(selectedId, 'imageUrl', url)
+    scheduleBatchUpdate(selectedId, { imageUrl: url }, 300)
+  }, [selectedIds, recordPropChange, setShapes, wsRef, trackRecentlyModified, scheduleBatchUpdate])
+
+  const handleChangeIconName = useCallback((iconName: string) => {
+    if (selectedIds.length === 0 || !wsRef.current) return
+    // For icon name changes, only apply to first selected shape (primary)
+    const selectedId = selectedIds[0]
+    setShapes(prev => prev.map(s => s.id === selectedId ? { ...s, iconName: iconName } : s))
+    trackRecentlyModified(selectedId, { iconName: iconName })
+    recordPropChange(selectedId, 'iconName', iconName)
+    scheduleBatchUpdate(selectedId, { iconName: iconName }, 150)
+  }, [selectedIds, recordPropChange, setShapes, wsRef, trackRecentlyModified, scheduleBatchUpdate])
+
   return {
     handleChangeColor,
     handleChangeOpacity,
@@ -255,6 +275,8 @@ export function useShapePropertyHandlers({
     handleChangeBorderRadius,
     handleChangeFontFamily,
     handleChangeFontWeight,
+    handleChangeImageUrl,
+    handleChangeIconName,
     handleChangeX,
     handleChangeY,
     handleChangeWidth,

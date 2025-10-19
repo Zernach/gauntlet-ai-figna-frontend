@@ -56,6 +56,14 @@ export function useCanvasUtils({
     const shadowColor = s.shadowColor !== undefined ? s.shadowColor : (s.shadow_color !== undefined ? s.shadow_color : undefined)
     const shadowStrength = s.shadowStrength !== undefined ? s.shadowStrength : (s.shadow_strength !== undefined ? s.shadow_strength : undefined)
     const borderRadius = s.borderRadius !== undefined ? s.borderRadius : (s.border_radius !== undefined ? s.border_radius : undefined)
+    const imageUrl = s.imageUrl !== undefined ? s.imageUrl : (s.image_url !== undefined ? s.image_url : undefined)
+    const iconName = s.iconName !== undefined ? s.iconName : (s.icon_name !== undefined ? s.icon_name : undefined)
+    const fontFamily = s.fontFamily !== undefined ? s.fontFamily : (s.font_family !== undefined ? s.font_family : undefined)
+    const fontWeight = s.fontWeight !== undefined ? s.fontWeight : (s.font_weight !== undefined ? s.font_weight : undefined)
+    const textAlign = s.textAlign !== undefined ? s.textAlign : (s.text_align !== undefined ? s.text_align : undefined)
+    const strokeColor = s.strokeColor !== undefined ? s.strokeColor : (s.stroke_color !== undefined ? s.stroke_color : undefined)
+    const strokeWidth = s.strokeWidth !== undefined ? s.strokeWidth : (s.stroke_width !== undefined ? s.stroke_width : undefined)
+    const groupId = s.groupId !== undefined ? s.groupId : (s.group_id !== undefined ? s.group_id : undefined)
     return {
       ...s,
       locked_at,
@@ -64,10 +72,19 @@ export function useCanvasUtils({
       zIndex: z_index,
       textContent,
       fontSize,
+      fontFamily,
+      fontWeight,
+      textAlign,
       opacity,
       shadowColor,
       shadowStrength,
       borderRadius,
+      imageUrl,
+      iconName,
+      strokeColor,
+      strokeWidth,
+      groupId,
+      group_id: groupId,
     }
   }, [])
 

@@ -23,7 +23,7 @@ export function useLayerManagement({
         if (!shapeId || !wsRef.current) return
 
         // Get max z-index
-        const maxZ = Math.max(...shapes.map(s => s.z_index || s.zIndex || 0), 0)
+        const maxZ = Math.max(...shapes.map(s => s.zIndex || 0), 0)
 
         // Check if the shape is in the current selection
         const targetShapes = selectedIds.includes(shapeId) ? selectedIds : [shapeId]
@@ -45,7 +45,7 @@ export function useLayerManagement({
         if (!shapeId || !wsRef.current) return
 
         // Get min z-index
-        const minZ = Math.min(...shapes.map(s => s.z_index || s.zIndex || 0), 0)
+        const minZ = Math.min(...shapes.map(s => s.zIndex || 0), 0)
 
         // Check if the shape is in the current selection
         const targetShapes = selectedIds.includes(shapeId) ? selectedIds : [shapeId]
@@ -73,7 +73,7 @@ export function useLayerManagement({
         targetShapes.forEach(id => {
             const shape = shapes.find(s => s.id === id)
             if (shape) {
-                const currentZ = shape.z_index || shape.zIndex || 0
+                const currentZ = shape.zIndex || 0
                 sendMessage({
                     type: 'SHAPE_UPDATE',
                     payload: { shapeId: id, updates: { zIndex: currentZ + 1 } },
@@ -96,7 +96,7 @@ export function useLayerManagement({
         targetShapes.forEach(id => {
             const shape = shapes.find(s => s.id === id)
             if (shape) {
-                const currentZ = shape.z_index || shape.zIndex || 0
+                const currentZ = shape.zIndex || 0
                 sendMessage({
                     type: 'SHAPE_UPDATE',
                     payload: { shapeId: id, updates: { zIndex: currentZ - 1 } },

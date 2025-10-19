@@ -1,6 +1,25 @@
 import { useCallback, useRef, useEffect } from 'react'
 import { CANVAS_WIDTH, CANVAS_HEIGHT, DEFAULT_SHAPE_SIZE, SHAPE_COLOR } from '../types/canvas'
 
+// Default stock image for new image shapes
+const DEFAULT_STOCK_IMAGE = 'https://raw.githubusercontent.com/landscapesupply/images/refs/heads/main/products/sod/TifBlaire_Centipede_Grass_Sod_Sale_Landscape_Supply_App.png'
+
+// Helper function to load an image and get its dimensions
+async function loadImageDimensions(url: string): Promise<{ width: number; height: number }> {
+    return new Promise((resolve) => {
+        const img = new Image()
+        img.crossOrigin = 'anonymous'
+        img.onload = () => {
+            resolve({ width: img.naturalWidth, height: img.naturalHeight })
+        }
+        img.onerror = () => {
+            // If image fails to load, return default dimensions
+            resolve({ width: DEFAULT_SHAPE_SIZE, height: DEFAULT_SHAPE_SIZE })
+        }
+        img.src = url
+    })
+}
+
 interface UseShapeManagementProps {
     wsRef: React.MutableRefObject<WebSocket | null>
     canvasId: string | null
@@ -34,12 +53,12 @@ export function useShapeManagement({
 }: UseShapeManagementProps) {
 
     // Refs to keep stable function references for external use
-    const createShapesRef = useRef<((shapesData: any[]) => void) | null>(null)
+    const createShapesRef = useRef<((shapesData: any[]) => Promise<void>) | null>(null)
     const unlockShapesRef = useRef<((shapeIds: string[]) => void) | null>(null)
     const handleDeleteShapesRef = useRef<((shapeIds: string[]) => void) | null>(null)
 
     // Handle shape creation (generic version for voice and UI) - now supports arrays
-    const createShapes = useCallback((shapesData: any[]) => {
+    const createShapes = useCallback(async (shapesData: any[]) => {
         // Check WebSocket connection
         if (!wsRef.current) {
             showToast('Cannot create shape: Not connected to server', 'error')
@@ -67,7 +86,8 @@ export function useShapeManagement({
         })
 
         // Process each shape in the array (now sorted by z-index)
-        sortedShapesData.forEach((shapeData, index) => {
+        for (let index = 0; index < sortedShapesData.length; index++) {
+            const shapeData = sortedShapesData[index]
             // Ensure coordinates are within canvas boundaries
             let x = shapeData.x !== undefined ? shapeData.x : -stagePos.x / stageScale + (viewportWidth / 2) / stageScale
             let y = shapeData.y !== undefined ? shapeData.y : -stagePos.y / stageScale + (viewportHeight / 2) / stageScale
@@ -98,6 +118,38 @@ export function useShapeManagement({
                 defaults.color = shapeData.color || '#72fa41'
                 x = Math.max(0, Math.min(x, CANVAS_WIDTH - width))
                 y = Math.max(0, Math.min(y, CANVAS_HEIGHT - height))
+            } else if (shapeData.type === 'image') {
+                const imageUrl = shapeData.imageUrl || DEFAULT_STOCK_IMAGE
+                let width = shapeData.width
+                let height = shapeData.height
+
+                // If dimensions are not provided, load the image to get actual dimensions
+                if (!width || !height) {
+                    const dimensions = await loadImageDimensions(imageUrl)
+                    width = dimensions.width
+                    height = dimensions.height
+
+                    // Scale down if image is too large (max 800px on longest side)
+                    const maxSize = 800
+                    if (width > maxSize || height > maxSize) {
+                        const scale = maxSize / Math.max(width, height)
+                        width = Math.round(width * scale)
+                        height = Math.round(height * scale)
+                    }
+                }
+
+                defaults.width = width
+                defaults.height = height
+                defaults.imageUrl = imageUrl
+                defaults.color = shapeData.color || '#ffffff'
+                x = Math.max(0, Math.min(x, CANVAS_WIDTH - width))
+                y = Math.max(0, Math.min(y, CANVAS_HEIGHT - height))
+            } else if (shapeData.type === 'icon') {
+                defaults.iconName = shapeData.iconName || 'star'
+                defaults.fontSize = shapeData.fontSize || 64
+                defaults.color = shapeData.color || '#72fa41'
+                x = Math.max(0, Math.min(x, CANVAS_WIDTH))
+                y = Math.max(0, Math.min(y, CANVAS_HEIGHT))
             }
 
             // Set common defaults
@@ -120,7 +172,7 @@ export function useShapeManagement({
             } catch (error) {
                 showToast(`Failed to create shape ${index + 1}`, 'error')
             }
-        })
+        }
 
         showToast(`${sortedShapesData.length} shape(s) created!`, 'success', 2000)
     }, [stagePos, stageScale, showToast, viewportWidth, viewportHeight, sendMessage, wsRef, canvasIdRef, currentUserIdRef])
@@ -172,6 +224,41 @@ export function useShapeManagement({
         }])
     }, [stagePos, stageScale, createShapes, viewportWidth, viewportHeight])
 
+    // Handle image creation from UI
+    const handleAddImage = useCallback(() => {
+        const centerX = -stagePos.x / stageScale + (viewportWidth / 2) / stageScale
+        const centerY = -stagePos.y / stageScale + (viewportHeight / 2) / stageScale
+
+        // Use default image dimensions (800x525)
+        const width = 800
+        const height = 525
+
+        createShapes([{
+            type: 'image',
+            x: centerX - width / 2,
+            y: centerY - height / 2,
+            width,
+            height,
+            imageUrl: DEFAULT_STOCK_IMAGE,
+            color: '#ffffff',
+        }])
+    }, [stagePos, stageScale, createShapes, viewportWidth, viewportHeight])
+
+    // Handle icon creation from UI
+    const handleAddIcon = useCallback(() => {
+        const centerX = -stagePos.x / stageScale + (viewportWidth / 2) / stageScale
+        const centerY = -stagePos.y / stageScale + (viewportHeight / 2) / stageScale
+
+        createShapes([{
+            type: 'icon',
+            x: centerX,
+            y: centerY,
+            iconName: 'star',
+            fontSize: 64,
+            color: '#72fa41',
+        }])
+    }, [stagePos, stageScale, createShapes, viewportWidth, viewportHeight])
+
     // Handle text edit on double click
     const handleTextDoubleClick = useCallback((id: string) => {
         const s = shapesRef.current.find(sh => sh.id === id)
@@ -183,7 +270,7 @@ export function useShapeManagement({
             if (elapsed < 10) return
         }
 
-        const currentText = (s as any).textContent ?? (s as any).text_content ?? ''
+        const currentText = (s as any).textContent ?? ''
         const editStartTime = Date.now()  // Capture when user starts editing
         const newText = window.prompt('Edit text', String(currentText))
         if (newText == null) return
@@ -255,6 +342,8 @@ export function useShapeManagement({
         handleAddShape,
         handleAddCircle,
         handleAddText,
+        handleAddImage,
+        handleAddIcon,
         handleTextDoubleClick,
         unlockShapes,
         handleDeleteShapes,

@@ -10,7 +10,10 @@ import {
     Lasso,
     Grid3x3,
     X,
-    SquareDashedMousePointer
+    SquareDashedMousePointer,
+    Image as ImageIcon,
+    Smile,
+    Star
 } from 'lucide-react'
 import ColorSlider from './ColorSlider'
 
@@ -18,6 +21,8 @@ interface ControlPanelProps {
     onAddRectangle: () => void
     onAddCircle: () => void
     onAddText: () => void
+    onAddImage: () => void
+    onAddIcon: () => void
     onZoomIn: () => void
     onZoomOut: () => void
     onResetView: () => void
@@ -47,6 +52,7 @@ const ControlButton: React.FC<{
     className?: string
     id?: string
     isExpanded?: boolean
+    buttonRef?: React.RefObject<HTMLButtonElement>
 }> = ({
     onClick,
     onPointerDown,
@@ -59,7 +65,8 @@ const ControlButton: React.FC<{
     variant = 'primary',
     className = '',
     id,
-    isExpanded = true
+    isExpanded = true,
+    buttonRef
 }) => {
         const baseStyles: React.CSSProperties = {
             display: 'flex',
@@ -122,6 +129,7 @@ const ControlButton: React.FC<{
 
         return (
             <button
+                ref={buttonRef}
                 id={id}
                 onClick={onClick}
                 onPointerDown={onPointerDown}
@@ -167,6 +175,8 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
     onAddRectangle,
     onAddCircle,
     onAddText,
+    onAddImage,
+    onAddIcon,
     onZoomIn,
     onZoomOut,
     onResetView,
@@ -184,6 +194,8 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
 }) => {
     const [isExpanded, setIsExpanded] = React.useState(false)
     const [showCanvasColorSlider, setShowCanvasColorSlider] = React.useState(false)
+    const [shapeMenuPosition, setShapeMenuPosition] = React.useState<{ x: number; y: number } | null>(null)
+    const shapeButtonRef = React.useRef<HTMLButtonElement>(null)
 
     // Dismiss color slider when control panel collapses
     React.useEffect(() => {
@@ -192,10 +204,15 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
         }
     }, [isExpanded])
 
-    const handleMouseLeave = React.useCallback(() => {
-        setIsExpanded(false)
-        onCollapse?.()
-    }, [onCollapse])
+    const handleShapeButtonClick = React.useCallback(() => {
+        if (shapeButtonRef.current) {
+            const rect = shapeButtonRef.current.getBoundingClientRect()
+            setShapeMenuPosition({
+                x: rect.right + 10,
+                y: rect.top
+            })
+        }
+    }, [])
 
     return (
         <div style={{
@@ -211,7 +228,10 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
             <div
                 id="main-control-panel"
                 onMouseEnter={() => setIsExpanded(true)}
-                onMouseLeave={handleMouseLeave}
+                onMouseLeave={() => {
+                    setIsExpanded(false)
+                    onCollapse?.()
+                }}
                 style={{
                     backgroundColor: 'rgba(26, 26, 26, 0.95)',
                     backdropFilter: 'blur(10px)',
@@ -230,17 +250,11 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                 {/* Shape Tools Section */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     <ControlButton
-                        onClick={onAddRectangle}
-                        icon={<Square size={18} />}
-                        label="Rectangle"
-                        variant="secondary"
-                        isExpanded={isExpanded}
-                    />
-
-                    <ControlButton
-                        onClick={onAddCircle}
-                        icon={<Circle size={18} />}
-                        label="Circle"
+                        buttonRef={shapeButtonRef}
+                        id="shape-btn"
+                        onClick={handleShapeButtonClick}
+                        icon={<Star size={18} />}
+                        label="Shape"
                         variant="secondary"
                         isExpanded={isExpanded}
                     />
@@ -249,6 +263,22 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                         onClick={onAddText}
                         icon={<Type size={18} />}
                         label="Text"
+                        variant="secondary"
+                        isExpanded={isExpanded}
+                    />
+
+                    <ControlButton
+                        onClick={onAddImage}
+                        icon={<ImageIcon size={18} />}
+                        label="Image"
+                        variant="secondary"
+                        isExpanded={isExpanded}
+                    />
+
+                    <ControlButton
+                        onClick={onAddIcon}
+                        icon={<Smile size={18} />}
+                        label="Icon"
                         variant="secondary"
                         isExpanded={isExpanded}
                     />
@@ -411,9 +441,155 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                 <MousePointer2 size={16} />
                 <span>{Math.round(stageScale * 100)}%</span>
             </div>
+
+            {/* Shape Menu - rendered inline like ContextMenu */}
+            {shapeMenuPosition && (
+                <ShapeMenu
+                    x={shapeMenuPosition.x}
+                    y={shapeMenuPosition.y}
+                    onClose={() => setShapeMenuPosition(null)}
+                    onAddRectangle={onAddRectangle}
+                    onAddCircle={onAddCircle}
+                />
+            )}
         </div>
     )
 }
+
+// ShapeMenu MenuItem component - matches ContextMenu pattern
+const ShapeMenuItem: React.FC<{
+    icon: React.ReactNode
+    label: string
+    onClick: () => void
+}> = memo(({ icon, label, onClick }) => {
+    const [isHovered, setIsHovered] = React.useState(false)
+
+    return (
+        <button
+            onClick={onClick}
+            onMouseEnter={() => setIsHovered(true)}
+            onMouseLeave={() => setIsHovered(false)}
+            style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '12px',
+                padding: '10px 16px',
+                width: '100%',
+                backgroundColor: isHovered ? '#2a2a2a' : 'transparent',
+                border: 'none',
+                color: '#ffffff',
+                fontSize: '13px',
+                fontWeight: '500',
+                cursor: 'pointer',
+                transition: 'background-color 0.15s ease',
+                textAlign: 'left',
+            }}
+        >
+            <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: '16px',
+                height: '16px'
+            }}>
+                {icon}
+            </div>
+            <span>{label}</span>
+        </button>
+    )
+})
+
+ShapeMenuItem.displayName = 'ShapeMenuItem'
+
+// ShapeMenu component - matches ContextMenu pattern exactly
+const ShapeMenu: React.FC<{
+    x: number
+    y: number
+    onClose: () => void
+    onAddRectangle: () => void
+    onAddCircle: () => void
+}> = memo(({ x, y, onClose, onAddRectangle, onAddCircle }) => {
+    const menuRef = React.useRef<HTMLDivElement>(null)
+
+    // Close menu when clicking outside - matches ContextMenu
+    React.useEffect(() => {
+        const handleClickOutside = (e: MouseEvent) => {
+            if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+                onClose()
+            }
+        }
+
+        // Add a small delay to prevent immediate closing from the triggering click
+        const timeout = setTimeout(() => {
+            document.addEventListener('mousedown', handleClickOutside)
+        }, 10)
+
+        return () => {
+            clearTimeout(timeout)
+            document.removeEventListener('mousedown', handleClickOutside)
+        }
+    }, [onClose])
+
+    // Close on escape - matches ContextMenu
+    React.useEffect(() => {
+        const handleEscape = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') {
+                onClose()
+            }
+        }
+
+        document.addEventListener('keydown', handleEscape)
+        return () => document.removeEventListener('keydown', handleEscape)
+    }, [onClose])
+
+    // Wrap handlers to close menu after action - matches ContextMenu pattern
+    const handleAction = React.useCallback((action: () => void) => {
+        return () => {
+            action()
+            onClose()
+        }
+    }, [onClose])
+
+    return (
+        <div
+            ref={menuRef}
+            style={{
+                position: 'fixed',
+                left: `${x}px`,
+                top: `${y}px`,
+                zIndex: 1000,
+                backgroundColor: '#1a1a1a',
+                border: '1px solid #404040',
+                borderRadius: '8px',
+                boxShadow: '0 8px 32px #1c1c1c99',
+                minWidth: '180px',
+                padding: '6px 0',
+                backdropFilter: 'blur(10px)',
+            }}
+        >
+            <div style={{
+                fontSize: '11px',
+                fontWeight: '600',
+                color: '#888',
+                textTransform: 'uppercase',
+                letterSpacing: '0.5px',
+                padding: '8px 16px 6px',
+            }}>
+                Shapes
+            </div>
+            <ShapeMenuItem
+                icon={<Square size={16} />}
+                label="Rectangle"
+                onClick={handleAction(onAddRectangle)}
+            />
+            <ShapeMenuItem
+                icon={<Circle size={16} />}
+                label="Circle"
+                onClick={handleAction(onAddCircle)}
+            />
+        </div>
+    )
+})
 
 // Memoize to prevent unnecessary re-renders
 export default memo(ControlPanel)

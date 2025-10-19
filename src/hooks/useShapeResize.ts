@@ -63,7 +63,7 @@ export function useShapeResize({
       if (s.type === 'circle') {
         resizeBaselineRef.current.set(id, { radius: s.radius })
       } else if (s.type === 'text') {
-        const fs = (s as any).fontSize ?? (s as any).font_size ?? 24
+        const fs = (s as any).fontSize ?? 24
         resizeBaselineRef.current.set(id, { fontSize: fs })
       } else {
         resizeBaselineRef.current.set(id, { x: s.x, y: s.y, width: s.width, height: s.height })
@@ -179,7 +179,7 @@ export function useShapeResize({
       if (s.type === 'circle') {
         updates.radius = s.radius
       } else if (s.type === 'text') {
-        const fs = (s as any).fontSize ?? (s as any).font_size ?? 24
+        const fs = (s as any).fontSize ?? 24
         updates.fontSize = Math.max(8, Math.min(512, Math.round(fs)))
       } else {
         updates.x = s.x

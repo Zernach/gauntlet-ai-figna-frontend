@@ -24,7 +24,6 @@ interface Shape {
   fontWeight?: string
   textAlign?: string
   zIndex?: number
-  z_index?: number
 }
 
 type WSMessage = { type: string; payload?: any }

@@ -23,8 +23,9 @@ export interface Shape {
     fontFamily?: string
     fontWeight?: string
     textAlign?: string
+    imageUrl?: string
+    iconName?: string
     zIndex?: number
-    z_index?: number
     locked_at?: string | null
     locked_by?: string | null
     created_by?: string

@@ -1,7 +1,129 @@
-import { Rect, Circle, Text as KonvaText, Group } from 'react-konva'
+import { Rect, Circle, Text as KonvaText, Group, Image as KonvaImage } from 'react-konva'
 import { useRef, useState, useEffect, memo } from 'react'
+import useImage from 'use-image'
 
 const DEFAULT_SHAPE_SIZE = 100
+
+// Icon mapping for icon shapes
+const ICON_MAP: Record<string, string> = {
+    // General & Feedback
+    'smile': '😊',
+    'heart': '❤️',
+    'star': '⭐',
+    'check': '✅',
+    'cross': '❌',
+    'fire': '🔥',
+    'rocket': '🚀',
+    'thumbs-up': '👍',
+    'thumbs-down': '👎',
+    'warning': '⚠️',
+    'info': 'ℹ️',
+    'question': '❓',
+    'lightbulb': '💡',
+    'flag': '🚩',
+    'pin': '📌',
+    'calendar': '📅',
+    'clock': '🕐',
+    'home': '🏠',
+    'folder': '📁',
+    'email': '📧',
+
+    // Profile & Account
+    'user': '👤',
+    'users': '👥',
+    'lock': '🔐',
+    'unlock': '🔓',
+    'key': '🔑',
+    'settings': '⚙️',
+    'profile': '👨‍💼',
+    'shield': '🛡️',
+
+    // Shopping & E-commerce
+    'cart': '🛒',
+    'card': '💳',
+    'money': '💰',
+    'tag': '🏷️',
+    'package': '📦',
+    'payment': '💸',
+    'bag': '🛍️',
+    'receipt': '🧾',
+    'gift': '🎁',
+    'diamond': '💎',
+
+    // Booking & Travel
+    'plane': '✈️',
+    'hotel': '🏨',
+    'ticket': '🎫',
+    'globe': '🌐',
+    'map': '🗺️',
+    'compass': '🧭',
+    'car': '🚗',
+    'train': '🚆',
+
+    // Social & Communication
+    'chat': '💬',
+    'phone': '📱',
+    'camera': '📸',
+    'eye': '👁️',
+    'bell': '🔔',
+    'message': '💌',
+    'megaphone': '📣',
+    'video': '📹',
+    'mic': '🎤',
+
+    // SaaS & Productivity
+    'chart': '📊',
+    'trending-up': '📈',
+    'trending-down': '📉',
+    'search': '🔍',
+    'edit': '📝',
+    'save': '💾',
+    'cloud': '☁️',
+    'refresh': '🔄',
+    'download': '⬇️',
+    'upload': '⬆️',
+    'plus': '➕',
+    'minus': '➖',
+    'trash': '🗑️',
+    'clipboard': '📋',
+    'document': '📄',
+    'book': '📖',
+    'bookmark': '🔖',
+    'link': '🔗',
+
+    // Events & Celebrations
+    'party': '🎉',
+    'cake': '🎂',
+    'balloons': '🎈',
+    'trophy': '🏆',
+    'medal': '🏅',
+    'crown': '👑',
+
+    // Status & Indicators
+    'battery': '🔋',
+    'signal': '📶',
+    'wifi': '📡',
+    'location': '📍',
+    'target': '🎯',
+    'hourglass': '⏳',
+    'stopwatch': '⏱️',
+    'timer': '⏲️',
+
+    // Media & Entertainment
+    'music': '🎵',
+    'play': '▶️',
+    'pause': '⏸️',
+    'film': '🎬',
+    'tv': '📺',
+    'headphones': '🎧',
+    'tool': '🔧',
+    'wrench': '🔨',
+    'paintbrush': '🖌️',
+    'palette': '🎨',
+    'bulb': '💡',
+    'magnet': '🧲',
+    'puzzle': '🧩',
+}
 
 // Helper function to rotate a point around an origin
 const rotatePoint = (x: number, y: number, originX: number, originY: number, angleDeg: number) => {
@@ -93,17 +215,13 @@ interface CanvasShapeProps {
         shadowColor?: string
         shadowStrength?: number
         borderRadius?: number
-        border_radius?: number
-        text_content?: string
-        font_size?: number
-        font_family?: string
-        font_weight?: string
-        text_align?: string
         textContent?: string
         fontSize?: number
         fontFamily?: string
         fontWeight?: string
         textAlign?: string
+        imageUrl?: string
+        iconName?: string
         locked_at?: string | null
         locked_by?: string | null
         created_by?: string
@@ -176,15 +294,15 @@ const CanvasShapeComponent = ({
         const textRef = useRef<any>(null)
         const [textWidth, setTextWidth] = useState<number>(0)
         const [textHeight, setTextHeight] = useState<number>(0)
-        const [baselineFontSize, setBaselineFontSize] = useState<number>(shape.fontSize ?? shape.font_size ?? 24)
+        const [baselineFontSize, setBaselineFontSize] = useState<number>(shape.fontSize ?? 24)
         const [baselineWidth, setBaselineWidth] = useState<number>(0)
         const [baselineHeight, setBaselineHeight] = useState<number>(0)
 
-        const text = shape.textContent ?? shape.text_content ?? 'Text'
-        const fontSize = shape.fontSize ?? shape.font_size ?? 24
-        const fontFamily = shape.fontFamily ?? shape.font_family ?? 'Inter'
-        const fontWeight = shape.fontWeight ?? shape.font_weight ?? 'normal'
-        const textAlign = shape.textAlign ?? shape.text_align ?? 'left'
+        const text = shape.textContent ?? 'Text'
+        const fontSize = shape.fontSize ?? 24
+        const fontFamily = shape.fontFamily ?? 'Inter'
+        const fontWeight = shape.fontWeight ?? 'normal'
+        const textAlign = shape.textAlign ?? 'left'
 
         useEffect(() => {
             if (textRef.current) {
@@ -506,8 +624,353 @@ const CanvasShapeComponent = ({
         )
     }
 
+    // Image shape
+    if (shape.type === 'image') {
+        const imageUrl = shape.imageUrl ?? 'https://raw.githubusercontent.com/landscapesupply/images/refs/heads/main/products/sod/TifBlaire_Centipede_Grass_Sod_Sale_Landscape_Supply_App.png'
+        const [image] = useImage(imageUrl, 'anonymous')
+        const imageRef = useRef<any>(null)
+
+        return (
+            <>
+                <KonvaImage
+                    ref={(node) => {
+                        imageRef.current = node
+                        shapeRef.current = node
+                    }}
+                    x={shape.x}
+                    y={shape.y}
+                    width={shape.width || 800}
+                    height={shape.height || 525}
+                    image={image}
+                    rotation={shape.rotation || 0}
+                    opacity={shape.opacity ?? 1}
+                    shadowColor={shape.shadowColor ?? 'transparent'}
+                    shadowBlur={(shape.shadowStrength ?? 0)}
+                    shadowOpacity={Math.min(1, Math.max(0, (shape.shadowStrength ?? 0) / 50))}
+                    shadowOffsetX={shape.shadowStrength ? 2 : 0}
+                    shadowOffsetY={shape.shadowStrength ? 2 : 0}
+                    shadowEnabled={true}
+                    stroke={effectiveStrokeColor}
+                    strokeWidth={effectiveStrokeWidth}
+                    onTap={(e) => isPressable && onShapeClick(shape.id, e)}
+                    onClick={(e) => isPressable && onShapeClick(shape.id, e)}
+                    onContextMenu={(e) => onContextMenu && onContextMenu(e, shape.id)}
+                    draggable={isDraggable}
+                    onDragStart={() => onDragStart(shape.id)}
+                    onDragMove={(e) => {
+                        e.cancelBubble = true
+                        onDragMove(shape.id, e.target.x(), e.target.y())
+                    }}
+                    onDragEnd={(e) => {
+                        e.cancelBubble = true
+                        onDragEnd(shape.id)
+                    }}
+                    listening={!isRotatingRef.current}
+                />
+                {isSelected && canResize && (() => {
+                    const rotation = shape.rotation || 0
+                    const width = shape.width || 800
+                    const height = shape.height || 525
+
+                    // Calculate rotated corner positions
+                    const nwCorner = rotatePoint(shape.x, shape.y, shape.x, shape.y, rotation)
+                    const seCorner = rotatePoint(shape.x + width, shape.y + height, shape.x, shape.y, rotation)
+
+                    // Calculate rotated top-center for rotation handle
+                    const rotationHandle = rotatePoint(
+                        shape.x + width / 2,
+                        shape.y - rotationOffset,
+                        shape.x,
+                        shape.y,
+                        rotation
+                    )
+
+                    return (
+                        <Group>
+                            {/* SE handle (main resize handle for images) */}
+                            <Rect
+                                x={seCorner.x - handleSize / 2}
+                                y={seCorner.y - handleSize / 2}
+                                width={handleSize}
+                                height={handleSize}
+                                fill="#ffffff"
+                                stroke={effectiveStrokeColor}
+                                strokeWidth={handleStrokeThin}
+                                draggable
+                                onDragStart={(e) => {
+                                    e.cancelBubble = true
+                                    resizeOppositeCornerRef.current = nwCorner
+                                    onResizeStart && onResizeStart(shape.id, 'se')
+                                }}
+                                onDragMove={(e) => {
+                                    e.cancelBubble = true
+                                    const stage = e.target.getStage()
+                                    if (!stage || !resizeOppositeCornerRef.current) return
+                                    const pointer = stage.getPointerPosition()
+                                    if (!pointer) return
+                                    const scaleX = stage.scaleX()
+                                    const scaleY = stage.scaleY()
+                                    const stageX = stage.x()
+                                    const stageY = stage.y()
+                                    const canvasX = (pointer.x - stageX) / scaleX
+                                    const canvasY = (pointer.y - stageY) / scaleY
+
+                                    const newDimensions = calculateRotatedResize(
+                                        resizeOppositeCornerRef.current,
+                                        { x: canvasX, y: canvasY },
+                                        rotation,
+                                        10
+                                    )
+
+                                    onResizeMove && onResizeMove(shape.id, newDimensions)
+                                }}
+                                onDragEnd={(e) => {
+                                    e.cancelBubble = true
+                                    resizeOppositeCornerRef.current = null
+                                    onResizeEnd && onResizeEnd(shape.id)
+                                }}
+                            />
+                            {/* Rotation handle */}
+                            <Rect
+                                x={rotationHandle.x - handleSize / 2}
+                                y={rotationHandle.y - handleSize / 2}
+                                width={handleSize}
+                                height={handleSize}
+                                fill="#4f46e5"
+                                stroke="#ffffff"
+                                strokeWidth={handleStrokeThick}
+                                draggable
+                                onDragStart={(e) => {
+                                    e.cancelBubble = true
+                                    isRotatingRef.current = true
+                                    lastRotationRef.current = shape.rotation || 0
+                                    _onRotateStart && _onRotateStart(shape.id)
+                                }}
+                                onDragMove={(e) => {
+                                    e.cancelBubble = true
+                                    const stage = e.target.getStage()
+                                    if (!stage) return
+                                    const pointer = stage.getPointerPosition()
+                                    if (!pointer) return
+                                    const scaleX = stage.scaleX()
+                                    const stageX = stage.x()
+                                    const stageY = stage.y()
+                                    const canvasX = (pointer.x - stageX) / scaleX
+                                    const canvasY = (pointer.y - stageY) / scaleX
+
+                                    const centerX = shape.x + width / 2
+                                    const centerY = shape.y + height / 2
+                                    const dx = canvasX - centerX
+                                    const dy = canvasY - centerY
+                                    const angle = Math.atan2(dy, dx) * 57.29577951308232
+
+                                    if (shapeRef.current && Math.abs(angle - lastRotationRef.current) > 0.5) {
+                                        shapeRef.current.rotation(angle)
+                                        lastRotationRef.current = angle
+                                        shapeRef.current.getLayer()?.batchDraw()
+                                    }
+
+                                    _onRotateMove && _onRotateMove(shape.id, angle)
+                                }}
+                                onDragEnd={(e) => {
+                                    e.cancelBubble = true
+                                    isRotatingRef.current = false
+                                    _onRotateEnd && _onRotateEnd(shape.id)
+                                }}
+                            />
+                        </Group>
+                    )
+                })()}
+                {isLocked && remainingSeconds !== null && (
+                    <KonvaText
+                        x={shape.x + 5}
+                        y={shape.y + 5}
+                        text={`🔒 ${Math.ceil(remainingSeconds)}s`}
+                        fontSize={14}
+                        fontStyle="bold"
+                        fill="#ef4444"
+                        listening={false}
+                    />
+                )}
+            </>
+        )
+    }
+
+    // Icon shape (rendered as emoji/unicode)
+    if (shape.type === 'icon') {
+        const iconName = shape.iconName ?? 'star'
+        const iconText = ICON_MAP[iconName] || iconName || '⭐'
+        const iconRef = useRef<any>(null)
+        const [iconWidth, setIconWidth] = useState<number>(0)
+        const [iconHeight, setIconHeight] = useState<number>(0)
+
+        const fontSize = shape.fontSize ?? 64
+
+        useEffect(() => {
+            if (iconRef.current) {
+                setIconWidth(iconRef.current.width())
+                setIconHeight(iconRef.current.height())
+            }
+        }, [iconText, fontSize])
+
+        return (
+            <>
+                <KonvaText
+                    ref={(node) => {
+                        iconRef.current = node
+                        shapeRef.current = node
+                    }}
+                    x={shape.x}
+                    y={shape.y}
+                    text={iconText}
+                    fontSize={fontSize}
+                    fontFamily="Apple Color Emoji, Segoe UI Emoji, Noto Color Emoji"
+                    fill={shape.color || '#ffffff'}
+                    rotation={shape.rotation || 0}
+                    opacity={shape.opacity ?? 1}
+                    shadowColor={shape.shadowColor ?? 'transparent'}
+                    shadowBlur={(shape.shadowStrength ?? 0)}
+                    shadowOpacity={Math.min(1, Math.max(0, (shape.shadowStrength ?? 0) / 50))}
+                    shadowOffsetX={shape.shadowStrength ? 2 : 0}
+                    shadowOffsetY={shape.shadowStrength ? 2 : 0}
+                    shadowEnabled={true}
+                    onTap={(e) => isPressable && onShapeClick(shape.id, e)}
+                    onClick={(e) => isPressable && onShapeClick(shape.id, e)}
+                    onContextMenu={(e) => onContextMenu && onContextMenu(e, shape.id)}
+                    draggable={isDraggable}
+                    onDragStart={() => onDragStart(shape.id)}
+                    onDragMove={(e) => {
+                        e.cancelBubble = true
+                        onDragMove(shape.id, e.target.x(), e.target.y())
+                    }}
+                    onDragEnd={(e) => {
+                        e.cancelBubble = true
+                        onDragEnd(shape.id)
+                    }}
+                    listening={!isRotatingRef.current}
+                />
+                {isSelected && canResize && (() => {
+                    const rotation = shape.rotation || 0
+                    const resizeCorner = rotatePoint(
+                        shape.x + iconWidth,
+                        shape.y + iconHeight,
+                        shape.x,
+                        shape.y,
+                        rotation
+                    )
+                    const rotationHandle = rotatePoint(
+                        shape.x + iconWidth / 2,
+                        shape.y - rotationOffset,
+                        shape.x,
+                        shape.y,
+                        rotation
+                    )
+
+                    return (
+                        <Group>
+                            <Rect
+                                x={resizeCorner.x - handleSize / 2}
+                                y={resizeCorner.y - handleSize / 2}
+                                width={handleSize}
+                                height={handleSize}
+                                fill="#ffffff"
+                                stroke={effectiveStrokeColor}
+                                strokeWidth={handleStrokeThin}
+                                draggable
+                                onDragStart={(e) => {
+                                    e.cancelBubble = true
+                                    onResizeStart && onResizeStart(shape.id, 'icon-scale')
+                                }}
+                                onDragMove={(e) => {
+                                    e.cancelBubble = true
+                                    const stage = e.target.getStage()
+                                    if (!stage) return
+                                    const pointer = stage.getPointerPosition()
+                                    if (!pointer) return
+                                    const scaleX = stage.scaleX()
+                                    const scaleY = stage.scaleY()
+                                    const stageX = stage.x()
+                                    const stageY = stage.y()
+                                    const canvasX = (pointer.x - stageX) / scaleX
+                                    const canvasY = (pointer.y - stageY) / scaleY
+                                    const dx = Math.max(1, canvasX - shape.x)
+                                    const dy = Math.max(1, canvasY - shape.y)
+                                    const scale = Math.max(0.2, Math.sqrt(dx * dx + dy * dy) / 50)
+                                    const newFontSize = Math.max(12, Math.min(256, fontSize * scale))
+                                    onResizeMove && onResizeMove(shape.id, { fontSize: newFontSize })
+                                }}
+                                onDragEnd={(e) => {
+                                    e.cancelBubble = true
+                                    onResizeEnd && onResizeEnd(shape.id)
+                                }}
+                            />
+                            <Rect
+                                x={rotationHandle.x - handleSize / 2}
+                                y={rotationHandle.y - handleSize / 2}
+                                width={handleSize}
+                                height={handleSize}
+                                fill="#4f46e5"
+                                stroke="#ffffff"
+                                strokeWidth={handleStrokeThick}
+                                draggable
+                                onDragStart={(e) => {
+                                    e.cancelBubble = true
+                                    isRotatingRef.current = true
+                                    lastRotationRef.current = shape.rotation || 0
+                                    _onRotateStart && _onRotateStart(shape.id)
+                                }}
+                                onDragMove={(e) => {
+                                    e.cancelBubble = true
+                                    const stage = e.target.getStage()
+                                    if (!stage) return
+                                    const pointer = stage.getPointerPosition()
+                                    if (!pointer) return
+                                    const scaleX = stage.scaleX()
+                                    const stageX = stage.x()
+                                    const stageY = stage.y()
+                                    const canvasX = (pointer.x - stageX) / scaleX
+                                    const canvasY = (pointer.y - stageY) / scaleX
+
+                                    const centerX = shape.x + iconWidth / 2
+                                    const centerY = shape.y + iconHeight / 2
+                                    const dx = canvasX - centerX
+                                    const dy = canvasY - centerY
+                                    const angle = Math.atan2(dy, dx) * 57.29577951308232
+
+                                    if (shapeRef.current && Math.abs(angle - lastRotationRef.current) > 0.5) {
+                                        shapeRef.current.rotation(angle)
+                                        lastRotationRef.current = angle
+                                        shapeRef.current.getLayer()?.batchDraw()
+                                    }
+
+                                    _onRotateMove && _onRotateMove(shape.id, angle)
+                                }}
+                                onDragEnd={(e) => {
+                                    e.cancelBubble = true
+                                    isRotatingRef.current = false
+                                    _onRotateEnd && _onRotateEnd(shape.id)
+                                }}
+                            />
+                        </Group>
+                    )
+                })()}
+                {isLocked && remainingSeconds !== null && (
+                    <KonvaText
+                        x={shape.x - 20}
+                        y={shape.y - (fontSize * 0.8)}
+                        text={`🔒 ${Math.ceil(remainingSeconds)}s`}
+                        fontSize={14}
+                        fontStyle="bold"
+                        fill="#ef4444"
+                        listening={false}
+                    />
+                )}
+            </>
+        )
+    }
+
     // Default to rectangle
-    const borderRadius = shape.borderRadius ?? shape.border_radius ?? 0
+    const borderRadius = shape.borderRadius ?? 0
 
     return (
         <>
@@ -830,12 +1293,14 @@ function areEqual(prev: CanvasShapeProps, next: CanvasShapeProps) {
     if ((a.opacity ?? 1) !== (b.opacity ?? 1)) return false
     if ((a.shadowColor ?? 'transparent') !== (b.shadowColor ?? 'transparent')) return false
     if ((a.shadowStrength ?? 0) !== (b.shadowStrength ?? 0)) return false
-    if ((a.borderRadius ?? a.border_radius ?? 0) !== (b.borderRadius ?? b.border_radius ?? 0)) return false
-    if ((a.textContent ?? a.text_content) !== (b.textContent ?? b.text_content)) return false
-    if ((a.fontSize ?? a.font_size) !== (b.fontSize ?? b.font_size)) return false
-    if ((a.fontFamily ?? a.font_family) !== (b.fontFamily ?? b.font_family)) return false
-    if ((a.fontWeight ?? a.font_weight) !== (b.fontWeight ?? b.font_weight)) return false
-    if ((a.textAlign ?? a.text_align) !== (b.textAlign ?? b.text_align)) return false
+    if ((a.borderRadius ?? 0) !== (b.borderRadius ?? 0)) return false
+    if (a.textContent !== b.textContent) return false
+    if (a.fontSize !== b.fontSize) return false
+    if (a.fontFamily !== b.fontFamily) return false
+    if (a.fontWeight !== b.fontWeight) return false
+    if (a.textAlign !== b.textAlign) return false
+    if (a.imageUrl !== b.imageUrl) return false
+    if (a.iconName !== b.iconName) return false
 
     if (prev.strokeColor !== next.strokeColor) return false
     if (prev.strokeWidth !== next.strokeWidth) return false

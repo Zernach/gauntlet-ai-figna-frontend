@@ -46,7 +46,7 @@ export function useKeyboardShortcuts({
         // Bring to front: Cmd/Ctrl + Shift + ]
         if (e.shiftKey && e.key === ']') {
           e.preventDefault()
-          const maxZ = Math.max(...shapes.map(s => s.z_index || s.zIndex || 0), 0)
+          const maxZ = Math.max(...shapes.map(s => s.zIndex || 0), 0)
           // Update all selected shapes, maintaining their relative order
           selectedIdsRef.current.forEach((shapeId, index) => {
             sendMessage({
@@ -59,7 +59,7 @@ export function useKeyboardShortcuts({
         // Send to back: Cmd/Ctrl + Shift + [
         if (e.shiftKey && e.key === '[') {
           e.preventDefault()
-          const minZ = Math.min(...shapes.map(s => s.z_index || s.zIndex || 0), 0)
+          const minZ = Math.min(...shapes.map(s => s.zIndex || 0), 0)
           // Update all selected shapes, maintaining their relative order
           selectedIdsRef.current.forEach((shapeId, index) => {
             sendMessage({
@@ -75,7 +75,7 @@ export function useKeyboardShortcuts({
           selectedIdsRef.current.forEach(shapeId => {
             const shape = shapes.find(s => s.id === shapeId)
             if (shape) {
-              const currentZ = shape.z_index || shape.zIndex || 0
+              const currentZ = shape.zIndex || 0
               sendMessage({
                 type: 'SHAPE_UPDATE',
                 payload: { shapeId, updates: { zIndex: currentZ + 1 } },
@@ -90,7 +90,7 @@ export function useKeyboardShortcuts({
           selectedIdsRef.current.forEach(shapeId => {
             const shape = shapes.find(s => s.id === shapeId)
             if (shape) {
-              const currentZ = shape.z_index || shape.zIndex || 0
+              const currentZ = shape.zIndex || 0
               sendMessage({
                 type: 'SHAPE_UPDATE',
                 payload: { shapeId, updates: { zIndex: currentZ - 1 } },
@@ -103,6 +103,18 @@ export function useKeyboardShortcuts({
 
       // Delete
       if (e.key === 'Delete' || e.key === 'Backspace') {
+        // Check if a text input or editable element is focused
+        const activeElement = document.activeElement
+        const isEditableElement =
+          activeElement instanceof HTMLInputElement ||
+          activeElement instanceof HTMLTextAreaElement ||
+          (activeElement instanceof HTMLElement && activeElement.isContentEditable)
+
+        // If an editable element is focused, allow normal text editing
+        if (isEditableElement) {
+          return
+        }
+
         e.preventDefault()
         // Use the ref to get current selectedIds
         if (selectedIdsRef.current.length > 0) {

@@ -18,6 +18,8 @@ interface ShapeSelectionPanelProps {
         borderRadius?: number
         fontFamily?: string
         fontWeight?: string
+        imageUrl?: string
+        iconName?: string
     }
     onChangeColor: (hex: string) => void
     onChangeOpacity: (opacity01: number) => void
@@ -27,6 +29,8 @@ interface ShapeSelectionPanelProps {
     onChangeBorderRadius?: (borderRadius: number) => void
     onChangeFontFamily: (family: string) => void
     onChangeFontWeight: (weight: string) => void
+    onChangeImageUrl?: (url: string) => void
+    onChangeIconName?: (iconName: string) => void
     onChangeX?: (x: number) => void
     onChangeY?: (y: number) => void
     onChangeWidth?: (width: number) => void
@@ -47,6 +51,8 @@ const ShapeSelectionPanel: React.FC<ShapeSelectionPanelProps> = ({
     onChangeBorderRadius,
     onChangeFontFamily,
     onChangeFontWeight,
+    onChangeImageUrl,
+    onChangeIconName,
     onChangeX,
     onChangeY,
     onChangeWidth,
@@ -138,6 +144,8 @@ const ShapeSelectionPanel: React.FC<ShapeSelectionPanelProps> = ({
     const isText = useMemo(() => shapeType === 'text', [shapeType])
     const isRectangle = useMemo(() => shapeType === 'rectangle', [shapeType])
     const isCircle = useMemo(() => shapeType === 'circle', [shapeType])
+    const isImage = useMemo(() => shapeType === 'image', [shapeType])
+    const isIcon = useMemo(() => shapeType === 'icon', [shapeType])
 
     return (
         <div
@@ -207,8 +215,8 @@ const ShapeSelectionPanel: React.FC<ShapeSelectionPanelProps> = ({
                 </div>
             </div>
 
-            {/* Dimensions - Width/Height for rectangles and text */}
-            {(isRectangle || isText) && (
+            {/* Dimensions - Width/Height for rectangles, text, and images */}
+            {(isRectangle || isText || isImage) && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '10px' }}>
                     <div style={{ fontSize: '12px', color: '#ccc', fontWeight: 600 }}>Dimensions</div>
                     <div style={{ display: 'flex', gap: '8px' }}>
@@ -467,8 +475,171 @@ const ShapeSelectionPanel: React.FC<ShapeSelectionPanelProps> = ({
                 </div>
             )}
 
-            {/* Font controls (only for text) */}
-            {isText && (
+            {/* Image URL (only for images) */}
+            {isImage && onChangeImageUrl && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '10px' }}>
+                    <div style={{ fontSize: '12px', color: '#ccc', fontWeight: 600 }}>Image URL</div>
+                    <input
+                        type="text"
+                        value={selectedShape.imageUrl || ''}
+                        onChange={(e) => onChangeImageUrl(e.target.value)}
+                        placeholder="https://example.com/image.jpg"
+                        style={{
+                            backgroundColor: '#333',
+                            color: '#fff',
+                            border: '1px solid #555',
+                            borderRadius: '4px',
+                            padding: '6px 10px',
+                            fontSize: '12px',
+                            width: '100%',
+                        }}
+                    />
+                </div>
+            )}
+
+            {/* Icon selection (only for icons) */}
+            {isIcon && onChangeIconName && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '10px' }}>
+                    <div style={{ fontSize: '12px', color: '#ccc', fontWeight: 600 }}>Icon</div>
+                    <select
+                        value={selectedShape.iconName || 'star'}
+                        onChange={(e) => onChangeIconName(e.target.value)}
+                        style={{
+                            backgroundColor: '#333',
+                            color: '#fff',
+                            border: '1px solid #555',
+                            borderRadius: '4px',
+                            padding: '6px 10px',
+                            fontSize: '12px',
+                            width: '100%',
+                        }}
+                    >
+                        <optgroup label="General & Feedback">
+                            <option value="smile">😊 Smile</option>
+                            <option value="heart">❤️ Heart</option>
+                            <option value="star">⭐ Star</option>
+                            <option value="check">✅ Check</option>
+                            <option value="cross">❌ Cross</option>
+                            <option value="fire">🔥 Fire</option>
+                            <option value="rocket">🚀 Rocket</option>
+                            <option value="thumbs-up">👍 Thumbs Up</option>
+                            <option value="thumbs-down">👎 Thumbs Down</option>
+                            <option value="warning">⚠️ Warning</option>
+                            <option value="info">ℹ️ Info</option>
+                            <option value="question">❓ Question</option>
+                            <option value="lightbulb">💡 Lightbulb</option>
+                            <option value="flag">🚩 Flag</option>
+                            <option value="pin">📌 Pin</option>
+                            <option value="calendar">📅 Calendar</option>
+                            <option value="clock">🕐 Clock</option>
+                            <option value="home">🏠 Home</option>
+                            <option value="folder">📁 Folder</option>
+                            <option value="email">📧 Email</option>
+                        </optgroup>
+                        <optgroup label="Profile & Account">
+                            <option value="user">👤 User</option>
+                            <option value="users">👥 Users</option>
+                            <option value="lock">🔐 Lock</option>
+                            <option value="unlock">🔓 Unlock</option>
+                            <option value="key">🔑 Key</option>
+                            <option value="settings">⚙️ Settings</option>
+                            <option value="profile">👨‍💼 Profile</option>
+                            <option value="shield">🛡️ Shield</option>
+                        </optgroup>
+                        <optgroup label="Shopping & E-commerce">
+                            <option value="cart">🛒 Cart</option>
+                            <option value="card">💳 Card</option>
+                            <option value="money">💰 Money</option>
+                            <option value="tag">🏷️ Tag</option>
+                            <option value="package">📦 Package</option>
+                            <option value="payment">💸 Payment</option>
+                            <option value="bag">🛍️ Bag</option>
+                            <option value="receipt">🧾 Receipt</option>
+                            <option value="gift">🎁 Gift</option>
+                            <option value="diamond">💎 Diamond</option>
+                        </optgroup>
+                        <optgroup label="Booking & Travel">
+                            <option value="plane">✈️ Plane</option>
+                            <option value="hotel">🏨 Hotel</option>
+                            <option value="ticket">🎫 Ticket</option>
+                            <option value="globe">🌐 Globe</option>
+                            <option value="map">🗺️ Map</option>
+                            <option value="compass">🧭 Compass</option>
+                            <option value="car">🚗 Car</option>
+                            <option value="train">🚆 Train</option>
+                        </optgroup>
+                        <optgroup label="Social & Communication">
+                            <option value="chat">💬 Chat</option>
+                            <option value="phone">📱 Phone</option>
+                            <option value="camera">📸 Camera</option>
+                            <option value="eye">👁️ Eye</option>
+                            <option value="bell">🔔 Bell</option>
+                            <option value="message">💌 Message</option>
+                            <option value="megaphone">📣 Megaphone</option>
+                            <option value="video">📹 Video</option>
+                            <option value="mic">🎤 Mic</option>
+                        </optgroup>
+                        <optgroup label="SaaS & Productivity">
+                            <option value="chart">📊 Chart</option>
+                            <option value="trending-up">📈 Trending Up</option>
+                            <option value="trending-down">📉 Trending Down</option>
+                            <option value="search">🔍 Search</option>
+                            <option value="edit">📝 Edit</option>
+                            <option value="save">💾 Save</option>
+                            <option value="cloud">☁️ Cloud</option>
+                            <option value="refresh">🔄 Refresh</option>
+                            <option value="download">⬇️ Download</option>
+                            <option value="upload">⬆️ Upload</option>
+                            <option value="plus">➕ Plus</option>
+                            <option value="minus">➖ Minus</option>
+                            <option value="trash">🗑️ Trash</option>
+                            <option value="clipboard">📋 Clipboard</option>
+                            <option value="document">📄 Document</option>
+                            <option value="book">📖 Book</option>
+                            <option value="bookmark">🔖 Bookmark</option>
+                            <option value="link">🔗 Link</option>
+                        </optgroup>
+                        <optgroup label="Events & Celebrations">
+                            <option value="party">🎉 Party</option>
+                            <option value="cake">🎂 Cake</option>
+                            <option value="balloons">🎈 Balloons</option>
+                            <option value="trophy">🏆 Trophy</option>
+                            <option value="medal">🏅 Medal</option>
+                            <option value="crown">👑 Crown</option>
+                        </optgroup>
+                        <optgroup label="Status & Indicators">
+                            <option value="battery">🔋 Battery</option>
+                            <option value="signal">📶 Signal</option>
+                            <option value="wifi">📡 WiFi</option>
+                            <option value="location">📍 Location</option>
+                            <option value="target">🎯 Target</option>
+                            <option value="hourglass">⏳ Hourglass</option>
+                            <option value="stopwatch">⏱️ Stopwatch</option>
+                            <option value="timer">⏲️ Timer</option>
+                        </optgroup>
+                        <optgroup label="Media & Entertainment">
+                            <option value="music">🎵 Music</option>
+                            <option value="play">▶️ Play</option>
+                            <option value="pause">⏸️ Pause</option>
+                            <option value="film">🎬 Film</option>
+                            <option value="tv">📺 TV</option>
+                            <option value="headphones">🎧 Headphones</option>
+                        </optgroup>
+                        <optgroup label="Miscellaneous">
+                            <option value="tool">🔧 Tool</option>
+                            <option value="wrench">🔨 Wrench</option>
+                            <option value="paintbrush">🖌️ Paintbrush</option>
+                            <option value="palette">🎨 Palette</option>
+                            <option value="bulb">💡 Bulb</option>
+                            <option value="magnet">🧲 Magnet</option>
+                            <option value="puzzle">🧩 Puzzle</option>
+                        </optgroup>
+                    </select>
+                </div>
+            )}
+
+            {/* Font controls (only for text and icons) */}
+            {(isText || isIcon) && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                         <div style={{ fontSize: '12px', color: '#ccc', fontWeight: 600, minWidth: '70px' }}>Font</div>
