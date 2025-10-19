@@ -4,7 +4,7 @@ import Konva from 'konva'
 import { arrangeInRow, arrangeInColumn, arrangeInGrid, alignHorizontally, alignVertically } from '../utils/layoutUtils'
 import { PATTERN_REGISTRY } from '../utils/patternTemplates'
 import { secureRequest } from '../lib/secureApi'
-import type { GenerateComplexDesignParams, GenerateComplexDesignResult } from './useAgenticToolCalling'
+import type { GenerateComplexDesignParams, GenerateComplexDesignResult, GenerateDesignVariationParams, GenerateDesignVariationResult } from './useAgenticToolCalling'
 
 interface UseAgenticToolsParams {
   onToolsReady?: (tools: any) => void
@@ -384,11 +384,92 @@ export function useAgenticTools({
               error: error instanceof Error ? error.message : 'Unknown error'
             };
           }
+        },
+        generateDesignVariation: async (params: GenerateDesignVariationParams): Promise<GenerateDesignVariationResult> => {
+          if (!wsRef.current || !createShapesRef.current) {
+            return { success: false, error: 'Canvas not ready' };
+          }
+
+          try {
+            // Get all current shapes from canvas
+            const currentShapes = shapesRef.current.map(shape => ({
+              type: shape.type,
+              x: shape.x,
+              y: shape.y,
+              width: shape.width,
+              height: shape.height,
+              radius: shape.radius,
+              color: shape.color,
+              textContent: shape.textContent || shape.text_content,
+              fontSize: shape.fontSize || shape.font_size,
+              fontFamily: shape.fontFamily || shape.font_family,
+              fontWeight: shape.fontWeight || shape.font_weight,
+              opacity: shape.opacity,
+              rotation: shape.rotation,
+              borderRadius: shape.borderRadius || shape.border_radius,
+              zIndex: shape.zIndex || shape.z_index
+            }));
+
+            // Call the backend API to generate the variation
+            const response = await secureRequest<{
+              success: boolean;
+              design: {
+                shapes: any[];
+                description: string;
+                metadata: {
+                  shapeCount: number;
+                  estimatedComplexity: string;
+                  designStyle: string;
+                };
+              };
+            }>('/voice/generate-design-variation', {
+              method: 'POST',
+              body: {
+                originalShapes: currentShapes,
+                variationRequest: params.variationRequest
+              },
+              requiresCSRF: true
+            });
+
+            if (response.success && response.design) {
+              // Delete all existing shapes first
+              if (handleDeleteShapesRef.current) {
+                const allShapeIds = shapesRef.current.map(s => s.id);
+                if (allShapeIds.length > 0) {
+                  handleDeleteShapesRef.current(allShapeIds);
+                }
+              }
+
+              // Small delay to ensure deletion is processed
+              await new Promise(resolve => setTimeout(resolve, 100));
+
+              // Create all the new shapes from the variation
+              if (createShapesRef.current) {
+                createShapesRef.current(response.design.shapes);
+              }
+
+              return {
+                success: true,
+                shapeCount: response.design.metadata.shapeCount
+              };
+            } else {
+              return {
+                success: false,
+                error: 'Failed to generate design variation'
+              };
+            }
+          } catch (error) {
+            console.error('Error generating design variation:', error);
+            return {
+              success: false,
+              error: error instanceof Error ? error.message : 'Unknown error'
+            };
+          }
         }
       }
 
       onToolsReady(tools);
     }
-  }, [onToolsReady, currentUserId, canvasId, viewportWidth, viewportHeight, wsRef, stageRef, createShapesRef, sendMessage])
+  }, [onToolsReady, currentUserId, canvasId, viewportWidth, viewportHeight, wsRef, stageRef, createShapesRef, handleDeleteShapesRef, sendMessage, shapesRef])
 }
 

@@ -23,6 +23,7 @@ export interface CanvasTools {
     createPattern: (params: CreatePatternParams) => void
     alignShapes: (params: AlignShapesParams) => void
     generateComplexDesign: (params: GenerateComplexDesignParams) => Promise<GenerateComplexDesignResult>
+    generateDesignVariation: (params: GenerateDesignVariationParams) => Promise<GenerateDesignVariationResult>
 }
 
 export interface CanvasState {
@@ -137,6 +138,16 @@ export interface GenerateComplexDesignParams {
 }
 
 export interface GenerateComplexDesignResult {
+    success: boolean
+    shapeCount?: number
+    error?: string
+}
+
+export interface GenerateDesignVariationParams {
+    variationRequest: string
+}
+
+export interface GenerateDesignVariationResult {
     success: boolean
     shapeCount?: number
     error?: string
@@ -614,6 +625,21 @@ export const CANVAS_TOOLS = [
             },
             required: ['description']
         }
+    },
+    {
+        type: 'function' as const,
+        name: 'generateDesignVariation',
+        description: 'Generates a variation of the current canvas design. Use this when the user wants to modify the existing design with changes like: "make it darker", "change the color scheme to blue", "make it more modern", "add more elements", "simplify this design". This takes the current canvas state and applies AI-powered modifications.',
+        parameters: {
+            type: 'object',
+            properties: {
+                variationRequest: {
+                    type: 'string',
+                    description: 'Description of how to modify the existing design (e.g., "make it darker", "change to a blue color scheme", "add more spacing")'
+                }
+            },
+            required: ['variationRequest']
+        }
     }
 ]
 
@@ -651,8 +677,8 @@ export function useAgenticToolCalling() {
                 return { success: true, data: state }
             }
 
-            // Handle async tool (generateComplexDesign)
-            if (toolName === 'generateComplexDesign') {
+            // Handle async tools (generateComplexDesign, generateDesignVariation)
+            if (toolName === 'generateComplexDesign' || toolName === 'generateDesignVariation') {
                 const result = await (tool as any)(args);
                 return result;
             }

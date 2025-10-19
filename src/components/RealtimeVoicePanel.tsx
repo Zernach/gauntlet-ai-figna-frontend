@@ -151,8 +151,8 @@ Be enthusiastic and explain your design decisions!`
             // End performance monitoring
             performanceMonitor.endTimer(`voiceAgent_${name}`);
 
-            // Command processing complete
-            setIsProcessingCommand(false);
+            // Keep processing spinner visible until AI finishes processing the result
+            // (will be cleared on response.done event)
         } catch (error) {
             // Fast error path
             const dc = dataChannelRef.current;
@@ -171,8 +171,8 @@ Be enthusiastic and explain your design decisions!`
             }
             performanceMonitor.endTimer(`voiceAgent_${name}`);
             console.error('❌ Tool execution error:', error);
-            // Command processing complete even on error
-            setIsProcessingCommand(false);
+            // Keep processing spinner visible until AI finishes processing the error
+            // (will be cleared on response.done event)
         }
     }, [executeTool])
 
@@ -325,10 +325,13 @@ Be enthusiastic and explain your design decisions!`
 
                         case 'response.done':
                             setIsSpeaking(false);
+                            // Clear processing command spinner when response is complete
+                            setIsProcessingCommand(false);
                             return;
 
                         case 'response.audio.done':
                             setIsSpeaking(false);
+                            // Note: Keep processing spinner until response.done for full completion
                             return;
 
                         case 'input_audio_buffer.speech_started':

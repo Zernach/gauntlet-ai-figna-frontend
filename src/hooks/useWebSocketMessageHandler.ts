@@ -258,6 +258,118 @@ export function useWebSocketMessageHandler({
         }
         break
 
+      case 'SHAPES_BATCH_UPDATE':
+        // Batch shape updates from agent tool calls
+        if (message.payload.shapes && Array.isArray(message.payload.shapes)) {
+          setShapes(prev => {
+            const updatedShapesMap = new Map<string, Shape>(
+              message.payload.shapes.map((shape: any) => [shape.id, normalizeShape(shape)])
+            )
+
+            return prev.map((s): Shape => {
+              const updatedShape = updatedShapesMap.get(s.id)
+              if (!updatedShape) return s
+
+              // Apply the same conflict resolution as SHAPE_UPDATE for smooth UX
+              // If we're currently dragging this shape, preserve position
+              if (isDraggingShapeRef.current && (
+                dragPositionRef.current?.shapeId === s.id ||
+                pendingDragUpdatesRef.current.has(s.id)
+              )) {
+                return {
+                  ...updatedShape,
+                  x: s.x,
+                  y: s.y,
+                }
+              }
+
+              // Check if this shape was recently dragged
+              const recentDrag = recentlyDraggedRef.current.get(s.id)
+              if (recentDrag && Date.now() - recentDrag.timestamp < 1500) {
+                return {
+                  ...updatedShape,
+                  x: recentDrag.x,
+                  y: recentDrag.y,
+                }
+              }
+
+              // Check if this shape was recently resized
+              const recentResize = recentlyResizedRef.current.get(s.id)
+              if (recentResize && Date.now() - recentResize.timestamp < 1000) {
+                return {
+                  ...updatedShape,
+                  ...(recentResize.x !== undefined && { x: recentResize.x }),
+                  ...(recentResize.y !== undefined && { y: recentResize.y }),
+                  ...(recentResize.width !== undefined && { width: recentResize.width }),
+                  ...(recentResize.height !== undefined && { height: recentResize.height }),
+                  ...(recentResize.radius !== undefined && { radius: recentResize.radius }),
+                  ...(recentResize.fontSize !== undefined && { fontSize: recentResize.fontSize, font_size: recentResize.fontSize }),
+                }
+              }
+
+              // Check if this shape was recently rotated
+              const recentRotation = recentlyRotatedRef.current.get(s.id)
+              if (recentRotation && Date.now() - recentRotation.timestamp < 1000) {
+                return {
+                  ...updatedShape,
+                  rotation: recentRotation.rotation,
+                }
+              }
+
+              // If we're currently resizing this shape, preserve local geometry
+              if (isResizingShapeRef.current && resizingShapeIdRef.current === s.id) {
+                return {
+                  ...updatedShape,
+                  x: s.x,
+                  y: s.y,
+                  width: s.width,
+                  height: s.height,
+                  radius: s.radius,
+                  fontSize: s.fontSize ?? (s as any).font_size,
+                  font_size: s.fontSize ?? (s as any).font_size,
+                }
+              }
+
+              // If we're currently rotating this shape, preserve local rotation
+              if (isRotatingShapeRef.current && rotatingShapeIdRef.current === s.id) {
+                return {
+                  ...updatedShape,
+                  rotation: s.rotation,
+                }
+              }
+
+              // Check for properties being actively modified
+              const preservedProps: Partial<Shape> = {}
+              if (isDraggingOpacityRef.current) {
+                preservedProps.opacity = s.opacity
+              }
+              if (isDraggingShadowStrengthRef.current) {
+                preservedProps.shadowStrength = s.shadowStrength
+              }
+              if (isDraggingBorderRadiusRef.current) {
+                preservedProps.borderRadius = s.borderRadius
+              }
+
+              // Check if any properties were recently modified
+              const recentlyModified = recentlyModifiedPropsRef.current.get(s.id)
+              if (recentlyModified && Date.now() - recentlyModified.timestamp < 1000) {
+                Object.assign(preservedProps, recentlyModified.props)
+              }
+
+              // Apply preserved properties if any
+              if (Object.keys(preservedProps).length > 0) {
+                return {
+                  ...updatedShape,
+                  ...preservedProps,
+                }
+              }
+
+              return updatedShape
+            })
+          })
+        }
+        break
+
       case 'SHAPE_DELETE':
         // Shape(s) deleted
         // Support both singular shapeId (legacy) and plural shapeIds (new)
