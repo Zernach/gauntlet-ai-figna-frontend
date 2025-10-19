@@ -66,3 +66,45 @@ export async function getVoiceRelayUrl() {
   return response.json()
 }
 
+export interface ImageGenerationRequest {
+  prompt: string
+  style?: 'vivid' | 'natural'
+  size?: '1024x1024' | '1024x1792' | '1792x1024'
+  quality?: 'standard' | 'hd'
+}
+
+export interface ImageGenerationResult {
+  success: boolean
+  image: {
+    imageUrl: string
+    revisedPrompt: string
+    width: number
+    height: number
+  }
+  timestamp: string
+}
+
+export async function generateImage(request: ImageGenerationRequest): Promise<ImageGenerationResult> {
+  const { data: { session } } = await supabase.auth.getSession()
+
+  if (!session?.access_token) {
+    throw new Error('Not authenticated')
+  }
+
+  const response = await fetch(`${API_URL}/voice/generate-image`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${session.access_token}`,
+    },
+    body: JSON.stringify(request),
+  })
+
+  if (!response.ok) {
+    const error = await response.json()
+    throw new Error(error.message || 'Failed to generate image')
+  }
+
+  return response.json()
+}
+

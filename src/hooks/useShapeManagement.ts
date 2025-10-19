@@ -1,5 +1,6 @@
 import { useCallback, useRef, useEffect } from 'react'
 import { CANVAS_WIDTH, CANVAS_HEIGHT, DEFAULT_SHAPE_SIZE, SHAPE_COLOR } from '../types/canvas'
+import { getProxiedImageUrl } from '../utils/imageProxy'
 
 // Default stock image for new image shapes
 const DEFAULT_STOCK_IMAGE = 'https://raw.githubusercontent.com/landscapesupply/images/refs/heads/main/products/sod/TifBlaire_Centipede_Grass_Sod_Sale_Landscape_Supply_App.png'
@@ -119,13 +120,17 @@ export function useShapeManagement({
                 x = Math.max(0, Math.min(x, CANVAS_WIDTH - width))
                 y = Math.max(0, Math.min(y, CANVAS_HEIGHT - height))
             } else if (shapeData.type === 'image') {
+                // IMPORTANT: Store the original image URL, NOT the proxied URL
+                // The proxy is only used for rendering (CORS), not for storage
                 const imageUrl = shapeData.imageUrl || DEFAULT_STOCK_IMAGE
                 let width = shapeData.width
                 let height = shapeData.height
 
                 // If dimensions are not provided, load the image to get actual dimensions
                 if (!width || !height) {
-                    const dimensions = await loadImageDimensions(imageUrl)
+                    // Use proxied URL only for loading dimensions (CORS workaround)
+                    const proxiedUrl = getProxiedImageUrl(imageUrl)
+                    const dimensions = await loadImageDimensions(proxiedUrl)
                     width = dimensions.width
                     height = dimensions.height
 

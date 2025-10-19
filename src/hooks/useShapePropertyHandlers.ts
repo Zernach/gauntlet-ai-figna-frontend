@@ -266,6 +266,16 @@ export function useShapePropertyHandlers({
     scheduleBatchUpdate(selectedId, { iconName: iconName }, 150)
   }, [selectedIds, recordPropChange, setShapes, wsRef, trackRecentlyModified, scheduleBatchUpdate])
 
+  const handleChangeKeepAspectRatio = useCallback((keepAspectRatio: boolean) => {
+    if (selectedIds.length === 0 || !wsRef.current) return
+    // For keepAspectRatio changes, only apply to first selected shape (primary)
+    const selectedId = selectedIds[0]
+    setShapes(prev => prev.map(s => s.id === selectedId ? { ...s, keepAspectRatio: keepAspectRatio } : s))
+    trackRecentlyModified(selectedId, { keepAspectRatio: keepAspectRatio })
+    recordPropChange(selectedId, 'keepAspectRatio', keepAspectRatio)
+    scheduleBatchUpdate(selectedId, { keepAspectRatio: keepAspectRatio }, 150)
+  }, [selectedIds, recordPropChange, setShapes, wsRef, trackRecentlyModified, scheduleBatchUpdate])
+
   return {
     handleChangeColor,
     handleChangeOpacity,
@@ -282,6 +292,7 @@ export function useShapePropertyHandlers({
     handleChangeWidth,
     handleChangeHeight,
     handleChangeRadius,
+    handleChangeKeepAspectRatio,
   }
 }
 

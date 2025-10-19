@@ -20,6 +20,7 @@ interface ShapeSelectionPanelProps {
         fontWeight?: string
         imageUrl?: string
         iconName?: string
+        keepAspectRatio?: boolean
     }
     onChangeColor: (hex: string) => void
     onChangeOpacity: (opacity01: number) => void
@@ -36,9 +37,11 @@ interface ShapeSelectionPanelProps {
     onChangeWidth?: (width: number) => void
     onChangeHeight?: (height: number) => void
     onChangeRadius?: (radius: number) => void
+    onChangeKeepAspectRatio?: (keepAspectRatio: boolean) => void
     isDraggingOpacityRef?: React.MutableRefObject<boolean>
     isDraggingShadowStrengthRef?: React.MutableRefObject<boolean>
     isDraggingBorderRadiusRef?: React.MutableRefObject<boolean>
+    onOpenImageModal?: () => void
 }
 
 const ShapeSelectionPanel: React.FC<ShapeSelectionPanelProps> = ({
@@ -58,9 +61,11 @@ const ShapeSelectionPanel: React.FC<ShapeSelectionPanelProps> = ({
     onChangeWidth,
     onChangeHeight,
     onChangeRadius,
+    onChangeKeepAspectRatio,
     isDraggingOpacityRef,
     isDraggingShadowStrengthRef,
     isDraggingBorderRadiusRef,
+    onOpenImageModal,
 }) => {
     const [rotationInput, setRotationInput] = useState<string>('0')
     const [opacityPct, setOpacityPct] = useState<number>(100)
@@ -494,6 +499,63 @@ const ShapeSelectionPanel: React.FC<ShapeSelectionPanelProps> = ({
                             width: '100%',
                         }}
                     />
+                    {onOpenImageModal && (
+                        <button
+                            onClick={onOpenImageModal}
+                            style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: '6px',
+                                backgroundColor: '#24ccff',
+                                color: '#1c1c1c',
+                                border: 'none',
+                                borderRadius: '6px',
+                                padding: '8px 12px',
+                                fontSize: '12px',
+                                fontWeight: 600,
+                                cursor: 'pointer',
+                                transition: 'all 0.2s ease',
+                                boxShadow: '0 2px 8px rgba(36, 204, 255, 0.3)',
+                            }}
+                            onMouseEnter={(e) => {
+                                e.currentTarget.style.backgroundColor = '#1aa3d9'
+                                e.currentTarget.style.transform = 'translateY(-1px)'
+                                e.currentTarget.style.boxShadow = '0 4px 12px rgba(36, 204, 255, 0.4)'
+                            }}
+                            onMouseLeave={(e) => {
+                                e.currentTarget.style.backgroundColor = '#24ccff'
+                                e.currentTarget.style.transform = 'translateY(0)'
+                                e.currentTarget.style.boxShadow = '0 2px 8px rgba(36, 204, 255, 0.3)'
+                            }}
+                        >
+                            <span style={{ fontSize: '14px' }}>✨</span>
+                            Generate Image
+                        </button>
+                    )}
+                </div>
+            )}
+
+            {/* Keep Aspect Ratio (only for images) */}
+            {isImage && onChangeKeepAspectRatio && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
+                    <div style={{ fontSize: '12px', color: '#ccc', fontWeight: 600, flex: 1 }}>Lock Aspect Ratio</div>
+                    <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', gap: '8px' }}>
+                        <input
+                            type="checkbox"
+                            checked={selectedShape.keepAspectRatio ?? true}
+                            onChange={(e) => onChangeKeepAspectRatio(e.target.checked)}
+                            style={{
+                                width: '16px',
+                                height: '16px',
+                                cursor: 'pointer',
+                                accentColor: '#24ccff',
+                            }}
+                        />
+                        <span style={{ fontSize: '12px', color: '#ddd' }}>
+                            {selectedShape.keepAspectRatio ?? true ? 'Locked' : 'Unlocked'}
+                        </span>
+                    </label>
                 </div>
             )}
 
@@ -718,7 +780,10 @@ export default memo(ShapeSelectionPanel, (prevProps, nextProps) => {
         prevProps.selectedShape.shadowStrength === nextProps.selectedShape.shadowStrength &&
         prevProps.selectedShape.borderRadius === nextProps.selectedShape.borderRadius &&
         prevProps.selectedShape.fontFamily === nextProps.selectedShape.fontFamily &&
-        prevProps.selectedShape.fontWeight === nextProps.selectedShape.fontWeight
+        prevProps.selectedShape.fontWeight === nextProps.selectedShape.fontWeight &&
+        prevProps.selectedShape.imageUrl === nextProps.selectedShape.imageUrl &&
+        prevProps.selectedShape.iconName === nextProps.selectedShape.iconName &&
+        prevProps.selectedShape.keepAspectRatio === nextProps.selectedShape.keepAspectRatio
     )
 })
 

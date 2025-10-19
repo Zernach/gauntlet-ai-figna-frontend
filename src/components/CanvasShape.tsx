@@ -1,6 +1,7 @@
 import { Rect, Circle, Text as KonvaText, Group, Image as KonvaImage } from 'react-konva'
 import { useRef, useState, useEffect, memo } from 'react'
 import useImage from 'use-image'
+import { getProxiedImageUrl } from '../utils/imageProxy'
 
 const DEFAULT_SHAPE_SIZE = 100
 
@@ -226,6 +227,7 @@ interface CanvasShapeProps {
         locked_by?: string | null
         created_by?: string
         group_id?: string | null
+        keepAspectRatio?: boolean
     }
     strokeColor: string
     strokeWidth: number
@@ -626,9 +628,25 @@ const CanvasShapeComponent = ({
 
     // Image shape
     if (shape.type === 'image') {
-        const imageUrl = shape.imageUrl ?? 'https://raw.githubusercontent.com/landscapesupply/images/refs/heads/main/products/sod/TifBlaire_Centipede_Grass_Sod_Sale_Landscape_Supply_App.png'
-        const [image] = useImage(imageUrl, 'anonymous')
+        const originalImageUrl = shape.imageUrl ?? 'https://raw.githubusercontent.com/landscapesupply/images/refs/heads/main/products/sod/TifBlaire_Centipede_Grass_Sod_Sale_Landscape_Supply_App.png'
+        // Use proxied URL for rendering to avoid CORS issues with DALL-E images
+        // Note: The database stores the original URL, we only proxy for rendering
+        const imageUrl = getProxiedImageUrl(originalImageUrl)
+        // Use 'anonymous' crossOrigin to enable CORS for canvas usage
+        const [image, status] = useImage(imageUrl, 'anonymous')
         const imageRef = useRef<any>(null)
+        const aspectRatioRef = useRef<number>(1)
+
+        // Debug logging for image load status
+        useEffect(() => {
+            if (status === 'loading') {
+                console.log('[CanvasShape] Loading image:', imageUrl.substring(0, 100) + '...')
+            } else if (status === 'loaded') {
+                console.log('[CanvasShape] Image loaded successfully:', imageUrl.substring(0, 100) + '...')
+            } else if (status === 'failed') {
+                console.error('[CanvasShape] Image failed to load:', imageUrl.substring(0, 100) + '...')
+            }
+        }, [status, imageUrl])
 
         return (
             <>
@@ -700,6 +718,8 @@ const CanvasShapeComponent = ({
                                 onDragStart={(e) => {
                                     e.cancelBubble = true
                                     resizeOppositeCornerRef.current = nwCorner
+                                    // Store the current aspect ratio when resize starts
+                                    aspectRatioRef.current = width / height
                                     onResizeStart && onResizeStart(shape.id, 'se')
                                 }}
                                 onDragMove={(e) => {
@@ -721,6 +741,20 @@ const CanvasShapeComponent = ({
                                         rotation,
                                         10
                                     )
+
+                                    // If keepAspectRatio is enabled (default: true), maintain proportions
+                                    const keepAspectRatio = shape.keepAspectRatio ?? true
+                                    if (keepAspectRatio) {
+                                        // Calculate which dimension changed more and use that as the basis
+                                        const widthRatio = newDimensions.width / width
+                                        const heightRatio = newDimensions.height / height
+
+                                        // Use the larger change to maintain aspect ratio in that direction
+                                        const scaleFactor = Math.max(widthRatio, heightRatio)
+
+                                        newDimensions.width = width * scaleFactor
+                                        newDimensions.height = height * scaleFactor
+                                    }
 
                                     onResizeMove && onResizeMove(shape.id, newDimensions)
                                 }}

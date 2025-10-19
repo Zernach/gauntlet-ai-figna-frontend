@@ -6,12 +6,15 @@ import ControlPanel from './ControlPanel'
 import ShapeSelectionPanel from './ShapeSelectionPanel'
 import UndoRedoPanel from './UndoRedoPanel'
 import ContextMenu from './ContextMenu'
+import ImageGenerationModal from './ImageGenerationModal'
+import type { ImageGenerationOptions } from './ImageGenerationModal'
 import { ToastContainer } from './Toast'
 import LoadingScreen from './LoadingScreen'
 import PresencePanel from './PresencePanel'
 import CanvasLayers from './CanvasLayers'
 import Minimap from './Minimap'
 import LayersSidebar from './LayersSidebar'
+import { generateImage as generateImageAPI } from '../lib/api'
 
 // Import types and constants
 import type { Shape, Cursor, ActiveUser } from '../types/canvas'
@@ -69,6 +72,11 @@ export default function Canvas({ onToolsReady, onViewportCenterChange, onCanvasS
   const [currentUserEmail, setCurrentUserEmail] = useState<string>('')
   const [currentUserColor, setCurrentUserColor] = useState<string>('#3b82f6')
   const [currentTime, setCurrentTime] = useState(Date.now()) // For countdown timers
+
+  // Image generation modal state
+  const [showImageGenerationModal, setShowImageGenerationModal] = useState(false)
+  const [isGeneratingImage, setIsGeneratingImage] = useState(false)
+  const imageGenerationShapeIdRef = useRef<string | null>(null)
 
   // Custom hooks for extracted logic
   const { toasts, showToast, dismissToast } = useToast()
@@ -210,7 +218,7 @@ export default function Canvas({ onToolsReady, onViewportCenterChange, onCanvasS
     handleAddShape,
     handleAddCircle,
     handleAddText,
-    handleAddImage,
+    // handleAddImage, // Not used - replaced by handleOpenImageGenerationForNewImage
     handleAddIcon,
     handleTextDoubleClick,
     unlockShapes,
@@ -374,6 +382,103 @@ export default function Canvas({ onToolsReady, onViewportCenterChange, onCanvasS
 
     closeContextMenu()
   }, [selectedIds, sendMessage, closeContextMenu])
+
+  // Handle image generation for a shape
+  const handleOpenImageGeneration = useCallback(() => {
+    // Store the shape ID to update after generation
+    imageGenerationShapeIdRef.current = contextMenuShapeIdRef.current
+    setShowImageGenerationModal(true)
+    closeContextMenu()
+  }, [contextMenuShapeIdRef, closeContextMenu])
+
+  // Handle image generation from ShapeSelectionPanel
+  const handleOpenImageGenerationFromPanel = useCallback(() => {
+    // Store the currently selected shape ID
+    if (selectedIds.length === 1) {
+      imageGenerationShapeIdRef.current = selectedIds[0]
+      setShowImageGenerationModal(true)
+    }
+  }, [selectedIds])
+
+  // Handle opening image generation modal for creating a new image (from control panel)
+  const handleOpenImageGenerationForNewImage = useCallback(() => {
+    // Set ref to null to indicate we're creating a new image, not updating an existing one
+    imageGenerationShapeIdRef.current = null
+    setShowImageGenerationModal(true)
+  }, [])
+
+  const handleCloseImageModal = useCallback(() => {
+    setShowImageGenerationModal(false)
+    imageGenerationShapeIdRef.current = null
+  }, [])
+
+  const handleGenerateImage = useCallback(async (prompt: string, options: ImageGenerationOptions) => {
+    const shapeId = imageGenerationShapeIdRef.current
+
+    setIsGeneratingImage(true)
+
+    try {
+      const result = await generateImageAPI({
+        prompt,
+        style: options.style,
+        size: options.size,
+        quality: options.quality
+      })
+
+      // Parse dimensions from size
+      const [width, height] = options.size.split('x').map(Number)
+
+      // IMPORTANT: Store the original DALL-E URL, NOT the proxied URL
+      // The proxy is only used for rendering (CORS), not for storage
+      const imageUrl = result.image.imageUrl
+
+      if (shapeId) {
+        // Update existing shape with the new image URL
+        sendMessage({
+          type: 'SHAPE_UPDATE',
+          payload: {
+            shapeId,
+            updates: {
+              imageUrl: imageUrl,
+              width,
+              height
+            }
+          }
+        })
+      } else {
+        // Create a new image shape at the center of the viewport
+        const centerX = -stagePos.x / stageScale + (viewportWidth / 2) / stageScale
+        const centerY = -stagePos.y / stageScale + (viewportHeight / 2) / stageScale
+
+        sendMessage({
+          type: 'SHAPE_CREATE',
+          payload: {
+            type: 'image',
+            x: centerX - width / 2,
+            y: centerY - height / 2,
+            width,
+            height,
+            imageUrl: imageUrl,
+            color: '#ffffff',
+            opacity: 1,
+            rotation: 0
+          }
+        })
+      }
+
+      showToast('Image generated successfully!', 'success')
+      setShowImageGenerationModal(false)
+      imageGenerationShapeIdRef.current = null
+    } catch (error) {
+      console.error('Error generating image:', error)
+      showToast(
+        error instanceof Error ? error.message : 'Failed to generate image',
+        'error'
+      )
+    } finally {
+      setIsGeneratingImage(false)
+    }
+  }, [sendMessage, showToast, stagePos, stageScale, viewportWidth, viewportHeight])
 
   // Handle layer reordering from sidebar
   const handleReorderLayers = useCallback((reorderedShapeIds: string[]) => {
@@ -870,6 +975,7 @@ export default function Canvas({ onToolsReady, onViewportCenterChange, onCanvasS
     handleChangeWidth,
     handleChangeHeight,
     handleChangeRadius,
+    handleChangeKeepAspectRatio,
   } = useShapePropertyHandlers({
     wsRef,
     selectedIds,
@@ -1110,7 +1216,7 @@ export default function Canvas({ onToolsReady, onViewportCenterChange, onCanvasS
         onAddRectangle={handleAddShape}
         onAddCircle={handleAddCircle}
         onAddText={handleAddText}
-        onAddImage={handleAddImage}
+        onAddImage={handleOpenImageGenerationForNewImage}
         onAddIcon={handleAddIcon}
         onZoomIn={handleZoomIn}
         onZoomOut={handleZoomOut}
@@ -1291,6 +1397,7 @@ export default function Canvas({ onToolsReady, onViewportCenterChange, onCanvasS
           onDelete={handleContextMenuDelete}
           onGroup={handleGroupShapes}
           onUngroup={handleUngroupShapes}
+          onGenerateImage={handleOpenImageGeneration}
           hasPasteData={clipboard.length > 0}
           canvasBgHex={canvasBgHex}
           onChangeCanvasBg={(hex) => {
@@ -1303,6 +1410,16 @@ export default function Canvas({ onToolsReady, onViewportCenterChange, onCanvasS
           }}
           selectedCount={selectedIds.length}
           hasGroupedShapes={shapes.filter(s => selectedIds.includes(s.id)).some(s => s.group_id)}
+          isImageShape={contextMenu.shapeId ? shapes.find(s => s.id === contextMenu.shapeId)?.type === 'image' : false}
+        />
+      )}
+
+      {/* Image Generation Modal */}
+      {showImageGenerationModal && (
+        <ImageGenerationModal
+          onClose={handleCloseImageModal}
+          onGenerate={handleGenerateImage}
+          isGenerating={isGeneratingImage}
         />
       )}
 
@@ -1391,9 +1508,11 @@ export default function Canvas({ onToolsReady, onViewportCenterChange, onCanvasS
             onChangeWidth={handleChangeWidth}
             onChangeHeight={handleChangeHeight}
             onChangeRadius={handleChangeRadius}
+            onChangeKeepAspectRatio={handleChangeKeepAspectRatio}
             isDraggingOpacityRef={isDraggingOpacityRef}
             isDraggingShadowStrengthRef={isDraggingShadowStrengthRef}
             isDraggingBorderRadiusRef={isDraggingBorderRadiusRef}
+            onOpenImageModal={handleOpenImageGenerationFromPanel}
           />
         </div>
       )}

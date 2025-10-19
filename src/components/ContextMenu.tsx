@@ -11,7 +11,8 @@ import {
     Trash2,
     Palette,
     Group,
-    Ungroup
+    Ungroup,
+    Sparkles
 } from 'lucide-react'
 import ColorSlider from './ColorSlider'
 
@@ -31,11 +32,13 @@ interface ContextMenuProps {
     onDelete?: () => void
     onGroup?: () => void
     onUngroup?: () => void
+    onGenerateImage?: () => void
     hasPasteData: boolean
     canvasBgHex?: string
     onChangeCanvasBg?: (hex: string) => void
     selectedCount?: number
     hasGroupedShapes?: boolean
+    isImageShape?: boolean
 }
 
 // Move MenuItem outside to prevent recreation on every render
@@ -113,11 +116,13 @@ const ContextMenu: React.FC<ContextMenuProps> = ({
     onDelete,
     onGroup,
     onUngroup,
+    onGenerateImage,
     hasPasteData,
     canvasBgHex,
     onChangeCanvasBg,
     selectedCount = 1,
-    hasGroupedShapes = false
+    hasGroupedShapes = false,
+    isImageShape = false
 }) => {
     const menuRef = React.useRef<HTMLDivElement>(null)
     const [showBgColorPicker, setShowBgColorPicker] = React.useState(false)
@@ -180,6 +185,28 @@ const ContextMenu: React.FC<ContextMenuProps> = ({
         >
             {mode === 'shape' ? (
                 <>
+                    {/* AI Generation Section - Only for images */}
+                    {isImageShape && onGenerateImage && (
+                        <>
+                            <div style={{
+                                fontSize: '11px',
+                                fontWeight: '600',
+                                color: '#888',
+                                textTransform: 'uppercase',
+                                letterSpacing: '0.5px',
+                                padding: '8px 16px 6px',
+                            }}>
+                                AI
+                            </div>
+                            <MenuItem
+                                icon={<Sparkles size={16} />}
+                                label="Generate Image"
+                                onClick={handleAction(onGenerateImage)}
+                            />
+                            <Divider />
+                        </>
+                    )}
+
                     <div style={{
                         fontSize: '11px',
                         fontWeight: '600',
