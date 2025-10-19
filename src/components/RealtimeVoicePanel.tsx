@@ -17,9 +17,12 @@ export default function RealtimeVoicePanel({ session, onRegisterTools, viewportC
     const [error, setError] = useState<string | null>(null)
     const [isSpeaking, setIsSpeaking] = useState(false)
     const [isProcessingCommand, setIsProcessingCommand] = useState(false)
+    const [isMuted, setIsMuted] = useState(false)
     const peerConnectionRef = useRef<RTCPeerConnection | null>(null)
     const audioElementRef = useRef<HTMLAudioElement | null>(null)
     const dataChannelRef = useRef<RTCDataChannel | null>(null)
+    const asyncToolRunningRef = useRef<boolean>(false)
+    const localStreamRef = useRef<MediaStream | null>(null)
 
     // Audio visualization state
     const [audioContext, setAudioContext] = useState<AudioContext | null>(null)
@@ -128,6 +131,13 @@ Be enthusiastic and explain your design decisions!`
         // Start performance monitoring
         performanceMonitor.startTimer(`voiceAgent_${name}`);
 
+        // Check if this is an async tool that takes time
+        const isAsyncTool = name === 'generateComplexDesign' || name === 'generateDesignVariation';
+
+        if (isAsyncTool) {
+            asyncToolRunningRef.current = true;
+        }
+
         try {
             // Fast path: parse and execute immediately
             const parsedArgs = JSON.parse(args);
@@ -151,6 +161,11 @@ Be enthusiastic and explain your design decisions!`
             // End performance monitoring
             performanceMonitor.endTimer(`voiceAgent_${name}`);
 
+            // Clear async tool flag if this was an async tool
+            if (isAsyncTool) {
+                asyncToolRunningRef.current = false;
+            }
+
             // Keep processing spinner visible until AI finishes processing the result
             // (will be cleared on response.done event)
         } catch (error) {
@@ -171,12 +186,32 @@ Be enthusiastic and explain your design decisions!`
             }
             performanceMonitor.endTimer(`voiceAgent_${name}`);
             console.error('❌ Tool execution error:', error);
+
+            // Clear async tool flag if this was an async tool
+            if (isAsyncTool) {
+                asyncToolRunningRef.current = false;
+            }
+
             // Keep processing spinner visible until AI finishes processing the error
             // (will be cleared on response.done event)
         }
     }, [executeTool])
 
+    const toggleMute = () => {
+        if (localStreamRef.current) {
+            const audioTrack = localStreamRef.current.getAudioTracks()[0]
+            if (audioTrack) {
+                audioTrack.enabled = !audioTrack.enabled
+                setIsMuted(!audioTrack.enabled)
+            }
+        }
+    }
+
     const handleDisconnect = () => {
+        if (localStreamRef.current) {
+            localStreamRef.current.getTracks().forEach(track => track.stop())
+            localStreamRef.current = null
+        }
         if (peerConnectionRef.current) {
             peerConnectionRef.current.close()
             peerConnectionRef.current = null
@@ -194,9 +229,11 @@ Be enthusiastic and explain your design decisions!`
         // Clear executed call IDs to prevent memory leaks
         executedCallIdsRef.current.clear()
         pendingToolCallRef.current = null
+        asyncToolRunningRef.current = false
         setIsConnected(false)
         setIsSpeaking(false)
         setIsProcessingCommand(false)
+        setIsMuted(false)
     }
 
     const handleStartVoice = async () => {
@@ -246,6 +283,7 @@ Be enthusiastic and explain your design decisions!`
                     autoGainControl: true,
                 }
             });
+            localStreamRef.current = ms;
             pc.addTrack(ms.getTracks()[0]);
 
             // Set up user audio analyser
@@ -326,7 +364,24 @@ Be enthusiastic and explain your design decisions!`
                         case 'response.done':
                             setIsSpeaking(false);
                             // Clear processing command spinner when response is complete
-                            setIsProcessingCommand(false);
+                            // BUT only if no async tools are still running
+                            if (!asyncToolRunningRef.current) {
+                                setIsProcessingCommand(false);
+                            } else {
+                                // If async tools are running, check periodically and clear when done
+                                const checkAsyncToolsInterval = setInterval(() => {
+                                    if (!asyncToolRunningRef.current) {
+                                        setIsProcessingCommand(false);
+                                        clearInterval(checkAsyncToolsInterval);
+                                    }
+                                }, 100); // Check every 100ms
+
+                                // Timeout after 60 seconds to prevent infinite loop
+                                setTimeout(() => {
+                                    clearInterval(checkAsyncToolsInterval);
+                                    setIsProcessingCommand(false);
+                                }, 60000);
+                            }
                             return;
 
                         case 'response.audio.done':
@@ -582,6 +637,8 @@ Be enthusiastic and explain your design decisions!`
                         analyserNode={userAnalyser}
                         label="Your Voice"
                         color="#64c8ff"
+                        isMuted={isMuted}
+                        onToggleMute={toggleMute}
                     />
                     <AudioVisualizer
                         audioContext={audioContext}

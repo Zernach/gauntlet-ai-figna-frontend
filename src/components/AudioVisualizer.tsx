@@ -6,9 +6,11 @@ interface AudioVisualizerProps {
     label: string
     color: string
     isProcessing?: boolean
+    isMuted?: boolean
+    onToggleMute?: () => void
 }
 
-function AudioVisualizer({ audioContext, analyserNode, label, color, isProcessing = false }: AudioVisualizerProps) {
+function AudioVisualizer({ audioContext, analyserNode, label, color, isProcessing = false, isMuted = false, onToggleMute }: AudioVisualizerProps) {
     const canvasRef = useRef<HTMLCanvasElement>(null)
     const animationFrameRef = useRef<number>()
 
@@ -105,27 +107,54 @@ function AudioVisualizer({ audioContext, analyserNode, label, color, isProcessin
                 }}
             >
                 <div
+                    onClick={onToggleMute}
                     style={{
                         fontSize: '10px',
                         fontWeight: 700,
-                        color: color,
+                        color: isMuted ? '#ff9632' : color,
                         textTransform: 'uppercase',
                         letterSpacing: '1.5px',
                         textAlign: 'center',
-                        textShadow: `0 0 10px ${color}80`,
+                        textShadow: isMuted ? '0 0 10px #ff963280' : `0 0 10px ${color}80`,
+                        cursor: onToggleMute ? 'pointer' : 'default',
+                        transition: 'all 0.2s ease',
+                        padding: '4px 8px',
+                        borderRadius: '6px',
+                        backgroundColor: onToggleMute ? (isMuted ? 'rgba(255, 150, 50, 0.1)' : 'rgba(100, 200, 255, 0.1)') : 'transparent',
+                        border: onToggleMute ? (isMuted ? '1px solid #ff963240' : '1px solid #64c8ff40') : '1px solid transparent',
+                        minHeight: '26px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                    }}
+                    onMouseEnter={(e) => {
+                        if (onToggleMute) {
+                            e.currentTarget.style.backgroundColor = isMuted ? 'rgba(255, 150, 50, 0.2)' : 'rgba(100, 200, 255, 0.2)'
+                            e.currentTarget.style.transform = 'scale(1.05)'
+                        }
+                    }}
+                    onMouseLeave={(e) => {
+                        if (onToggleMute) {
+                            e.currentTarget.style.backgroundColor = isMuted ? 'rgba(255, 150, 50, 0.1)' : 'rgba(100, 200, 255, 0.1)'
+                            e.currentTarget.style.transform = 'scale(1)'
+                        }
                     }}
                 >
-                    {label}
+                    {onToggleMute ? (isMuted ? '🔇 ' + label + ' (Muted)' : '🎤 ' + label) : label}
                 </div>
                 <div
                     style={{
                         backgroundColor: 'rgba(10, 10, 30, 0.5)',
                         borderRadius: '10px',
                         padding: '8px',
-                        border: `1px solid ${color}40`,
-                        boxShadow: `0 0 15px ${color}20, inset 0 0 15px rgba(0, 0, 0, 0.3)`,
+                        border: isMuted ? '1px solid #ff963240' : `1px solid ${color}40`,
+                        boxShadow: isMuted
+                            ? '0 0 15px #ff963220, inset 0 0 15px rgba(0, 0, 0, 0.3)'
+                            : `0 0 15px ${color}20, inset 0 0 15px rgba(0, 0, 0, 0.3)`,
                         position: 'relative',
                         overflow: 'hidden',
+                        opacity: isMuted ? 0.6 : 1,
+                        transition: 'all 0.3s ease',
                     }}
                 >
                     {/* Grid overlay for sci-fi effect */}

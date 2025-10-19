@@ -20,8 +20,8 @@ const ImageGenerationModal: React.FC<ImageGenerationModalProps> = ({
 }) => {
     const [prompt, setPrompt] = useState('')
     const [style, setStyle] = useState<'vivid' | 'natural'>('vivid')
-    const [size, setSize] = useState<'1024x1024' | '1024x1792' | '1792x1024'>('1024x1024')
-    const [quality, setQuality] = useState<'standard' | 'hd'>('standard')
+    const [size, setSize] = useState<'1024x1024' | '1024x1792' | '1792x1024'>('1792x1024')
+    const [quality, setQuality] = useState<'standard' | 'hd'>('hd')
     const inputRef = useRef<HTMLTextAreaElement>(null)
 
     useEffect(() => {
@@ -192,7 +192,7 @@ const ImageGenerationModal: React.FC<ImageGenerationModalProps> = ({
                             </select>
                         </div>
 
-                        {/* Size */}
+                        {/* Orientation */}
                         <div>
                             <label
                                 style={{
@@ -203,7 +203,7 @@ const ImageGenerationModal: React.FC<ImageGenerationModalProps> = ({
                                     color: '#cccccc',
                                 }}
                             >
-                                Size
+                                Orientation
                             </label>
                             <select
                                 value={size}
