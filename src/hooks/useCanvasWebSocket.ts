@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react'
+import { supabase } from '../lib/supabase'
 
 interface UseCanvasWebSocketParams {
   wsRef: React.MutableRefObject<WebSocket | null>
@@ -95,7 +96,6 @@ export function useCanvasWebSocket({
   // Initialize canvas and fetch session
   const initializeCanvas = useCallback(async (onSuccess: (canvasId: string, token: string, userId: string, userEmail: string) => void) => {
     try {
-      const { supabase } = await import('../lib/supabase')
       const { data: { session } } = await supabase.auth.getSession()
 
       if (!session) {

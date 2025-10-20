@@ -1,0 +1,48 @@
+# Source files - only need built dist
+src/
+@docs/
+
+# Dependencies
+node_modules/
+
+# Package manager files
+package.json
+package-lock.json
+yarn.lock
+.yarnrc.yml
+.yarn/
+
+# Configuration files
+vite.config.ts
+tsconfig.json
+tsconfig.node.json
+tailwind.config.js
+postcss.config.js
+
+# Git
+.git/
+.gitignore
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Environment
+.env
+.env.local
+.env.*
+
+# Logs
+logs/
+*.log
+
+# Documentation
+README.md
+
+# Build artifacts not needed
+dist-ssr/
+*.local
+

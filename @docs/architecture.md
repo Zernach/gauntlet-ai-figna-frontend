@@ -61,7 +61,7 @@ UI[UI Components]
         end
 
         subgraph "Hosting"
-            Hosting[Static File Hosting<br/>Deployed React App<br/>Vercel/Netlify]
+            Hosting[Static File Hosting<br/>Deployed React App<br/>Vercel/Cloudflare]
         end
     end
 

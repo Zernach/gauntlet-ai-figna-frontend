@@ -1,5 +1,5 @@
 Never run deployment commands without explicit user approval.
-This includes: deploy, push, publish, release, netlify deploy, railway up, git push, npm publish, yarn deploy.
+This includes: deploy, push, publish, release, yarn deploy, railway up, git push, npm publish, yarn deploy.
 
 Always ask before:
 - Running any deployment or publishing commands

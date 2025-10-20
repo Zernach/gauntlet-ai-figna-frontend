@@ -330,7 +330,7 @@ CREATE TABLE presence (
 
 **Deployment:**
 
-- Frontend: Vercel or Netlify
+- Frontend: Hosted on Cloudflare
 - Backend: Railway (Express API + WebSocket server)
 - Database: Supabase (PostgreSQL + Auth)
 
